@@ -14,14 +14,14 @@
 
 #include "ElaToolTip.h"
 
-HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePath, QWidget *parent)
+HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::HomePageChild_TrackFile)
 {
     /*初始化*/
     ui->setupUi(this);
     /*读取参数*/
-    m_FilePath = FilePath;
+    m_FilePath = FilePathWithCode;
     QString FilePathWithoutCode = QUrl::fromPercentEncoding(m_FilePath.toUtf8());
     /*显示设置*/
     ui->label->setText(QFileInfo(FilePathWithoutCode).fileName());

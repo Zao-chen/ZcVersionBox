@@ -93,7 +93,7 @@ void HomePage::openBackup(QString FilePathWithCode)
     QStringList folderNames = dir.entryList(QDir::Files, QDir::Name);
     for (const QString &name : std::as_const(folderNames))
     {
-        HomePageChild_BackupFile *backupfile_widget = new HomePageChild_BackupFile(name, this); //创建子窗口
+        HomePageChild_BackupFile *backupfile_widget = new HomePageChild_BackupFile(FilePathWithCode, name, this); //创建子窗口
         ui->verticalLayout_BackupFiles->addWidget(backupfile_widget);
     }
     //最后再添加一个verticalSpacer
