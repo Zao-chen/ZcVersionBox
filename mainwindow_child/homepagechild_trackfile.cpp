@@ -2,6 +2,7 @@
 #include "ui_homepagechild_trackfile.h"
 
 #include "../GlobalConstants.h"
+#include "homepage.h"
 
 #include <QFileInfo>
 #include <QDesktopServices>
@@ -23,12 +24,12 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePath, QWidget *pare
     m_FilePath = FilePath;
     QString FilePathWithoutCode = QUrl::fromPercentEncoding(m_FilePath.toUtf8());
     /*显示设置*/
-    ui->label->setText(QFileInfo(FilePathWithoutCode).baseName());
+    ui->label->setText(QFileInfo(FilePathWithoutCode).fileName());
     ElaToolTip* NameToolTip = new ElaToolTip(ui->label);
     NameToolTip->setToolTip(FilePathWithoutCode);
     /*开始备份*/
-    QFileSystemWatcher *watcher = new QFileSystemWatcher(this);
     //监控文件
+    QFileSystemWatcher *watcher = new QFileSystemWatcher(this);
     watcher->addPath(FilePathWithoutCode);
     connect(watcher, &QFileSystemWatcher::fileChanged,
         this, [=](const QString &path)
@@ -133,3 +134,13 @@ void HomePageChild_TrackFile::BackupFile()
         QFile::copy(FilePathWithoutCode, targetFilePath);
     }
 }
+/*查看备份*/
+void HomePageChild_TrackFile::on_pushButton_Backup_clicked()
+{
+    qInfo() << "打开备份：" << m_FilePath;
+    //传递到父窗口
+    HomePage *mw = qobject_cast<HomePage *>(this->parent()->parent()->parent());
+    mw->openBackup(m_FilePath);
+}
+
+

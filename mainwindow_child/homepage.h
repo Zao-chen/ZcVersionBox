@@ -13,10 +13,15 @@ class HomePage : public QWidget
 
 public:
     explicit HomePage(QWidget *parent = nullptr);
+    void openBackup(QString FilePathWithCode);
     ~HomePage();
+
+private slots:
+    void on_widget_BreadcrumbBar_breadcrumbClicked(QString breadcrumb, QStringList lastBreadcrumbList);
 
 private:
     Ui::HomePage *ui;
+    void LoadBackupFileList();
 };
 
 #endif // HOMEPAGE_H

@@ -18,6 +18,7 @@ public:
 private slots:
     void on_pushButton_OpenFile_clicked();
     void on_pushButton_RemoveTrack_clicked();
+    void on_pushButton_Backup_clicked();
 
 private:
     Ui::HomePageChild_TrackFile *ui;
