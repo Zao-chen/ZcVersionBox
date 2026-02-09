@@ -30,7 +30,7 @@
     <widget class="ElaBreadcrumbBar" name="widget_BreadcrumbBar" native="true"/>
    </item>
    <item>
-    <widget class="QStackedWidget" name="stackedWidget">
+    <widget class="ZcStackedWidget" name="stackedWidget">
      <property name="currentIndex">
       <number>0</number>
      </property>
@@ -94,6 +94,12 @@
    <class>ElaBreadcrumbBar</class>
    <extends>QWidget</extends>
    <header location="global">elabreadcrumbbar.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>ZcStackedWidget</class>
+   <extends>QStackedWidget</extends>
+   <header location="global">zcstackedwidget.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>
