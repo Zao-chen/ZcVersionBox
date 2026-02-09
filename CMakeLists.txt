@@ -54,7 +54,8 @@ include_directories(
 )
 
 target_link_libraries(ZcVersionBox PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
-${CMAKE_CURRENT_SOURCE_DIR}/lib/elawidgettools.lib
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/elawidgettools.lib
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/ZcWidgetTools.lib
 )
 
 # Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
