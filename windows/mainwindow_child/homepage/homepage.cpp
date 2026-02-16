@@ -3,7 +3,7 @@
 
 #include "homepagechild_trackfile.h"
 #include "homepagechild_backupfile.h"
-#include "../GlobalConstants.h"
+#include "../../../GlobalConstants.h"
 
 #include <QStandardPaths>
 #include <QDir>
@@ -17,22 +17,21 @@ HomePage::HomePage(QWidget *parent)
 {
     ui->setupUi(this);
     LoadBackupFileList();
-    ui->stackedWidget->setCurrentIndex(0);
 
-    //创建qstringlist
+    //创建面包屑
     QStringList breadcrumbBarList;
     ui->widget_BreadcrumbBar->setTextPixelSize(25);
     ui->widget_BreadcrumbBar->appendBreadcrumb("追踪中的文件");
 
-    //监控文件
+    //监控追踪中的文件列表
     QFileSystemWatcher *watcher = new QFileSystemWatcher(this);
     watcher->addPath(BackupPath);
     connect(watcher, &QFileSystemWatcher::directoryChanged,
-            this, [=](const QString &path)
-            {
-                qInfo()<<"文件变化："<<path;
-                LoadBackupFileList();
-            });
+        this, [=](const QString &path)
+        {
+            qInfo()<<"追踪中的文件列表变化："<<path;
+            LoadBackupFileList();
+        });
 }
 
 HomePage::~HomePage()
