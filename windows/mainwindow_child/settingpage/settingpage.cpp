@@ -1,7 +1,7 @@
 #include "settingpage.h"
 #include "ui_settingpage.h"
 
-#include "../Globalconstants.h"
+#include "../../../Globalconstants.h"
 
 #include <QSettings>
 #include <QStandardPaths>
@@ -12,6 +12,10 @@ SettingPage::SettingPage(QWidget *parent)
     , ui(new Ui::SettingPage)
 {
     ui->setupUi(this);
+    //创建面包屑
+    QStringList breadcrumbBarList;
+    ui->widget_BreadcrumbBar->setTextPixelSize(25);
+    ui->widget_BreadcrumbBar->appendBreadcrumb("设置");
     //读取ini并初始化配置项
     QSettings ini(Settingpath, QSettings::IniFormat);
     ui->ToggleSwitch_RightClickMenu->setIsToggled(ini.value("RightClickMenu", false).toBool());
@@ -22,19 +26,18 @@ SettingPage::~SettingPage()
     delete ui;
 }
 
+/*写入或写出右键菜单*/
 void SettingPage::on_ToggleSwitch_RightClickMenu_toggled(bool checked)
 {
     /*注册表修改*/
     if(checked)
     {
         /*写入右键菜单*/
-        QString appPath =
-            QCoreApplication::applicationFilePath().replace("/", "\\");
+        QString appPath = QCoreApplication::applicationFilePath().replace("/", "\\");
         // 菜单路径（所有文件）
-        QString regPath =
-            R"(HKEY_CURRENT_USER\Software\Classes\*\shell\ZcVersionOpen)";
+        QString regPath = R"(HKEY_CURRENT_USER\Software\Classes\*\shell\ZcVersionOpen)";
         QSettings menu(regPath, QSettings::NativeFormat);
-        menu.setValue(".", "添加到VersionBox进行版本控制");
+        menu.setValue(".", "添加到ZcVersionBox进行版本控制");
         QSettings command(regPath + R"(\command)", QSettings::NativeFormat);
         command.setValue(".", "\"" + appPath + "\" \"%1\"");
     }

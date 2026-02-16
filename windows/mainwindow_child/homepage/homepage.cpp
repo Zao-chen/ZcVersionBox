@@ -42,14 +42,11 @@ HomePage::~HomePage()
 /*加载追踪文件列表*/
 void HomePage::LoadBackupFileList()
 {
-    //清空ui->verticalLayout_TrackFiles
+    //清空文件列表
     QLayoutItem *child;
     while ((child = ui->verticalLayout_TrackFiles->takeAt(0)) != nullptr)
     {
-        if (QWidget *w = child->widget())
-        {
-            w->deleteLater();
-        }
+        if (QWidget *w = child->widget()) w->deleteLater();
         delete child;
     }
     /*获取所有备份文件夹*/
@@ -73,9 +70,7 @@ void HomePage::openBackup(QString FilePathWithCode)
 {
     ui->widget_BreadcrumbBar->appendBreadcrumb(QFileInfo(QUrl::fromPercentEncoding(FilePathWithCode.toUtf8())).baseName());
     ui->stackedWidget->setCurrentIndex(1);
-
-
-    //清空ui->verticalLayout_TrackFiles
+    //清空文件列表
     QLayoutItem *child;
     while ((child = ui->verticalLayout_BackupFiles->takeAt(0)) != nullptr)
     {
@@ -98,7 +93,6 @@ void HomePage::openBackup(QString FilePathWithCode)
     //最后再添加一个verticalSpacer
     auto *spacer = new QSpacerItem(20, 40, QSizePolicy::Minimum, QSizePolicy::Expanding);
     ui->verticalLayout_BackupFiles->addItem(spacer);
-
 }
 
 /*面包屑*/

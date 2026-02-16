@@ -12,10 +12,9 @@ int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
     MainWindow w;
-
+    //获取启动参数
     QStringList args = QCoreApplication::arguments();
-    args.removeFirst(); // args[0] 是程序自身路径，去掉
-    qDebug() << args;
+    args.removeFirst(); //args[0] 是程序自身路径，去掉
     if(args.isEmpty()) //程序正常启动
     {
         eApp->init();
@@ -24,17 +23,16 @@ int main(int argc, char *argv[])
     }
     else //使用右键菜单或拖拽启动
     {
-        //再BackupPath下创建文件夹
+        //创建备份文件夹
         QDir dir(BackupPath);
         dir.mkpath(BackupPath+"/"+QUrl::toPercentEncoding(args.first()));
         //弹出消息框提示创建成功
-        static QSystemTrayIcon trayIcon;       // 用 static 保证生命周期够长
-        trayIcon.setIcon(QIcon(":/img/ico/res/img/logo.png")); // 设置你自己的图标
-        trayIcon.show();                        // 必须先 show
+        static QSystemTrayIcon trayIcon;
+        trayIcon.setIcon(QIcon(":/img/ico/res/img/logo.png"));
+        trayIcon.show();
         trayIcon.showMessage("ZcVersionBox提示", "已将文件添加至版本控制", QSystemTrayIcon::Information, 3000);
         //直接结束进程
         return 0;
     }
-
     return a.exec();
 }

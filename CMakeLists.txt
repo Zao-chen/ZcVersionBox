@@ -25,7 +25,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         ${PROJECT_SOURCES}
         windows/mainwindow_child/homepage/homepage.h windows/mainwindow_child/homepage/homepage.cpp windows/mainwindow_child/homepage/homepage.ui
         windows/mainwindow_child/homepage/homepagechild_trackfile.h windows/mainwindow_child/homepage/homepagechild_trackfile.cpp windows/mainwindow_child/homepage/homepagechild_trackfile.ui
-        windows/mainwindow_child/settingpage.h windows/mainwindow_child/settingpage.cpp windows/mainwindow_child/settingpage.ui
+        windows/mainwindow_child/settingpage/settingpage.h windows/mainwindow_child/settingpage/settingpage.cpp windows/mainwindow_child/settingpage/settingpage.ui
         GlobalConstants.h
         res.qrc
         windows/mainwindow_child/homepage/homepagechild_backupfile.h windows/mainwindow_child/homepage/homepagechild_backupfile.cpp windows/mainwindow_child/homepage/homepagechild_backupfile.ui

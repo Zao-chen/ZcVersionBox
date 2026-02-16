@@ -1,7 +1,7 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
 #include "mainwindow_child/homepage/homepage.h"
-#include "mainwindow_child/settingpage.h"
+#include "mainwindow_child/settingpage/settingpage.h"
 
 #include <QCloseEvent>
 
@@ -9,15 +9,13 @@ MainWindow::MainWindow(QWidget *parent)
     : ElaWindow(parent)
     , ui(new Ui::MainWindow)
 {
-    // ui->setupUi(this);
-
     /*初始化设定*/
     setUserInfoCardVisible(false);
     setWindowTitle("ZcVersionBox");
     setUserInfoCardTitle("VersionBox");
 
     /*托盘*/
-    /*创建托盘*/
+    //创建托盘
     m_sysTrayIcon = new QSystemTrayIcon(this); //新建QSystemTrayIcon对象
     //创建菜单
     m_menu = new ElaMenu(this);
@@ -51,7 +49,6 @@ MainWindow::MainWindow(QWidget *parent)
                 }
             });
 
-
     /*页面创建*/
     //正常页面
     HomePage *homepage_ui = new HomePage(this);
@@ -66,7 +63,6 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-
 /*托盘动作*/
 //托盘主界面
 void MainWindow::on_showMainAction()
@@ -79,9 +75,10 @@ void MainWindow::on_exitAppAction()
 {
     qApp->exit();
 }
+
 /*重写事件*/
 void MainWindow::closeEvent(QCloseEvent *e)
 {
     this->hide();
-    e->ignore(); // 阻止真正 close
+    e->ignore(); //阻止真正 close
 }

@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>400</width>
-    <height>300</height>
+    <width>713</width>
+    <height>463</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -27,23 +27,7 @@
     <number>15</number>
    </property>
    <item>
-    <widget class="ElaText" name="label_2">
-     <property name="sizePolicy">
-      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-       <horstretch>0</horstretch>
-       <verstretch>0</verstretch>
-      </sizepolicy>
-     </property>
-     <property name="font">
-      <font>
-       <pointsize>20</pointsize>
-       <bold>true</bold>
-      </font>
-     </property>
-     <property name="text">
-      <string>设置</string>
-     </property>
-    </widget>
+    <widget class="ElaBreadcrumbBar" name="widget_BreadcrumbBar" native="true"/>
    </item>
    <item>
     <widget class="ElaScrollPageArea" name="widget" native="true">
@@ -94,6 +78,12 @@
   </layout>
  </widget>
  <customwidgets>
+  <customwidget>
+   <class>ElaBreadcrumbBar</class>
+   <extends>QWidget</extends>
+   <header location="global">elabreadcrumbbar.h</header>
+   <container>1</container>
+  </customwidget>
   <customwidget>
    <class>ElaText</class>
    <extends>QLabel</extends>

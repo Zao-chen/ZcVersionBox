@@ -1,7 +1,7 @@
 #include "homepagechild_trackfile.h"
 #include "ui_homepagechild_trackfile.h"
 
-#include "../GlobalConstants.h"
+#include "../../../GlobalConstants.h"
 #include "homepage.h"
 
 #include <QFileInfo>
