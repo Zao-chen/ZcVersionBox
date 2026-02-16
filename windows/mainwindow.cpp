@@ -1,6 +1,6 @@
 #include "mainwindow.h"
 #include "./ui_mainwindow.h"
-#include "mainwindow_child/homepage.h"
+#include "mainwindow_child/homepage/homepage.h"
 #include "mainwindow_child/settingpage.h"
 
 #include <QCloseEvent>

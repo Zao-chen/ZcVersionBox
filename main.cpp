@@ -1,4 +1,4 @@
-#include "mainwindow.h"
+#include "windows/mainwindow.h"
 #include "ElaApplication.h"
 
 #include "GlobalConstants.h"

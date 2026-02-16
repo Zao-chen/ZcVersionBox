@@ -20,6 +20,8 @@ private slots:
 
     void on_pushButton_RemoveBackup_clicked();
 
+    void on_pushButton_RestoreBackup_clicked();
+
 private:
     Ui::HomePageChild_BackupFile *ui;
     QString m_BackupFileName;

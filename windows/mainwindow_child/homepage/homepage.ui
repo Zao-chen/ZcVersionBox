@@ -91,15 +91,15 @@
  </widget>
  <customwidgets>
   <customwidget>
-   <class>ElaBreadcrumbBar</class>
-   <extends>QWidget</extends>
-   <header location="global">elabreadcrumbbar.h</header>
-   <container>1</container>
-  </customwidget>
-  <customwidget>
    <class>ZcStackedWidget</class>
    <extends>QStackedWidget</extends>
    <header location="global">zcstackedwidget.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>ElaBreadcrumbBar</class>
+   <extends>QWidget</extends>
+   <header location="global">elabreadcrumbbar.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>
