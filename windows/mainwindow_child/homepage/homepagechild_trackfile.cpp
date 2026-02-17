@@ -11,6 +11,7 @@
 #include <QRegularExpression>
 #include <QCryptographicHash>
 #include <QFileSystemWatcher>
+#include <QProcess>
 
 #include "ElaToolTip.h"
 
@@ -20,17 +21,19 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
 {
     /*初始化*/
     ui->setupUi(this);
+
     /*读取参数*/
-    m_FilePath = FilePathWithCode;
-    QString FilePathWithoutCode = QUrl::fromPercentEncoding(m_FilePath.toUtf8());
+    m_FilePathWithCode = FilePathWithCode;
+
     /*显示设置*/
-    ui->label->setText(QFileInfo(FilePathWithoutCode).fileName());
+    ui->label->setText(QFileInfo(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8())).fileName());
     ElaToolTip* NameToolTip = new ElaToolTip(ui->label);
-    NameToolTip->setToolTip(FilePathWithoutCode);
+    NameToolTip->setToolTip(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8()));
+
     /*开始备份*/
     //监控文件
     QFileSystemWatcher *watcher = new QFileSystemWatcher(this);
-    watcher->addPath(FilePathWithoutCode);
+    watcher->addPath(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8()));
     connect(watcher, &QFileSystemWatcher::fileChanged,
         this, [=](const QString &path)
         {
@@ -48,7 +51,7 @@ HomePageChild_TrackFile::~HomePageChild_TrackFile()
 void HomePageChild_TrackFile::on_pushButton_OpenFile_clicked()
 {
     //打开文件
-    QDesktopServices::openUrl(QUrl::fromLocalFile(QUrl::fromPercentEncoding(m_FilePath.toUtf8())));
+    QDesktopServices::openUrl(QUrl::fromLocalFile(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8())));
 }
 
 /*移除追踪*/
@@ -56,91 +59,47 @@ void HomePageChild_TrackFile::on_pushButton_RemoveTrack_clicked()
 {
     //删除文件夹
     QString docPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/ZcVersionBox/Backup";
-    QDir dir(BackupPath+"/"+m_FilePath);
+    QDir dir(BackupPath + "/" + m_FilePathWithCode);
     qInfo()<<"移除追踪："<<dir;
     dir.removeRecursively();
     this->deleteLater();
 }
 
-/*备份文件*/
+/*同步文件到仓库*/
 void HomePageChild_TrackFile::BackupFile()
 {
-    QString FilePathWithoutCode = QUrl::fromPercentEncoding(m_FilePath.toUtf8());
-    /*文件备份*/
-    /*检查和最新的文件是否相同*/
-    //从文件名判断targetDir中的所有文件哪个最新
-    QDir BackupFileDir(BackupPath + "/" + m_FilePath);
-    QFileInfoList fileList = BackupFileDir.entryInfoList(QDir::Files | QDir::NoSymLinks);
-    QFileInfo newestFile;
-    QDateTime newestTime;
-    //匹配文件名中的时间戳部分
-    QRegularExpression re(R"((\d{8}_\d{6})\..+$)");
-    //搜索最新文件
-    for (const QFileInfo &file : std::as_const(fileList))
-    {
-        QRegularExpressionMatch match = re.match(file.fileName());
-        if (match.hasMatch())
-        {
-            QString timestampStr = match.captured(1); // yyyyMMdd_HHmmss
-            QDateTime fileTime = QDateTime::fromString(timestampStr, "yyyyMMdd_HHmmss");
-            if (fileTime.isValid() && (!newestTime.isValid() || fileTime > newestTime))
-            {
-                newestTime = fileTime;
-                newestFile = file;
-            }
-        }
+    QString FilePathWithoutCode = QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8());
+    QString backupDirPath = BackupPath + "/" + m_FilePathWithCode + "/" + QFileInfo(FilePathWithoutCode).fileName();
+    if (QFile::exists(backupDirPath)) {
+        QFile::remove(backupDirPath);
     }
-    /*对比哈希值*/
-    if (newestFile.exists())
+    QFile::copy(FilePathWithoutCode, backupDirPath);
+
+    /*Git自动Commit*/
+    QProcess git;
+    git.setWorkingDirectory(BackupPath + "/" + m_FilePathWithCode);
+    //添加变更
+    git.start("git", QStringList() << "add" << ".");
+    git.waitForFinished();
+    //检查是否真的有改动（避免空提交）
+    git.start("git", QStringList() << "diff" << "--cached" << "--quiet");
+    git.waitForFinished();
+    if (git.exitCode() != 0)
     {
-        QFile currentFile(FilePathWithoutCode);
-        QFile backupFile(newestFile.filePath());
-        if (currentFile.open(QIODevice::ReadOnly) && backupFile.open(QIODevice::ReadOnly))
-        {
-            QByteArray currentHash = QCryptographicHash::hash(currentFile.readAll(), QCryptographicHash::Sha256);
-            qInfo()<<"当前文件哈希值："<<currentHash.toHex();
-            QByteArray backupHash = QCryptographicHash::hash(backupFile.readAll(), QCryptographicHash::Sha256);
-            currentFile.close();
-            backupFile.close();
-            //如果相同就不备份
-            if (currentHash != backupHash)
-            {
-                qInfo()<<"文件不同，正在备份";
-                /*创建和复制文件*/
-                QString targetFilePath =
-                    BackupFileDir.filePath(
-                        QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss")
-                        + "."
-                        + QFileInfo(FilePathWithoutCode).suffix()
-                    );
-                QFile::copy(FilePathWithoutCode, targetFilePath);
-            }
-            else
-            {
-                qInfo()<<"文件相同，无需备份";
-            }
-        }
-    }
-    else
-    {
-        qInfo()<<"文件无备份，正在备份";
-        /*创建和复制文件*/
-        QString targetFilePath =
-            BackupFileDir.filePath(
-                QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss")
-                + "."
-                + QFileInfo(FilePathWithoutCode).suffix()
-                );
-        QFile::copy(FilePathWithoutCode, targetFilePath);
+        // 获取当前时间
+        QString timeStr = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
+        git.start("git", QStringList() << "commit" << "-m" << QString("Auto backup - %1").arg(timeStr));
+        git.waitForFinished();
     }
 }
+
 /*查看备份*/
 void HomePageChild_TrackFile::on_pushButton_Backup_clicked()
 {
-    qInfo() << "打开备份：" << m_FilePath;
+    qInfo() << "打开备份：" << m_FilePathWithCode;
     //传递到父窗口
     HomePage *mw = qobject_cast<HomePage *>(this->parent()->parent()->parent());
-    mw->openBackup(m_FilePath);
+    mw->openBackup(m_FilePathWithCode);
 }
 
 

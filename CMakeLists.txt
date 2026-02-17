@@ -29,6 +29,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         GlobalConstants.h
         res.qrc
         windows/mainwindow_child/homepage/homepagechild_backupfile.h windows/mainwindow_child/homepage/homepagechild_backupfile.cpp windows/mainwindow_child/homepage/homepagechild_backupfile.ui
+        utils/fileutils.h utils/fileutils.cpp
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET ZcVersionBox APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR

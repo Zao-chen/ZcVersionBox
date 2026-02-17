@@ -10,6 +10,7 @@
 #include <QSpacerItem>
 #include <QFileSystemWatcher>
 #include <QUrl>
+#include <QProcess>
 
 HomePage::HomePage(QWidget *parent)
     : QWidget(parent)
@@ -70,6 +71,7 @@ void HomePage::openBackup(QString FilePathWithCode)
 {
     ui->widget_BreadcrumbBar->appendBreadcrumb(QFileInfo(QUrl::fromPercentEncoding(FilePathWithCode.toUtf8())).baseName());
     ui->stackedWidget->setCurrentIndex(1);
+
     //清空文件列表
     QLayoutItem *child;
     while ((child = ui->verticalLayout_BackupFiles->takeAt(0)) != nullptr)
@@ -80,14 +82,20 @@ void HomePage::openBackup(QString FilePathWithCode)
         }
         delete child;
     }
-    /*获取所有备份文件夹*/
-    //获取路径下所有文件夹并输出名字
-    QString docPath = BackupPath+"/"+FilePathWithCode;
-    QDir dir(docPath);
-    QStringList folderNames = dir.entryList(QDir::Files, QDir::Name);
-    for (const QString &name : std::as_const(folderNames))
+    /*获取 Git 仓库的所有 commit*/
+    QString repoPath = BackupPath + "/" + FilePathWithCode;
+    QProcess git;
+    git.setWorkingDirectory(repoPath);
+    //获取所有 commit 的简短信息
+    git.start("git", QStringList() << "log" << "--oneline");
+    git.waitForFinished();
+    QString output = git.readAllStandardOutput();
+    QStringList commitList = output.split("\n", Qt::SkipEmptyParts);
+    for (const QString &commitInfo : std::as_const(commitList))
     {
-        HomePageChild_BackupFile *backupfile_widget = new HomePageChild_BackupFile(FilePathWithCode, name, this); //创建子窗口
+        //commitInfo 格式: "<hash> <message>"
+        HomePageChild_BackupFile *backupfile_widget =
+            new HomePageChild_BackupFile(FilePathWithCode, commitInfo, this); //创建子窗口
         ui->verticalLayout_BackupFiles->addWidget(backupfile_widget);
     }
     //最后再添加一个verticalSpacer

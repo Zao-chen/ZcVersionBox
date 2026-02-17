@@ -22,7 +22,7 @@ private slots:
 
 private:
     Ui::HomePageChild_TrackFile *ui;
-    QString m_FilePath;
+    QString m_FilePathWithCode;
     void BackupFile(); //备份文件
 };
 
