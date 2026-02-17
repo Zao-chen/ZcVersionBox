@@ -21,25 +21,22 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
 {
     /*初始化*/
     ui->setupUi(this);
-
     /*读取参数*/
     m_FilePathWithCode = FilePathWithCode;
-
     /*显示设置*/
     ui->label->setText(QFileInfo(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8())).fileName());
     ElaToolTip* NameToolTip = new ElaToolTip(ui->label);
     NameToolTip->setToolTip(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8()));
-
     /*开始备份*/
     //监控文件
     QFileSystemWatcher *watcher = new QFileSystemWatcher(this);
     watcher->addPath(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8()));
     connect(watcher, &QFileSystemWatcher::fileChanged,
-        this, [=](const QString &path)
-        {
-            qInfo()<<"文件变化："<<path;
-            BackupFile();
-        });
+            this, [=](const QString &path)
+            {
+                qInfo()<<"文件变化："<<path;
+                BackupFile();
+            });
 }
 
 HomePageChild_TrackFile::~HomePageChild_TrackFile()
@@ -50,7 +47,6 @@ HomePageChild_TrackFile::~HomePageChild_TrackFile()
 /*打开文件*/
 void HomePageChild_TrackFile::on_pushButton_OpenFile_clicked()
 {
-    //打开文件
     QDesktopServices::openUrl(QUrl::fromLocalFile(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8())));
 }
 
@@ -70,11 +66,8 @@ void HomePageChild_TrackFile::BackupFile()
 {
     QString FilePathWithoutCode = QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8());
     QString backupDirPath = BackupPath + "/" + m_FilePathWithCode + "/" + QFileInfo(FilePathWithoutCode).fileName();
-    if (QFile::exists(backupDirPath)) {
-        QFile::remove(backupDirPath);
-    }
+    if (QFile::exists(backupDirPath)) QFile::remove(backupDirPath);
     QFile::copy(FilePathWithoutCode, backupDirPath);
-
     /*Git自动Commit*/
     QProcess git;
     git.setWorkingDirectory(BackupPath + "/" + m_FilePathWithCode);

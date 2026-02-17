@@ -14,32 +14,28 @@ int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
     MainWindow w;
-    //获取启动参数
+    /*获取启动参数*/
     QStringList args = QCoreApplication::arguments();
-    args.removeFirst(); //args[0] 是程序自身路径，去掉
+    args.removeFirst(); //args[0]是程序自身路径，去掉
     if(args.isEmpty()) //程序正常启动
     {
         eApp->init();
-        eApp->setWindowDisplayMode((ElaApplicationType::WindowDisplayMode)2); // 云母模式
+        eApp->setWindowDisplayMode((ElaApplicationType::WindowDisplayMode)2); //云母模式
         w.show();
     }
     else //使用右键菜单或拖拽启动
     {
-        //创建备份文件夹
+        /*同步文件到仓库*/
         QDir dir(BackupPath);
         dir.mkpath(BackupPath+"/"+QUrl::toPercentEncoding(args.first()));
-        /*同步文件到仓库*/
         FileUtils::copyDirectory(args.first(), BackupPath+"/"+QUrl::toPercentEncoding(args.first()) + "/" + QFileInfo(args.first()).fileName());
-        /*创建 Git 仓库*/
+        /*创建初始化Git仓库*/
         QProcess git;
         git.setWorkingDirectory(BackupPath + "/" + QUrl::toPercentEncoding(args.first()));
-        // git init
         git.start("git", QStringList() << "init");
         git.waitForFinished();
-        // git add .
         git.start("git", QStringList() << "add" << ".");
         git.waitForFinished();
-        // git commit -m "Initial backup"
         git.start("git", QStringList() << "commit -m Initial backup");
         git.waitForFinished();
         /*相关提示*/

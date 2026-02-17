@@ -16,23 +16,22 @@ HomePage::HomePage(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::HomePage)
 {
+    /*窗口初始化*/
     ui->setupUi(this);
     LoadBackupFileList();
-
     //创建面包屑
     QStringList breadcrumbBarList;
     ui->widget_BreadcrumbBar->setTextPixelSize(25);
     ui->widget_BreadcrumbBar->appendBreadcrumb("追踪中的文件");
-
-    //监控追踪中的文件列表
+    /*监控追踪中的文件*/
     QFileSystemWatcher *watcher = new QFileSystemWatcher(this);
     watcher->addPath(BackupPath);
     connect(watcher, &QFileSystemWatcher::directoryChanged,
-        this, [=](const QString &path)
-        {
-            qInfo()<<"追踪中的文件列表变化："<<path;
-            LoadBackupFileList();
-        });
+            this, [=](const QString &path)
+            {
+                qInfo()<<"追踪中的文件列表变化："<<path;
+                LoadBackupFileList();
+            });
 }
 
 HomePage::~HomePage()
@@ -71,7 +70,6 @@ void HomePage::openBackup(QString FilePathWithCode)
 {
     ui->widget_BreadcrumbBar->appendBreadcrumb(QFileInfo(QUrl::fromPercentEncoding(FilePathWithCode.toUtf8())).baseName());
     ui->stackedWidget->setCurrentIndex(1);
-
     //清空文件列表
     QLayoutItem *child;
     while ((child = ui->verticalLayout_BackupFiles->takeAt(0)) != nullptr)
@@ -94,8 +92,7 @@ void HomePage::openBackup(QString FilePathWithCode)
     for (const QString &commitInfo : std::as_const(commitList))
     {
         //commitInfo 格式: "<hash> <message>"
-        HomePageChild_BackupFile *backupfile_widget =
-            new HomePageChild_BackupFile(FilePathWithCode, commitInfo, this); //创建子窗口
+        HomePageChild_BackupFile *backupfile_widget = new HomePageChild_BackupFile(FilePathWithCode, commitInfo, this); //创建子窗口
         ui->verticalLayout_BackupFiles->addWidget(backupfile_widget);
     }
     //最后再添加一个verticalSpacer
@@ -103,7 +100,7 @@ void HomePage::openBackup(QString FilePathWithCode)
     ui->verticalLayout_BackupFiles->addItem(spacer);
 }
 
-/*面包屑*/
+/*面包屑点击返回*/
 void HomePage::on_widget_BreadcrumbBar_breadcrumbClicked(QString breadcrumb, QStringList lastBreadcrumbList)
 {
     ui->stackedWidget->setCurrentIndex(0);
