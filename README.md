@@ -1,2 +1,16 @@
-# ZcVersionBox
-A version control tool for everyone
+ZcVersionBox
+============
+
+一个基于 Qt 开发的本地文件版本管理工具。  
+轻量、简单、专注于文件级版本回退。
+
+* * *
+
+✨ Features
+----------
+
+* 📁 本地文件版本备份
+
+* 🕒 基于 Git 的历史记录管理
+
+* 🔁 一键回退和预览任意历史版本
