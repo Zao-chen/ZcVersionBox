@@ -81,7 +81,23 @@
         <number>0</number>
        </property>
        <item>
-        <layout class="QVBoxLayout" name="verticalLayout_BackupFiles"/>
+        <widget class="ElaTableView" name="tableView_BackupFiles">
+         <property name="editTriggers">
+          <set>QAbstractItemView::EditTrigger::NoEditTriggers</set>
+         </property>
+         <property name="selectionMode">
+          <enum>QAbstractItemView::SelectionMode::NoSelection</enum>
+         </property>
+         <attribute name="verticalHeaderVisible">
+          <bool>false</bool>
+         </attribute>
+         <attribute name="verticalHeaderMinimumSectionSize">
+          <number>50</number>
+         </attribute>
+         <attribute name="verticalHeaderDefaultSectionSize">
+          <number>50</number>
+         </attribute>
+        </widget>
        </item>
       </layout>
      </widget>
@@ -101,6 +117,11 @@
    <extends>QWidget</extends>
    <header location="global">elabreadcrumbbar.h</header>
    <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>ElaTableView</class>
+   <extends>QTableView</extends>
+   <header location="global">elatableview.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

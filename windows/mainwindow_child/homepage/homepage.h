@@ -22,6 +22,7 @@ private slots:
 private:
     Ui::HomePage *ui;
     void LoadBackupFileList();
+    QString m_NowFilePathWithCode;
 };
 
 #endif // HOMEPAGE_H

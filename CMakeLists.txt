@@ -28,7 +28,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         windows/mainwindow_child/settingpage/settingpage.h windows/mainwindow_child/settingpage/settingpage.cpp windows/mainwindow_child/settingpage/settingpage.ui
         GlobalConstants.h
         res.qrc
-        windows/mainwindow_child/homepage/homepagechild_backupfile.h windows/mainwindow_child/homepage/homepagechild_backupfile.cpp windows/mainwindow_child/homepage/homepagechild_backupfile.ui
+
         utils/fileutils.h utils/fileutils.cpp
     )
 # Define target properties for Android with Qt 6 as:
