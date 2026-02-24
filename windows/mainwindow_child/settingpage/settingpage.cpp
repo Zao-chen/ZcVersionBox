@@ -26,30 +26,59 @@ SettingPage::~SettingPage()
     delete ui;
 }
 
-/*写入或写出右键菜单*/
 void SettingPage::on_ToggleSwitch_RightClickMenu_toggled(bool checked)
 {
-    /*注册表修改*/
-    if(checked)
+    QString appPath = QCoreApplication::applicationFilePath().replace("/", "\\");
+    QString menuText = QStringLiteral("添加到ZcVersionBox进行版本控制");
+
+    if (checked)
     {
-        /*写入右键菜单*/
-        QString appPath = QCoreApplication::applicationFilePath().replace("/", "\\");
-        // 菜单路径（所有文件）
-        QString regPath = R"(HKEY_CURRENT_USER\Software\Classes\*\shell\ZcVersionOpen)";
-        QSettings menu(regPath, QSettings::NativeFormat);
-        menu.setValue(".", "添加到ZcVersionBox进行版本控制");
-        QSettings command(regPath + R"(\command)", QSettings::NativeFormat);
-        command.setValue(".", "\"" + appPath + "\" \"%1\"");
+        //所有文件
+        {
+            QString regPath = R"(HKEY_CURRENT_USER\Software\Classes\*\shell\ZcVersionOpen)";
+            QSettings menu(regPath, QSettings::NativeFormat);
+            menu.setValue(".", menuText);
+
+            QSettings command(regPath + R"(\command)", QSettings::NativeFormat);
+            command.setValue(".", "\"" + appPath + "\" \"%1\"");
+        }
+        //文件夹（右键点文件夹对象）
+        {
+            QString regPath = R"(HKEY_CURRENT_USER\Software\Classes\Directory\shell\ZcVersionOpen)";
+            QSettings menu(regPath, QSettings::NativeFormat);
+            menu.setValue(".", menuText);
+
+            QSettings command(regPath + R"(\command)", QSettings::NativeFormat);
+            command.setValue(".", "\"" + appPath + "\" \"%1\"");
+        }
+        //文件夹背景（进入文件夹后空白处右键）
+        {
+            QString regPath = R"(HKEY_CURRENT_USER\Software\Classes\Directory\Background\shell\ZcVersionOpen)";
+            QSettings menu(regPath, QSettings::NativeFormat);
+            menu.setValue(".", menuText);
+
+            QSettings command(regPath + R"(\command)", QSettings::NativeFormat);
+            command.setValue(".", "\"" + appPath + "\" \"%V\"");
+        }
     }
     else
     {
-        QSettings settings(
-            R"(HKEY_CURRENT_USER\Software\Classes\*\shell)",
-            QSettings::NativeFormat);
-        settings.remove("ZcVersionOpen");
+        //移除：所有文件
+        {
+            QSettings settings(R"(HKEY_CURRENT_USER\Software\Classes\*\shell)", QSettings::NativeFormat);
+            settings.remove("ZcVersionOpen");
+        }
+        //移除：文件夹对象
+        {
+            QSettings settings(R"(HKEY_CURRENT_USER\Software\Classes\Directory\shell)", QSettings::NativeFormat);
+            settings.remove("ZcVersionOpen");
+        }
+        //移除：文件夹背景
+        {
+            QSettings settings(R"(HKEY_CURRENT_USER\Software\Classes\Directory\Background\shell)", QSettings::NativeFormat);
+            settings.remove("ZcVersionOpen");
+        }
     }
-    /*写入ini进行保存*/
     QSettings ini(Settingpath, QSettings::IniFormat);
     ini.setValue("RightClickMenu", checked);
 }
-
