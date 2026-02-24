@@ -56,6 +56,8 @@ MainWindow::MainWindow(QWidget *parent)
     //底部页面
     SettingPage *settingpage_ui = new SettingPage(this);
     addFooterNode(tr("设置"), settingpage_ui, *new QString(""), 0, ElaIconType::Gear);
+
+    setNavigationBarDisplayMode(ElaNavigationType::NavigationDisplayMode::Compact);
 }
 
 MainWindow::~MainWindow()

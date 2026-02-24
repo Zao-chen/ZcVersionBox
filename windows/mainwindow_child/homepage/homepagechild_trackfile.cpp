@@ -3,6 +3,7 @@
 
 #include "../../../GlobalConstants.h"
 #include "homepage.h"
+#include "../../../utils/fileutils.h"
 
 #include <QFileInfo>
 #include <QDesktopServices>
@@ -12,6 +13,8 @@
 #include <QCryptographicHash>
 #include <QFileSystemWatcher>
 #include <QProcess>
+#include <QTimer>
+#include <QDirIterator>
 
 #include "ElaToolTip.h"
 
@@ -27,16 +30,82 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
     ui->label->setText(QFileInfo(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8())).fileName());
     ElaToolTip* NameToolTip = new ElaToolTip(ui->label);
     NameToolTip->setToolTip(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8()));
+
+
+
     /*开始备份*/
-    //监控文件
-    QFileSystemWatcher *watcher = new QFileSystemWatcher(this);
-    watcher->addPath(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8()));
-    connect(watcher, &QFileSystemWatcher::fileChanged,
-            this, [=](const QString &path)
+
+    QTimer *timer = new QTimer(this);
+    timer->setInterval(1500); // 1.5秒扫描一次
+
+    QString rootPath = QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8());
+    rootPath = QDir::cleanPath(rootPath);
+
+    QMap<QString, QString> lastState; // path -> fingerprint
+
+    // 计算文件指纹：一般备份场景足够
+    auto calcFingerprint = [](const QFileInfo &info) -> QString
+    {
+        return QString::number(info.size()) + "|" +
+               QString::number(info.lastModified().toMSecsSinceEpoch());
+    };
+
+    // 递归扫描
+    // 递归扫描：按值捕获 rootPath（非常关键：不能用 [&]）
+    auto scanDirectory = [rootPath](QMap<QString, QString> &state)
+    {
+        QDirIterator it(rootPath,
+                        QDir::Files | QDir::Readable | QDir::NoSymLinks,
+                        QDirIterator::Subdirectories);
+
+        while (it.hasNext())
+        {
+            it.next();
+            QFileInfo info = it.fileInfo();
+
+            QString filePath = QDir::cleanPath(it.filePath());
+            const QString norm = QDir::fromNativeSeparators(filePath);
+
+            if (norm.contains("/.git/") || norm.endsWith("/.git") ||
+                norm.contains("/build/") || norm.endsWith("/build"))
             {
-                qInfo()<<"文件变化："<<path;
-                BackupFile();
+                continue;
+            }
+
+            const QString fingerprint =
+                QString::number(info.size()) + "|" +
+                QString::number(info.lastModified().toMSecsSinceEpoch());
+
+            state[filePath] = fingerprint;
+        }
+    };
+
+    // 初始化
+    scanDirectory(lastState);
+
+    // 防止备份重入（备份过程中不重复触发）
+    bool *busy = new bool(false); // 简单做法；也可用成员变量更干净
+
+    connect(timer, &QTimer::timeout, this, [=]() mutable
+            {
+                if (*busy) return;
+
+                QMap<QString, QString> newState;
+                scanDirectory(newState);
+
+                if (newState != lastState)
+                {
+                    *busy = true;
+                    qInfo() << "检测到文件系统变化";
+
+                    BackupFile(); // 若耗时很长，建议改成异步/线程
+
+                    lastState = std::move(newState);
+                    *busy = false;
+                }
             });
+
+    timer->start();
 }
 
 HomePageChild_TrackFile::~HomePageChild_TrackFile()
@@ -67,7 +136,7 @@ void HomePageChild_TrackFile::BackupFile()
     QString FilePathWithoutCode = QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8());
     QString backupDirPath = BackupPath + "/" + m_FilePathWithCode + "/" + QFileInfo(FilePathWithoutCode).fileName();
     if (QFile::exists(backupDirPath)) QFile::remove(backupDirPath);
-    QFile::copy(FilePathWithoutCode, backupDirPath);
+    FileUtils::copyDirectory(FilePathWithoutCode, backupDirPath);
     /*Git自动Commit*/
     QProcess git;
     git.setWorkingDirectory(BackupPath + "/" + m_FilePathWithCode);
