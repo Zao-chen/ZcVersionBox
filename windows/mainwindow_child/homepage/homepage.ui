@@ -32,7 +32,7 @@
    <item>
     <widget class="ZcStackedWidget" name="stackedWidget">
      <property name="currentIndex">
-      <number>0</number>
+      <number>1</number>
      </property>
      <widget class="QWidget" name="page_0">
       <layout class="QVBoxLayout" name="verticalLayout">
@@ -81,6 +81,44 @@
         <number>0</number>
        </property>
        <item>
+        <layout class="QHBoxLayout" name="horizontalLayout">
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="ElaText" name="label">
+           <property name="font">
+            <font>
+             <pointsize>12</pointsize>
+            </font>
+           </property>
+           <property name="text">
+            <string>远程同步与协同</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="ElaToggleSwitch" name="ToggleSwitch_Remote" native="true"/>
+         </item>
+         <item>
+          <spacer name="horizontalSpacer">
+           <property name="orientation">
+            <enum>Qt::Orientation::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="ElaDrawerArea" name="ElaDrawerArea_Remote" native="true"/>
+       </item>
+       <item>
         <widget class="ElaTableView" name="tableView_BackupFiles">
          <property name="editTriggers">
           <set>QAbstractItemView::EditTrigger::NoEditTriggers</set>
@@ -122,6 +160,23 @@
    <class>ElaTableView</class>
    <extends>QTableView</extends>
    <header location="global">elatableview.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ElaText</class>
+   <extends>QLabel</extends>
+   <header location="global">elatext.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ElaToggleSwitch</class>
+   <extends>QWidget</extends>
+   <header location="global">elatoggleswitch.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>ElaDrawerArea</class>
+   <extends>QWidget</extends>
+   <header location="global">eladrawerarea.h</header>
+   <container>1</container>
   </customwidget>
  </customwidgets>
  <resources/>

@@ -20,7 +20,6 @@ int main(int argc, char *argv[])
     if(args.isEmpty()) //程序正常启动
     {
         eApp->init();
-        eApp->setWindowDisplayMode((ElaApplicationType::WindowDisplayMode)2); //云母模式
         w.show();
     }
     else //使用右键菜单或拖拽启动

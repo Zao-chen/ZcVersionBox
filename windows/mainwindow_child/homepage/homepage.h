@@ -18,6 +18,7 @@ public:
 
 private slots:
     void on_widget_BreadcrumbBar_breadcrumbClicked(QString breadcrumb, QStringList lastBreadcrumbList);
+    void on_ToggleSwitch_Remote_toggled(bool checked);
 
 private:
     Ui::HomePage *ui;
