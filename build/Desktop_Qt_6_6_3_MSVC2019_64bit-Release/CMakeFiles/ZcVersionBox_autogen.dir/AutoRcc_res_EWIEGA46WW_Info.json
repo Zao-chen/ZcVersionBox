@@ -1,0 +1,22 @@
+{
+	"BUILD_DIR" : "P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/ZcVersionBox_autogen",
+	"CMAKE_BINARY_DIR" : "P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release",
+	"CMAKE_CURRENT_BINARY_DIR" : "P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release",
+	"CMAKE_CURRENT_SOURCE_DIR" : "P:/Qt/Project/ZcVersionBox",
+	"CMAKE_SOURCE_DIR" : "P:/Qt/Project/ZcVersionBox",
+	"CROSS_CONFIG" : false,
+	"GENERATOR" : "Ninja",
+	"INCLUDE_DIR" : "P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/ZcVersionBox_autogen/include",
+	"INPUTS" : [ "P:/Qt/Project/ZcVersionBox/res/img/logo.png" ],
+	"LOCK_FILE" : "P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/CMakeFiles/ZcVersionBox_autogen.dir/AutoRcc_res_EWIEGA46WW_Lock.lock",
+	"MULTI_CONFIG" : false,
+	"OPTIONS" : [ "--no-zstd", "-name", "res" ],
+	"OUTPUT_CHECKSUM" : "EWIEGA46WW",
+	"OUTPUT_NAME" : "qrc_res.cpp",
+	"RCC_EXECUTABLE" : "S:/Qt/6.6.3/msvc2019_64/./bin/rcc.exe",
+	"RCC_LIST_OPTIONS" : [ "--list" ],
+	"SETTINGS_FILE" : "P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/CMakeFiles/ZcVersionBox_autogen.dir/AutoRcc_res_EWIEGA46WW_Used.txt",
+	"SOURCE" : "P:/Qt/Project/ZcVersionBox/res.qrc",
+	"USE_BETTER_GRAPH" : false,
+	"VERBOSITY" : 0
+}

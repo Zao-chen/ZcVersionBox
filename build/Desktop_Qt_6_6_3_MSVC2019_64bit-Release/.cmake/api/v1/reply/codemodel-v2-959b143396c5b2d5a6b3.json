@@ -1,0 +1,79 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"hasInstallRule" : true,
+					"jsonFile" : "directory-.-Debug-2d00daedbafd037c1a3a.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.16"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				}
+			],
+			"name" : "Debug",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "ZcVersionBox",
+					"targetIndexes" : 
+					[
+						0,
+						1,
+						2
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "ZcVersionBox::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ZcVersionBox-Debug-6a6aa7511dafd4602d90.json",
+					"name" : "ZcVersionBox",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ZcVersionBox_autogen::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ZcVersionBox_autogen-Debug-4a62c9e3a545032618f2.json",
+					"name" : "ZcVersionBox_autogen",
+					"projectIndex" : 0
+				},
+				{
+					"directoryIndex" : 0,
+					"id" : "ZcVersionBox_autogen_timestamp_deps::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-ZcVersionBox_autogen_timestamp_deps-Debug-3a8371a495653fa9011f.json",
+					"name" : "ZcVersionBox_autogen_timestamp_deps",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release",
+		"source" : "P:/Qt/Project/ZcVersionBox"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 8
+	}
+}

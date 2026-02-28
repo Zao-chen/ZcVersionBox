@@ -4,6 +4,8 @@
 #include "mainwindow_child/settingpage/settingpage.h"
 
 #include <QCloseEvent>
+#include <QDir>
+#include <QmessageBox>
 
 MainWindow::MainWindow(QWidget *parent)
     : ElaWindow(parent)
@@ -13,6 +15,9 @@ MainWindow::MainWindow(QWidget *parent)
     setUserInfoCardVisible(false);
     setWindowTitle("ZcVersionBox");
     setUserInfoCardTitle("VersionBox");
+
+    qDebug() << "cwd=" << QDir::currentPath();
+    qDebug() << "appDir=" << QCoreApplication::applicationDirPath();
 
     /*托盘*/
     //创建托盘

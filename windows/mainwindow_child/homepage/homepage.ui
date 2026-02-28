@@ -32,7 +32,7 @@
    <item>
     <widget class="ZcStackedWidget" name="stackedWidget">
      <property name="currentIndex">
-      <number>1</number>
+      <number>0</number>
      </property>
      <widget class="QWidget" name="page_0">
       <layout class="QVBoxLayout" name="verticalLayout">
@@ -103,7 +103,7 @@
          <item>
           <spacer name="horizontalSpacer">
            <property name="orientation">
-            <enum>Qt::Orientation::Horizontal</enum>
+            <enum>Qt::Horizontal</enum>
            </property>
            <property name="sizeHint" stdset="0">
             <size>
@@ -121,10 +121,10 @@
        <item>
         <widget class="ElaTableView" name="tableView_BackupFiles">
          <property name="editTriggers">
-          <set>QAbstractItemView::EditTrigger::NoEditTriggers</set>
+          <set>QAbstractItemView::NoEditTriggers</set>
          </property>
          <property name="selectionMode">
-          <enum>QAbstractItemView::SelectionMode::NoSelection</enum>
+          <enum>QAbstractItemView::NoSelection</enum>
          </property>
          <attribute name="verticalHeaderVisible">
           <bool>false</bool>
