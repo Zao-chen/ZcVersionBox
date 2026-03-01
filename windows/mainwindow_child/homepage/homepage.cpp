@@ -5,9 +5,12 @@
 #include "../../../utils/fileutils.h"
 #include "homepagechild_trackfile.h"
 
+#include "ElaIconButton.h"
 #include "ElaLineEdit.h"
 #include "ElaMessageBar.h"
 #include "ElaPushButton.h"
+#include "ElaText.h"
+#include "ElaToggleSwitch.h"
 
 #include <QDesktopServices>
 #include <QDir>
@@ -28,6 +31,7 @@ HomePage::HomePage(QWidget *parent)
     LoadBackupFileList();
 
     /*远程开关*/
+    m_ToggleSwitch_Remote = new ElaToggleSwitch(this);
     QWidget *drawerHeader = new QWidget(this);
     QHBoxLayout *drawerHeaderLayout = new QHBoxLayout(drawerHeader);
     drawerHeaderLayout->setContentsMargins(8, 0, 8, 0);
@@ -40,15 +44,11 @@ HomePage::HomePage(QWidget *parent)
     ElaText *drawerText = new ElaText("远程仓库", this);
     drawerText->setTextPixelSize(15);
     //开关
-    connect(ui->ToggleSwitch_Remote,
-            &ElaToggleSwitch::toggled,
-            this,
+    connect(m_ToggleSwitch_Remote, &ElaToggleSwitch::toggled, this,
             [=](bool checked)
             {
                 if (m_RemoteUiSyncing)
-                {
                     return;
-                }
                 m_RemoteUiSyncing = true;
                 if (checked)
                     ui->ElaDrawerArea_Remote->expand();
@@ -56,46 +56,101 @@ HomePage::HomePage(QWidget *parent)
                     ui->ElaDrawerArea_Remote->collapse();
                 m_RemoteUiSyncing = false;
             });
-    connect(ui->ElaDrawerArea_Remote,
-            &ElaDrawerArea::expandStateChanged,
-            this,
+    connect(ui->ElaDrawerArea_Remote, &ElaDrawerArea::expandStateChanged, this,
             [=](bool isExpand)
             {
                 if (m_RemoteUiSyncing)
                     return;
                 m_RemoteUiSyncing = true;
-                ui->ToggleSwitch_Remote->setIsToggled(isExpand);
+                m_ToggleSwitch_Remote->setIsToggled(isExpand);
                 m_RemoteUiSyncing = false;
             });
-
+    connect(m_ToggleSwitch_Remote, &ElaToggleSwitch::toggled, this, &HomePage::on_ToggleSwitch_Remote_toggled);
     //布局
     drawerHeaderLayout->addWidget(drawerIcon);
     drawerHeaderLayout->addWidget(drawerText);
     drawerHeaderLayout->addStretch();
-    drawerHeaderLayout->addWidget(ui->ToggleSwitch_Remote);
+    drawerHeaderLayout->addWidget(m_ToggleSwitch_Remote);
     ui->ElaDrawerArea_Remote->setDrawerHeader(drawerHeader);
     //展开内容
     QWidget *remoteDrawerContent = new QWidget(this);
     QVBoxLayout *remoteDrawerLayout = new QVBoxLayout(remoteDrawerContent);
-    remoteDrawerLayout->setContentsMargins(12, 8, 12, 8);
-    remoteDrawerLayout->setSpacing(8);
     ElaText *remoteHintText = new ElaText("远程仓库地址", remoteDrawerContent);
     remoteHintText->setTextPixelSize(13);
     m_RemoteUrlEdit = new ElaLineEdit(remoteDrawerContent);
     m_RemoteUrlEdit->setPlaceholderText(u8"请输入远程仓库地址");
     QHBoxLayout *remoteRowLayout = new QHBoxLayout();
-    remoteRowLayout->setContentsMargins(0, 0, 0, 0);
-    remoteRowLayout->setSpacing(8);
     remoteRowLayout->addWidget(remoteHintText);
     remoteRowLayout->addWidget(m_RemoteUrlEdit, 1);
+    //创建同步和上传图标按钮
+    ElaIconButton *btnPull = new ElaIconButton(ElaIconType::Download, 16, remoteDrawerContent);
+    btnPull->setFixedSize(32, 32);
+    btnPull->setToolTip("从远程仓库同步");
+    ElaIconButton *btnPush = new ElaIconButton(ElaIconType::Upload, 16, remoteDrawerContent);
+    btnPush->setFixedSize(32, 32);
+    btnPush->setToolTip("上传到远程仓库");
+    remoteRowLayout->addWidget(btnPull);
+    remoteRowLayout->addWidget(btnPush);
     //保存内容
-    connect(m_RemoteUrlEdit,
-            &QLineEdit::editingFinished,
-            this,
-            [=]()
+    connect(m_RemoteUrlEdit, &QLineEdit::editingFinished, this, [=]()
+            { ApplyRemoteUrlFromInput(true); });
+    //从远程仓库同步（git pull）
+    connect(btnPull, &ElaIconButton::clicked, this, [=]()
             {
-                ApplyRemoteUrlFromInput(true);
-            });
+        
+                const QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
+                //执行 git pull
+                QProcess pullProcess;
+                pullProcess.setWorkingDirectory(repoPath);
+                pullProcess.start("git", QStringList() << "pull" << "origin" << "master");
+                pullProcess.waitForFinished();
+
+                if (pullProcess.exitCode() == 0)
+                {
+                    ElaMessageBar::success(ElaMessageBarType::BottomRight,
+                                        "同步成功",
+                                        "已从远程仓库同步最新版本",
+                                        2000,
+                                        parentWidget());
+                    openBackup(m_NowFilePathWithCode); //刷新备份列表
+                }
+                else
+                {
+                    QString errorMsg = pullProcess.readAllStandardError();
+                    ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                        "同步失败",
+                                        errorMsg.isEmpty() ? "请检查网络连接和仓库配置" : errorMsg,
+                                        3000,
+                                        parentWidget());
+                } });
+    //上传到远程仓库（git push）
+    connect(btnPush, &ElaIconButton::clicked, this, [=]()
+            {
+                const QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
+                QProcess checkProcess;
+                checkProcess.setWorkingDirectory(repoPath);
+                // 执行 git push
+                QProcess pushProcess;
+                pushProcess.setWorkingDirectory(repoPath);
+                pushProcess.start("git", QStringList() << "push" << "origin" << "master");
+                pushProcess.waitForFinished();
+                if (pushProcess.exitCode() == 0)
+                {
+                    ElaMessageBar::success(ElaMessageBarType::BottomRight,
+                                        "上传成功",
+                                        "已将本地版本推送到远程仓库",
+                                        2000,
+                                        parentWidget());
+                }
+                else
+                {
+                    QString errorMsg = pushProcess.readAllStandardError();
+                    ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                        "上传失败",
+                                        errorMsg.isEmpty() ? "请检查网络连接和推送权限" : errorMsg,
+                                        3000,
+                                        parentWidget());
+                } });
     //添加布局
     remoteDrawerLayout->addLayout(remoteRowLayout);
     ui->ElaDrawerArea_Remote->addDrawer(remoteDrawerContent);
@@ -181,8 +236,8 @@ void HomePage::ApplyRemoteUrlFromInput(bool showSuccessMessage)
     }
 
     {
-        QSignalBlocker blocker(ui->ToggleSwitch_Remote);
-        ui->ToggleSwitch_Remote->setIsToggled(true);
+        QSignalBlocker blocker(m_ToggleSwitch_Remote);
+        m_ToggleSwitch_Remote->setIsToggled(true);
     }
     ui->ElaDrawerArea_Remote->expand();
 
@@ -331,8 +386,8 @@ void HomePage::openBackup(QString FilePathWithCode)
 
     m_RemoteUiSyncing = true;
     {
-        QSignalBlocker blocker(ui->ToggleSwitch_Remote);
-        ui->ToggleSwitch_Remote->setIsToggled(hasOrigin);
+        QSignalBlocker blocker(m_ToggleSwitch_Remote);
+        m_ToggleSwitch_Remote->setIsToggled(hasOrigin);
     }
     if (hasOrigin)
     {

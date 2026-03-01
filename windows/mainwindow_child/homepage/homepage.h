@@ -4,6 +4,7 @@
 #include <QWidget>
 
 class ElaLineEdit;
+class ElaToggleSwitch;
 
 namespace Ui
 {
@@ -25,6 +26,7 @@ class HomePage : public QWidget
 
   private:
     Ui::HomePage *ui;
+    ElaToggleSwitch *m_ToggleSwitch_Remote{nullptr};
     void LoadBackupFileList();
     void ApplyRemoteUrlFromInput(bool showSuccessMessage);
     QString m_NowFilePathWithCode;
