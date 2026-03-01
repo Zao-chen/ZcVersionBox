@@ -1,8 +1,0 @@
-P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/CMakeFiles/ZcVersionBox.dir
-P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/CMakeFiles/edit_cache.dir
-P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/CMakeFiles/rebuild_cache.dir
-P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/CMakeFiles/list_install_components.dir
-P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/CMakeFiles/install.dir
-P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/CMakeFiles/install/local.dir
-P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/CMakeFiles/ZcVersionBox_autogen_timestamp_deps.dir
-P:/Qt/Project/ZcVersionBox/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/CMakeFiles/ZcVersionBox_autogen.dir
