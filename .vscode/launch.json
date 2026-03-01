@@ -1,8 +1,15 @@
 {
-    "name": "Run (Release)",
-    "type": "cppvsdbg",
-    "request": "launch",
-    "program": "P:\\Qt\\Project\\ZcVersionBox\\build\\Desktop_Qt_6_6_3_MSVC2019_64bit-Release\\你的exe名字.exe",
-    "cwd": "P:\\Qt\\Project\\ZcVersionBox\\build\\Desktop_Qt_6_6_3_MSVC2019_64bit-Release",
-    "console": "integratedTerminal"
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Run (Release)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release/ZcVersionBox.exe",
+            "cwd": "${workspaceFolder}/build/Desktop_Qt_6_6_3_MSVC2019_64bit-Release",
+            "preLaunchTask": "Build Project",
+            "stopAtEntry": false,
+            "console": "integratedTerminal"
+        }
+    ]
 }

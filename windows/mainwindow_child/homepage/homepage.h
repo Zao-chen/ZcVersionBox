@@ -3,7 +3,10 @@
 
 #include <QWidget>
 
-namespace Ui {
+class ElaLineEdit;
+
+namespace Ui
+{
 class HomePage;
 }
 
@@ -11,19 +14,22 @@ class HomePage : public QWidget
 {
     Q_OBJECT
 
-public:
+  public:
     explicit HomePage(QWidget *parent = nullptr);
     void openBackup(QString FilePathWithCode);
     ~HomePage();
 
-private slots:
+  private slots:
     void on_widget_BreadcrumbBar_breadcrumbClicked(QString breadcrumb, QStringList lastBreadcrumbList);
     void on_ToggleSwitch_Remote_toggled(bool checked);
 
-private:
+  private:
     Ui::HomePage *ui;
     void LoadBackupFileList();
+    void ApplyRemoteUrlFromInput(bool showSuccessMessage);
     QString m_NowFilePathWithCode;
+    ElaLineEdit *m_RemoteUrlEdit{nullptr};
+    bool m_RemoteUiSyncing{false};
 };
 
 #endif // HOMEPAGE_H

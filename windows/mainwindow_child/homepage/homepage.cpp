@@ -1,93 +1,106 @@
 #include "homepage.h"
 #include "ui_homepage.h"
 
-#include "homepagechild_trackfile.h"
-#include "../../../utils/fileutils.h"
 #include "../../../GlobalConstants.h"
+#include "../../../utils/fileutils.h"
+#include "homepagechild_trackfile.h"
 
-#include "ElaPushButton.h"
-#include "ElaMessageBar.h"
-#include "ElaContentDialog.h"
 #include "ElaLineEdit.h"
+#include "ElaMessageBar.h"
+#include "ElaPushButton.h"
 
 #include <QDesktopServices>
+#include <QDir>
+#include <QFileSystemWatcher>
+#include <QProcess>
+#include <QSignalBlocker>
+#include <QSpacerItem>
 #include <QStandardItem>
 #include <QStandardPaths>
-#include <QDir>
-#include <QSpacerItem>
-#include <QFileSystemWatcher>
 #include <QUrl>
-#include <QProcess>
-
-#include <QInputDialog>
-#include <QLineEdit>
+#include <QVBoxLayout>
 
 HomePage::HomePage(QWidget *parent)
-    : QWidget(parent)
-    , ui(new Ui::HomePage)
+    : QWidget(parent), ui(new Ui::HomePage)
 {
     /*窗口初始化*/
     ui->setupUi(this);
     LoadBackupFileList();
 
-
-    // ===== Header =====
-    QWidget* drawerHeader = new QWidget(this);
-    QHBoxLayout* drawerHeaderLayout = new QHBoxLayout(drawerHeader);
-    drawerHeaderLayout->setContentsMargins(8,0,8,0);
-
-    ElaText* drawerIcon = new ElaText(this);
+    /*远程开关*/
+    QWidget *drawerHeader = new QWidget(this);
+    QHBoxLayout *drawerHeaderLayout = new QHBoxLayout(drawerHeader);
+    drawerHeaderLayout->setContentsMargins(8, 0, 8, 0);
+    //展开按钮
+    ElaText *drawerIcon = new ElaText(this);
     drawerIcon->setTextPixelSize(15);
     drawerIcon->setElaIcon(ElaIconType::MessageArrowDown);
-    drawerIcon->setFixedSize(25,25);
-
-    ElaText* drawerText = new ElaText("远程仓库", this);
+    drawerIcon->setFixedSize(25, 25);
+    //文本描述
+    ElaText *drawerText = new ElaText("远程仓库", this);
     drawerText->setTextPixelSize(15);
-
-    // ===== 开关 =====
-    ElaToggleSwitch* drawerSwitch = new ElaToggleSwitch(this);
-    ElaText* drawerSwitchText = new ElaText("关", this);
-    drawerSwitchText->setTextPixelSize(15);
-
-    //开关控制Drawer
-    connect(drawerSwitch, &ElaToggleSwitch::toggled,
-            this, [=](bool toggled)
+    //开关
+    connect(ui->ToggleSwitch_Remote,
+            &ElaToggleSwitch::toggled,
+            this,
+            [=](bool checked)
             {
-                if(toggled)
+                if (m_RemoteUiSyncing)
                 {
-                    drawerSwitchText->setText("开");
+                    return;
+                }
+                m_RemoteUiSyncing = true;
+                if (checked)
                     ui->ElaDrawerArea_Remote->expand();
-                }
                 else
-                {
-                    drawerSwitchText->setText("关");
                     ui->ElaDrawerArea_Remote->collapse();
-                }
+                m_RemoteUiSyncing = false;
             });
-
-    //Drawer状态反向控制开关
     connect(ui->ElaDrawerArea_Remote,
             &ElaDrawerArea::expandStateChanged,
             this,
             [=](bool isExpand)
             {
-                drawerSwitch->setIsToggled(isExpand);
+                if (m_RemoteUiSyncing)
+                    return;
+                m_RemoteUiSyncing = true;
+                ui->ToggleSwitch_Remote->setIsToggled(isExpand);
+                m_RemoteUiSyncing = false;
             });
 
-    // ===== Header布局 =====
+    //布局
     drawerHeaderLayout->addWidget(drawerIcon);
     drawerHeaderLayout->addWidget(drawerText);
     drawerHeaderLayout->addStretch();
-    drawerHeaderLayout->addWidget(drawerSwitchText);
-    drawerHeaderLayout->addWidget(drawerSwitch);
-
-    //设置Header
+    drawerHeaderLayout->addWidget(ui->ToggleSwitch_Remote);
     ui->ElaDrawerArea_Remote->setDrawerHeader(drawerHeader);
+    //展开内容
+    QWidget *remoteDrawerContent = new QWidget(this);
+    QVBoxLayout *remoteDrawerLayout = new QVBoxLayout(remoteDrawerContent);
+    remoteDrawerLayout->setContentsMargins(12, 8, 12, 8);
+    remoteDrawerLayout->setSpacing(8);
+    ElaText *remoteHintText = new ElaText("远程仓库地址", remoteDrawerContent);
+    remoteHintText->setTextPixelSize(13);
+    m_RemoteUrlEdit = new ElaLineEdit(remoteDrawerContent);
+    m_RemoteUrlEdit->setPlaceholderText(u8"请输入远程仓库地址");
+    QHBoxLayout *remoteRowLayout = new QHBoxLayout();
+    remoteRowLayout->setContentsMargins(0, 0, 0, 0);
+    remoteRowLayout->setSpacing(8);
+    remoteRowLayout->addWidget(remoteHintText);
+    remoteRowLayout->addWidget(m_RemoteUrlEdit, 1);
+    //保存内容
+    connect(m_RemoteUrlEdit,
+            &QLineEdit::editingFinished,
+            this,
+            [=]()
+            {
+                ApplyRemoteUrlFromInput(true);
+            });
+    //添加布局
+    remoteDrawerLayout->addLayout(remoteRowLayout);
+    ui->ElaDrawerArea_Remote->addDrawer(remoteDrawerContent);
 
-
-
-
-    //创建面包屑
+    /*创建面包屑*/
     QStringList breadcrumbBarList;
     ui->widget_BreadcrumbBar->setTextPixelSize(25);
     ui->widget_BreadcrumbBar->appendBreadcrumb("追踪中的文件");
@@ -98,8 +111,7 @@ HomePage::HomePage(QWidget *parent)
             this, [=](const QString &path)
             {
                 qInfo()<<"追踪中的文件列表变化："<<path;
-                LoadBackupFileList();
-            });
+                LoadBackupFileList(); });
 }
 
 HomePage::~HomePage()
@@ -114,12 +126,13 @@ void HomePage::LoadBackupFileList()
     QLayoutItem *child;
     while ((child = ui->verticalLayout_TrackFiles->takeAt(0)) != nullptr)
     {
-        if (QWidget *w = child->widget()) w->deleteLater();
+        if (QWidget *w = child->widget())
+            w->deleteLater();
         delete child;
     }
     /*获取所有备份文件夹*/
     //获取路径下所有文件夹并输出名字
-    QString docPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/ZcVersionBox/Backup";
+    QString docPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/ZcVersionBox/Backup";
     QDir dir(docPath);
     //只列出目录（排除文件），并排除 "." 和 ".."
     QStringList folderNames = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
@@ -133,6 +146,56 @@ void HomePage::LoadBackupFileList()
     ui->verticalLayout_TrackFiles->addItem(spacer);
 }
 
+//写入仓库
+void HomePage::ApplyRemoteUrlFromInput(bool showSuccessMessage)
+{
+    const QString url = m_RemoteUrlEdit->text().trimmed();
+
+    const QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
+    QProcess checkProcess;
+    checkProcess.setWorkingDirectory(repoPath);
+    checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
+    checkProcess.waitForFinished();
+    const bool hasOrigin = (checkProcess.exitCode() == 0);
+
+    QProcess setProcess;
+    setProcess.setWorkingDirectory(repoPath);
+    if (hasOrigin)
+    {
+        setProcess.start("git", QStringList() << "remote" << "set-url" << "origin" << url);
+    }
+    else
+    {
+        setProcess.start("git", QStringList() << "remote" << "add" << "origin" << url);
+    }
+    setProcess.waitForFinished();
+
+    if (setProcess.exitCode() != 0)
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "远程仓库设置失败",
+                             setProcess.readAllStandardError(),
+                             3000,
+                             parentWidget());
+        return;
+    }
+
+    {
+        QSignalBlocker blocker(ui->ToggleSwitch_Remote);
+        ui->ToggleSwitch_Remote->setIsToggled(true);
+    }
+    ui->ElaDrawerArea_Remote->expand();
+
+    if (showSuccessMessage)
+    {
+        ElaMessageBar::success(ElaMessageBarType::BottomRight,
+                               "远程仓库已自动保存",
+                               url,
+                               2000,
+                               parentWidget());
+    }
+}
+
 /*打开备份*/
 void HomePage::openBackup(QString FilePathWithCode)
 {
@@ -140,8 +203,7 @@ void HomePage::openBackup(QString FilePathWithCode)
 
     /*设置面包屑*/
     ui->widget_BreadcrumbBar->appendBreadcrumb(
-        QFileInfo(QUrl::fromPercentEncoding(FilePathWithCode.toUtf8())).baseName()
-        );
+        QFileInfo(QUrl::fromPercentEncoding(FilePathWithCode.toUtf8())).baseName());
     ui->stackedWidget->setCurrentIndex(1);
 
     /*设置表格*/
@@ -161,10 +223,11 @@ void HomePage::openBackup(QString FilePathWithCode)
     for (const QString &commitInfo : std::as_const(commitList))
     {
         QStringList parts = commitInfo.split(' ', Qt::SkipEmptyParts);
-        if (parts.size() < 2) continue;
+        if (parts.size() < 2)
+            continue;
         QString hash = parts.takeFirst();
         QString message = parts.join(" ");
-        QList<QStandardItem*> rowItems;
+        QList<QStandardItem *> rowItems;
         QStandardItem *item0 = new QStandardItem(hash);
         QStandardItem *item1 = new QStandardItem(message);
         QStandardItem *item2 = new QStandardItem(""); // 占位，用于按钮
@@ -174,9 +237,9 @@ void HomePage::openBackup(QString FilePathWithCode)
         rowItems << item0 << item1 << item2;
         model->appendRow(rowItems);
     }
-    ui->tableView_BackupFiles->setModel(model); //绑定模型到 TableView
-    ui->tableView_BackupFiles->verticalHeader()->setVisible(false); //隐藏左侧行号
-    ui->tableView_BackupFiles->setSelectionMode(QAbstractItemView::NoSelection); //禁止选择
+    ui->tableView_BackupFiles->setModel(model);                                    //绑定模型到 TableView
+    ui->tableView_BackupFiles->verticalHeader()->setVisible(false);                //隐藏左侧行号
+    ui->tableView_BackupFiles->setSelectionMode(QAbstractItemView::NoSelection);   //禁止选择
     ui->tableView_BackupFiles->setEditTriggers(QAbstractItemView::NoEditTriggers); //禁止编辑
     //设置列宽和表头行为
     ui->tableView_BackupFiles->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
@@ -200,7 +263,8 @@ void HomePage::openBackup(QString FilePathWithCode)
         layout->addWidget(button2);
         layout->addStretch();
         QString currentHash = model->item(row, 0)->text();
-        connect(button1, &QPushButton::clicked, this, [=]() {
+        connect(button1, &QPushButton::clicked, this, [=]()
+                {
             /*切换到指定的commit*/
             QString sourceRepoPath = BackupPath + "/" + m_NowFilePathWithCode;
             QProcess git;
@@ -219,9 +283,9 @@ void HomePage::openBackup(QString FilePathWithCode)
             QDesktopServices::openUrl(QUrl::fromLocalFile(destinationPath)); //打开文件夹
             /*将备份仓库切回 master*/
             git.start("git", QStringList() << "checkout" << "-f" << "master");
-            git.waitForFinished();
-        });
-        connect(button2, &QPushButton::clicked, this, [=]() {
+            git.waitForFinished(); });
+        connect(button2, &QPushButton::clicked, this, [=]()
+                {
             //回滚仓库
             QProcess git;
             git.setWorkingDirectory(BackupPath + "/" + m_NowFilePathWithCode);
@@ -247,19 +311,38 @@ void HomePage::openBackup(QString FilePathWithCode)
                     //删除从0到row行
                     for(int r = row-1; r >= 0; --r) model->removeRow(r);
                 }
-            }
-        });
+            } });
         QModelIndex index = model->index(row, 2);
         ui->tableView_BackupFiles->setIndexWidget(index, buttonWidget);
     }
 
-
-    //初始化远程开关
+    //初始化远程开关与远程地址输入框
     QProcess checkProcess;
     checkProcess.setWorkingDirectory(repoPath);
     checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
     checkProcess.waitForFinished();
-    ui->ToggleSwitch_Remote->setIsToggled(checkProcess.exitCode() == 0);
+
+    const bool hasOrigin = (checkProcess.exitCode() == 0);
+    const QString originUrl = QString::fromUtf8(checkProcess.readAllStandardOutput()).trimmed();
+    if (m_RemoteUrlEdit)
+    {
+        m_RemoteUrlEdit->setText(hasOrigin ? originUrl : QString());
+    }
+
+    m_RemoteUiSyncing = true;
+    {
+        QSignalBlocker blocker(ui->ToggleSwitch_Remote);
+        ui->ToggleSwitch_Remote->setIsToggled(hasOrigin);
+    }
+    if (hasOrigin)
+    {
+        ui->ElaDrawerArea_Remote->expand();
+    }
+    else
+    {
+        ui->ElaDrawerArea_Remote->collapse();
+    }
+    m_RemoteUiSyncing = false;
 }
 
 /*面包屑点击返回*/
@@ -271,101 +354,76 @@ void HomePage::on_widget_BreadcrumbBar_breadcrumbClicked(QString breadcrumb, QSt
 /*远程同步开关*/
 void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
 {
-    QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
-    /*解绑远程*/
-    if(!checked)
+    if (m_NowFilePathWithCode.isEmpty())
     {
-        QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
+        return;
+    }
+
+    const QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
+
+    /*关闭远程同步：解绑 origin*/
+    if (!checked)
+    {
+        QProcess checkProcess;
+        checkProcess.setWorkingDirectory(repoPath);
+        checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
+        checkProcess.waitForFinished();
+        if (checkProcess.exitCode() != 0)
+        {
+            return;
+        }
+
         QProcess process;
         process.setWorkingDirectory(repoPath);
         process.start("git", QStringList() << "remote" << "remove" << "origin");
         process.waitForFinished();
-        if(process.exitCode() == 0)
+        if (process.exitCode() == 0)
+        {
+            if (m_RemoteUrlEdit)
+            {
+                m_RemoteUrlEdit->clear();
+            }
             ElaMessageBar::success(ElaMessageBarType::BottomRight,
                                    "已解绑远程仓库",
                                    "",
                                    2000,
                                    parentWidget());
+        }
         else
+        {
             ElaMessageBar::error(ElaMessageBarType::BottomRight,
                                  "解绑失败",
                                  process.readAllStandardError(),
                                  3000,
                                  parentWidget());
+        }
         return;
     }
-    /*检查是否存在 origin*/
+
+    /*开启远程同步：未配置时保持展开并等待输入自动保存*/
     QProcess checkProcess;
     checkProcess.setWorkingDirectory(repoPath);
     checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
     checkProcess.waitForFinished();
-    /*没有远程，要求输入*/
-    if(checkProcess.exitCode() != 0)
+
+    if (checkProcess.exitCode() != 0)
     {
-        /*远程仓库输入*/
-        ElaContentDialog dialog(this);
-        dialog.setWindowTitle(u8"设置远程仓库");
-        dialog.setLeftButtonText(u8"取消");
-        dialog.setRightButtonText(u8"确认");
-        //关闭中间按钮
-        for(auto btn : dialog.findChildren<ElaPushButton*>())
-        {
-            if(btn->text() == "minimum")
-            {
-                btn->hide();
-                break;
-            }
-        }
-        ElaLineEdit* edit = new ElaLineEdit(&dialog);
-        edit->setPlaceholderText(u8"请输入远程仓库地址:");
-        dialog.setCentralWidget(edit);
-        //按钮行为
-        connect(&dialog,&ElaContentDialog::rightButtonClicked,&dialog,&QDialog::accept);
-        connect(&dialog,&ElaContentDialog::leftButtonClicked,&dialog,&QDialog::reject);
-        if(dialog.exec()!=QDialog::Accepted)
-        {
-            qDebug()<<"取消";
-            QSignalBlocker blocker(ui->ToggleSwitch_Remote);
-            ui->ToggleSwitch_Remote->setIsToggled(false);
-            return;
-        }
-        QString url = edit->text().trimmed();
-        if(url.isEmpty())
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "远程仓库设置失败",
-                                 "无效的Url",
-                                 3000,
-                                 parentWidget());
-            QSignalBlocker blocker(ui->ToggleSwitch_Remote);
-            ui->ToggleSwitch_Remote->setIsToggled(false);
-            return;
-        }
-        /*添加远程*/
-        QProcess addProcess;
-        addProcess.setWorkingDirectory(repoPath);
-        addProcess.start("git",
-                         QStringList() << "remote"
-                                       << "add"
-                                       << "origin"
-                                       << url.trimmed());
-        addProcess.waitForFinished();
-        if(addProcess.exitCode() != 0)
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "远程仓库设置失败",
-                                 addProcess.readAllStandardError(),
-                                 3000,
-                                 parentWidget());
-            ui->ToggleSwitch_Remote->setIsToggled(false);
-            return;
-        }
-        ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                               "远程仓库设置成功",
-                               url,
-                               3000,
+        ui->ElaDrawerArea_Remote->expand();
+        ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                               "请输入远程仓库地址",
+                               "输入完成后将自动保存",
+                               2500,
                                parentWidget());
+        ApplyRemoteUrlFromInput(false);
+        return;
     }
+
+    if (m_RemoteUrlEdit)
+    {
+        const QString originUrl = QString::fromUtf8(checkProcess.readAllStandardOutput()).trimmed();
+        m_RemoteUrlEdit->setText(originUrl);
+    }
+
     ElaMessageBar::success(ElaMessageBarType::BottomRight,
                            "远程同步已开启",
                            "",
