@@ -18,9 +18,9 @@ int main(int argc, char *argv[])
     MainWindow w;
     /*获取启动参数*/
     QStringList args = QCoreApplication::arguments();
-    args.removeFirst(); // args[0]是程序自身路径，去掉
+    args.removeFirst(); //args[0]是程序自身路径，去掉
 
-    if (args.isEmpty()) // 程序正常启动
+    if (args.isEmpty()) //程序正常启动
     {
         w.show();
     }
