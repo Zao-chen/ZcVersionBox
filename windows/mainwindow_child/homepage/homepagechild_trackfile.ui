@@ -50,7 +50,7 @@
       <item>
        <widget class="ElaPushButton" name="pushButton_OpenFile">
         <property name="text">
-         <string>打开文件</string>
+         <string>打开仓库</string>
         </property>
        </widget>
       </item>
@@ -80,15 +80,15 @@
    <header location="global">elatext.h</header>
   </customwidget>
   <customwidget>
-   <class>ElaPushButton</class>
-   <extends>QPushButton</extends>
-   <header location="global">elapushbutton.h</header>
-  </customwidget>
-  <customwidget>
    <class>ElaScrollPageArea</class>
    <extends>QWidget</extends>
    <header location="global">elascrollpagearea.h</header>
    <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>ElaPushButton</class>
+   <extends>QPushButton</extends>
+   <header location="global">elapushbutton.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

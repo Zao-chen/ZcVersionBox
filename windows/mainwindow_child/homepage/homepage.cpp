@@ -23,6 +23,14 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <QFileDialog>
+#include <QListView>
+#include <QMessageBox>
+#include <QTreeView>
+#include <QFileSystemModel>
+#include <ElaDialog.h>
+#include <ElaContentDialog.h>
+
 HomePage::HomePage(QWidget *parent)
     : QWidget(parent), ui(new Ui::HomePage)
 {
@@ -464,4 +472,74 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
                            "",
                            2000,
                            parentWidget());
+}
+
+/*添加仓库*/
+void HomePage::on_pushButton_AddFromLoc_clicked()
+{
+    ElaContentDialog dlg(this);
+
+    QWidget* central = new QWidget(&dlg);
+    QVBoxLayout* layout = new QVBoxLayout(central);
+
+    ElaText* label = new ElaText(tr("请选择要添加的是文件还是文件夹"), central);
+    layout->addWidget(label);
+
+    dlg.setCentralWidget(central);
+    dlg.setLeftButtonText(tr("文件"));
+    dlg.setMiddleButtonText(tr("文件夹"));
+    dlg.setRightButtonText(tr("取消"));
+
+    int choose = 0;
+
+    connect(&dlg,&ElaContentDialog::leftButtonClicked,&dlg,[&]()
+            {
+                choose = 1;
+                dlg.accept();
+            });
+
+    connect(&dlg,&ElaContentDialog::middleButtonClicked,&dlg,[&]()
+            {
+                choose = 2;
+                dlg.accept();
+            });
+
+    connect(&dlg,&ElaContentDialog::rightButtonClicked,&dlg,[&]()
+            {
+                dlg.reject();
+            });
+
+    if(dlg.exec() != QDialog::Accepted)
+        return;
+
+    QString path;
+
+    if(choose == 1)
+    {
+        path = QFileDialog::getOpenFileName(
+            this,
+            tr("选择文件"),
+            QDir::homePath(),
+            tr("All Files (*.*)")
+            );
+    }
+    else if(choose == 2)
+    {
+        path = QFileDialog::getExistingDirectory(
+            this,
+            tr("选择文件夹"),
+            QDir::homePath(),
+            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
+            );
+    }
+    else
+    {
+        return;
+    }
+
+    if(path.isEmpty())
+        return;
+
+    QString exePath = QCoreApplication::applicationFilePath();
+    QProcess::startDetached(exePath, QStringList() << path);
 }

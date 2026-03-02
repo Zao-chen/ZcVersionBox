@@ -24,6 +24,8 @@ class HomePage : public QWidget
     void on_widget_BreadcrumbBar_breadcrumbClicked(QString breadcrumb, QStringList lastBreadcrumbList);
     void on_ToggleSwitch_Remote_toggled(bool checked);
 
+    void on_pushButton_AddFromLoc_clicked();
+
   private:
     Ui::HomePage *ui;
     ElaToggleSwitch *m_ToggleSwitch_Remote{nullptr};
