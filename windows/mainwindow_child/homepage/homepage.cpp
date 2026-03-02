@@ -97,19 +97,18 @@ HomePage::HomePage(QWidget *parent)
     //从远程仓库同步（git pull）
     connect(btnPull, &ElaIconButton::clicked, this, [=]()
             {
-        
                 const QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
                 //执行 git pull
                 QProcess pullProcess;
                 pullProcess.setWorkingDirectory(repoPath);
                 pullProcess.start("git", QStringList() << "pull" << "origin" << "master");
                 pullProcess.waitForFinished();
-
+                //推送结果判断
                 if (pullProcess.exitCode() == 0)
                 {
                     ElaMessageBar::success(ElaMessageBarType::BottomRight,
                                         "同步成功",
-                                        "已从远程仓库同步最新版本",
+                                        "已从远程仓库拉取最新版本",
                                         2000,
                                         parentWidget());
                     openBackup(m_NowFilePathWithCode); //刷新备份列表
@@ -205,26 +204,20 @@ void HomePage::LoadBackupFileList()
 void HomePage::ApplyRemoteUrlFromInput(bool showSuccessMessage)
 {
     const QString url = m_RemoteUrlEdit->text().trimmed();
-
     const QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
     QProcess checkProcess;
+    //设置远程仓库
     checkProcess.setWorkingDirectory(repoPath);
     checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
     checkProcess.waitForFinished();
     const bool hasOrigin = (checkProcess.exitCode() == 0);
-
     QProcess setProcess;
     setProcess.setWorkingDirectory(repoPath);
     if (hasOrigin)
-    {
         setProcess.start("git", QStringList() << "remote" << "set-url" << "origin" << url);
-    }
     else
-    {
         setProcess.start("git", QStringList() << "remote" << "add" << "origin" << url);
-    }
     setProcess.waitForFinished();
-
     if (setProcess.exitCode() != 0)
     {
         ElaMessageBar::error(ElaMessageBarType::BottomRight,
@@ -234,13 +227,11 @@ void HomePage::ApplyRemoteUrlFromInput(bool showSuccessMessage)
                              parentWidget());
         return;
     }
-
     {
         QSignalBlocker blocker(m_ToggleSwitch_Remote);
         m_ToggleSwitch_Remote->setIsToggled(true);
     }
     ui->ElaDrawerArea_Remote->expand();
-
     if (showSuccessMessage)
     {
         ElaMessageBar::success(ElaMessageBarType::BottomRight,
@@ -264,7 +255,7 @@ void HomePage::openBackup(QString FilePathWithCode)
     /*设置表格*/
     //初始化表格模型
     QStandardItemModel *model = new QStandardItemModel(this);
-    model->setColumnCount(3); // 三列: commit hash, message, 操作
+    model->setColumnCount(3); //三列: commit hash, message, 操作
     model->setHorizontalHeaderLabels(QStringList() << "Commit" << "Message" << "操作");
     //获取 Git 仓库的所有 commit
     QString repoPath = BackupPath + "/" + FilePathWithCode;
@@ -285,7 +276,7 @@ void HomePage::openBackup(QString FilePathWithCode)
         QList<QStandardItem *> rowItems;
         QStandardItem *item0 = new QStandardItem(hash);
         QStandardItem *item1 = new QStandardItem(message);
-        QStandardItem *item2 = new QStandardItem(""); // 占位，用于按钮
+        QStandardItem *item2 = new QStandardItem(""); //占位，用于按钮
         item0->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
         item1->setTextAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
         item2->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
@@ -320,83 +311,77 @@ void HomePage::openBackup(QString FilePathWithCode)
         QString currentHash = model->item(row, 0)->text();
         connect(button1, &QPushButton::clicked, this, [=]()
                 {
-            /*切换到指定的commit*/
-            QString sourceRepoPath = BackupPath + "/" + m_NowFilePathWithCode;
-            QProcess git;
-            git.setWorkingDirectory(sourceRepoPath);
-            QString shortId = currentHash; //获取短 ID 方便后续命名
-            git.start("git", QStringList() << "checkout" << "-f" << shortId); //强制切换到历史版本
-            git.waitForFinished();
-            /*准备临时目标路径*/
-            QString pureFolderName = QFileInfo(m_NowFilePathWithCode).fileName();
-            QString destinationPath = QDir::tempPath() + "/ZcBox_Preview_" + shortId + "_" + pureFolderName;
-            QDir oldDir(destinationPath); //清理已存在的旧预览目录
-            if (oldDir.exists()) oldDir.removeRecursively();
-            /*执行复制并处理属性*/
-            FileUtils::copyDirectory(sourceRepoPath, destinationPath);
-            FileUtils::setReadOnlyRecursive(destinationPath); //设置只读保护
-            QDesktopServices::openUrl(QUrl::fromLocalFile(destinationPath)); //打开文件夹
-            /*将备份仓库切回 master*/
-            git.start("git", QStringList() << "checkout" << "-f" << "master");
-            git.waitForFinished(); });
+                    /*切换到指定的commit*/
+                    QString sourceRepoPath = BackupPath + "/" + m_NowFilePathWithCode;
+                    QProcess git;
+                    git.setWorkingDirectory(sourceRepoPath);
+                    QString shortId = currentHash; //获取短 ID 方便后续命名
+                    git.start("git", QStringList() << "checkout" << "-f" << shortId); //强制切换到历史版本
+                    git.waitForFinished();
+                    /*准备临时目标路径*/
+                    QString pureFolderName = QFileInfo(m_NowFilePathWithCode).fileName();
+                    QString destinationPath = QDir::tempPath() + "/ZcBox_Preview_" + shortId + "_" + pureFolderName;
+                    QDir oldDir(destinationPath); //清理已存在的旧预览目录
+                    if (oldDir.exists()) oldDir.removeRecursively();
+                    /*执行复制并处理属性*/
+                    FileUtils::copyDirectory(sourceRepoPath, destinationPath);
+                    FileUtils::setReadOnlyRecursive(destinationPath); //设置只读保护
+                    QDesktopServices::openUrl(QUrl::fromLocalFile(destinationPath)); //打开文件夹
+                    /*将备份仓库切回 master*/
+                    git.start("git", QStringList() << "checkout" << "-f" << "master");
+                    git.waitForFinished();
+                });
         connect(button2, &QPushButton::clicked, this, [=]()
                 {
-            //回滚仓库
-            QProcess git;
-            git.setWorkingDirectory(BackupPath + "/" + m_NowFilePathWithCode);
-            QString shortId = currentHash;
-            git.start("git", QStringList() << "reset" << "--hard" << shortId);
-            git.waitForFinished();
-            //替换源文件
-            QString sourceFilePath = QUrl::fromPercentEncoding(m_NowFilePathWithCode.toUtf8());
-            QString backupFilePath = BackupPath + "/" + m_NowFilePathWithCode + "/" + QFileInfo(sourceFilePath).fileName();
-            if(QFile::exists(sourceFilePath)) QFile::remove(sourceFilePath);
-            QFile::copy(backupFilePath, sourceFilePath);
-            //提示
-            ElaMessageBar::success(ElaMessageBarType::BottomRight, "还原成功", "已还原至" + currentHash, 3000, parentWidget());
-            //删除当前行及以上
-            QStandardItemModel* model = qobject_cast<QStandardItemModel*>(ui->tableView_BackupFiles->model());
-            if(model)
-            {
-                //找到当前行索引
-                QModelIndexList matches = model->match(model->index(0,0), Qt::DisplayRole, currentHash, 1, Qt::MatchExactly);
-                if(!matches.isEmpty())
-                {
-                    int row = matches.first().row();
-                    //删除从0到row行
-                    for(int r = row-1; r >= 0; --r) model->removeRow(r);
-                }
-            } });
+                    //回滚仓库
+                    QProcess git;
+                    git.setWorkingDirectory(BackupPath + "/" + m_NowFilePathWithCode);
+                    QString shortId = currentHash;
+                    git.start("git", QStringList() << "reset" << "--hard" << shortId);
+                    git.waitForFinished();
+                    //替换源文件
+                    QString sourceFilePath = QUrl::fromPercentEncoding(m_NowFilePathWithCode.toUtf8());
+                    QString backupFilePath = BackupPath + "/" + m_NowFilePathWithCode + "/" + QFileInfo(sourceFilePath).fileName();
+                    if(QFile::exists(sourceFilePath)) QFile::remove(sourceFilePath);
+                    QFile::copy(backupFilePath, sourceFilePath);
+                    //提示
+                    ElaMessageBar::success(ElaMessageBarType::BottomRight, "还原成功", "已还原至" + currentHash, 3000, parentWidget());
+                    //删除当前行及以上
+                    QStandardItemModel* model = qobject_cast<QStandardItemModel*>(ui->tableView_BackupFiles->model());
+                    if(model)
+                    {
+                        //找到当前行索引
+                        QModelIndexList matches = model->match(model->index(0,0), Qt::DisplayRole, currentHash, 1, Qt::MatchExactly);
+                        if(!matches.isEmpty())
+                        {
+                            int row = matches.first().row();
+                            //删除从0到row行
+                            for(int r = row-1; r >= 0; --r) model->removeRow(r);
+                        }
+                    }
+                });
         QModelIndex index = model->index(row, 2);
         ui->tableView_BackupFiles->setIndexWidget(index, buttonWidget);
     }
-
     //初始化远程开关与远程地址输入框
     QProcess checkProcess;
     checkProcess.setWorkingDirectory(repoPath);
     checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
     checkProcess.waitForFinished();
-
+    //读取并设置到输入框
     const bool hasOrigin = (checkProcess.exitCode() == 0);
     const QString originUrl = QString::fromUtf8(checkProcess.readAllStandardOutput()).trimmed();
     if (m_RemoteUrlEdit)
-    {
         m_RemoteUrlEdit->setText(hasOrigin ? originUrl : QString());
-    }
-
     m_RemoteUiSyncing = true;
     {
         QSignalBlocker blocker(m_ToggleSwitch_Remote);
         m_ToggleSwitch_Remote->setIsToggled(hasOrigin);
     }
     if (hasOrigin)
-    {
         ui->ElaDrawerArea_Remote->expand();
-    }
     else
-    {
         ui->ElaDrawerArea_Remote->collapse();
-    }
     m_RemoteUiSyncing = false;
 }
 
@@ -413,7 +398,6 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
     {
         return;
     }
-
     const QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
 
     /*关闭远程同步：解绑 origin*/
@@ -424,9 +408,7 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
         checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
         checkProcess.waitForFinished();
         if (checkProcess.exitCode() != 0)
-        {
             return;
-        }
 
         QProcess process;
         process.setWorkingDirectory(repoPath);
@@ -460,7 +442,7 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
     checkProcess.setWorkingDirectory(repoPath);
     checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
     checkProcess.waitForFinished();
-
+    //结果反馈和提示
     if (checkProcess.exitCode() != 0)
     {
         ui->ElaDrawerArea_Remote->expand();
@@ -472,13 +454,11 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
         ApplyRemoteUrlFromInput(false);
         return;
     }
-
     if (m_RemoteUrlEdit)
     {
         const QString originUrl = QString::fromUtf8(checkProcess.readAllStandardOutput()).trimmed();
         m_RemoteUrlEdit->setText(originUrl);
     }
-
     ElaMessageBar::success(ElaMessageBarType::BottomRight,
                            "远程同步已开启",
                            "",
