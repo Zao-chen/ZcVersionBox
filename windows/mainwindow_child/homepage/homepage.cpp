@@ -23,13 +23,13 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include <ElaContentDialog.h>
+#include <ElaDialog.h>
 #include <QFileDialog>
+#include <QFileSystemModel>
 #include <QListView>
 #include <QMessageBox>
 #include <QTreeView>
-#include <QFileSystemModel>
-#include <ElaDialog.h>
-#include <ElaContentDialog.h>
 
 HomePage::HomePage(QWidget *parent)
     : QWidget(parent), ui(new Ui::HomePage)
@@ -97,11 +97,29 @@ HomePage::HomePage(QWidget *parent)
     ElaIconButton *btnPush = new ElaIconButton(ElaIconType::Upload, 16, remoteDrawerContent);
     btnPush->setFixedSize(32, 32);
     btnPush->setToolTip("上传到远程仓库");
+    ElaIconButton *btnOpen = new ElaIconButton(ElaIconType::Link, 16, remoteDrawerContent);
+    btnOpen->setFixedSize(32, 32);
+    btnOpen->setToolTip("打开远程仓库");
+    remoteRowLayout->addWidget(btnOpen);
     remoteRowLayout->addWidget(btnPull);
     remoteRowLayout->addWidget(btnPush);
     //保存内容
     connect(m_RemoteUrlEdit, &QLineEdit::editingFinished, this, [=]()
             { ApplyRemoteUrlFromInput(true); });
+    //打开远程仓库链接
+    connect(btnOpen, &ElaIconButton::clicked, this, [=]()
+            {
+                QString repoUrl = m_RemoteUrlEdit->text().trimmed();
+                if (repoUrl.isEmpty())
+                {
+                    ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                                        "打开失败",
+                                        "请先输入远程仓库地址",
+                                        2000,
+                                        parentWidget());
+                    return;
+                }
+                QDesktopServices::openUrl(QUrl(repoUrl)); });
     //从远程仓库同步（git pull）
     connect(btnPull, &ElaIconButton::clicked, this, [=]()
             {
@@ -158,6 +176,7 @@ HomePage::HomePage(QWidget *parent)
                                         3000,
                                         parentWidget());
                 } });
+
     //添加布局
     remoteDrawerLayout->addLayout(remoteRowLayout);
     ui->ElaDrawerArea_Remote->addDrawer(remoteDrawerContent);
@@ -337,8 +356,7 @@ void HomePage::openBackup(QString FilePathWithCode)
                     QDesktopServices::openUrl(QUrl::fromLocalFile(destinationPath)); //打开文件夹
                     /*将备份仓库切回 master*/
                     git.start("git", QStringList() << "checkout" << "-f" << "master");
-                    git.waitForFinished();
-                });
+                    git.waitForFinished(); });
         connect(button2, &QPushButton::clicked, this, [=]()
                 {
                     //回滚仓库
@@ -366,8 +384,7 @@ void HomePage::openBackup(QString FilePathWithCode)
                             //删除从0到row行
                             for(int r = row-1; r >= 0; --r) model->removeRow(r);
                         }
-                    }
-                });
+                    } });
         QModelIndex index = model->index(row, 2);
         ui->tableView_BackupFiles->setIndexWidget(index, buttonWidget);
     }
@@ -391,6 +408,9 @@ void HomePage::openBackup(QString FilePathWithCode)
     else
         ui->ElaDrawerArea_Remote->collapse();
     m_RemoteUiSyncing = false;
+
+    /*设置焦点到表格，避免自动聚焦到远程URL输入框*/
+    ui->tableView_BackupFiles->setFocus();
 }
 
 /*面包屑点击返回*/
@@ -474,15 +494,16 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
                            parentWidget());
 }
 
-/*添加仓库*/
+/*添加本地仓库*/
 void HomePage::on_pushButton_AddFromLoc_clicked()
 {
     ElaContentDialog dlg(this);
 
-    QWidget* central = new QWidget(&dlg);
-    QVBoxLayout* layout = new QVBoxLayout(central);
+    QWidget *central = new QWidget(&dlg);
+    QVBoxLayout *layout = new QVBoxLayout(central);
 
-    ElaText* label = new ElaText(tr("请选择要添加的是文件还是文件夹"), central);
+    ElaText *label = new ElaText(tr("请选择要添加的是文件还是文件夹"), central);
+    label->setTextPixelSize(16);
     layout->addWidget(label);
 
     dlg.setCentralWidget(central);
@@ -492,52 +513,46 @@ void HomePage::on_pushButton_AddFromLoc_clicked()
 
     int choose = 0;
 
-    connect(&dlg,&ElaContentDialog::leftButtonClicked,&dlg,[&]()
+    connect(&dlg, &ElaContentDialog::leftButtonClicked, &dlg, [&]()
             {
                 choose = 1;
-                dlg.accept();
-            });
+                dlg.accept(); });
 
-    connect(&dlg,&ElaContentDialog::middleButtonClicked,&dlg,[&]()
+    connect(&dlg, &ElaContentDialog::middleButtonClicked, &dlg, [&]()
             {
                 choose = 2;
-                dlg.accept();
-            });
+                dlg.accept(); });
 
-    connect(&dlg,&ElaContentDialog::rightButtonClicked,&dlg,[&]()
-            {
-                dlg.reject();
-            });
+    connect(&dlg, &ElaContentDialog::rightButtonClicked, &dlg, [&]()
+            { dlg.reject(); });
 
-    if(dlg.exec() != QDialog::Accepted)
+    if (dlg.exec() != QDialog::Accepted)
         return;
 
     QString path;
 
-    if(choose == 1)
+    if (choose == 1)
     {
         path = QFileDialog::getOpenFileName(
             this,
             tr("选择文件"),
             QDir::homePath(),
-            tr("All Files (*.*)")
-            );
+            tr("All Files (*.*)"));
     }
-    else if(choose == 2)
+    else if (choose == 2)
     {
         path = QFileDialog::getExistingDirectory(
             this,
             tr("选择文件夹"),
             QDir::homePath(),
-            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks
-            );
+            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     }
     else
     {
         return;
     }
 
-    if(path.isEmpty())
+    if (path.isEmpty())
         return;
 
     QString exePath = QCoreApplication::applicationFilePath();
