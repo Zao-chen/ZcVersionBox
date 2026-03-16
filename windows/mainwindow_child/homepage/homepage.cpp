@@ -8,7 +8,6 @@
 #include "ElaIconButton.h"
 #include "ElaLineEdit.h"
 #include "ElaMessageBar.h"
-#include "ElaPushButton.h"
 #include "ElaText.h"
 #include "ElaToggleSwitch.h"
 
@@ -52,28 +51,20 @@ HomePage::HomePage(QWidget *parent)
     ElaText *drawerText = new ElaText("远程仓库", this);
     drawerText->setTextPixelSize(15);
     //开关
-    connect(m_ToggleSwitch_Remote, &ElaToggleSwitch::toggled, this,
+    connect(m_ToggleSwitch_Remote, &ElaToggleSwitch::toggled, this, //使用按钮开关
             [=](bool checked)
             {
-                if (m_RemoteUiSyncing)
-                    return;
-                m_RemoteUiSyncing = true;
                 if (checked)
                     ui->ElaDrawerArea_Remote->expand();
                 else
                     ui->ElaDrawerArea_Remote->collapse();
-                m_RemoteUiSyncing = false;
             });
-    connect(ui->ElaDrawerArea_Remote, &ElaDrawerArea::expandStateChanged, this,
+    connect(ui->ElaDrawerArea_Remote, &ElaDrawerArea::expandStateChanged, this, //使用展开开关
             [=](bool isExpand)
             {
-                if (m_RemoteUiSyncing)
-                    return;
-                m_RemoteUiSyncing = true;
                 m_ToggleSwitch_Remote->setIsToggled(isExpand);
-                m_RemoteUiSyncing = false;
             });
-    connect(m_ToggleSwitch_Remote, &ElaToggleSwitch::toggled, this, &HomePage::on_ToggleSwitch_Remote_toggled);
+    connect(m_ToggleSwitch_Remote, &ElaToggleSwitch::toggled, this, &HomePage::on_ToggleSwitch_Remote_toggled); //展开
     //布局
     drawerHeaderLayout->addWidget(drawerIcon);
     drawerHeaderLayout->addWidget(drawerText);
@@ -398,7 +389,6 @@ void HomePage::openBackup(QString FilePathWithCode)
     const QString originUrl = QString::fromUtf8(checkProcess.readAllStandardOutput()).trimmed();
     if (m_RemoteUrlEdit)
         m_RemoteUrlEdit->setText(hasOrigin ? originUrl : QString());
-    m_RemoteUiSyncing = true;
     {
         QSignalBlocker blocker(m_ToggleSwitch_Remote);
         m_ToggleSwitch_Remote->setIsToggled(hasOrigin);
@@ -407,7 +397,6 @@ void HomePage::openBackup(QString FilePathWithCode)
         ui->ElaDrawerArea_Remote->expand();
     else
         ui->ElaDrawerArea_Remote->collapse();
-    m_RemoteUiSyncing = false;
 
     /*设置焦点到表格，避免自动聚焦到远程URL输入框*/
     ui->tableView_BackupFiles->setFocus();

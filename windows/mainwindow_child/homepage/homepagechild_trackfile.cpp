@@ -2,25 +2,26 @@
 #include "ui_homepagechild_trackfile.h"
 
 #include "../../../GlobalConstants.h"
-#include "homepage.h"
 #include "../../../utils/fileutils.h"
+#include "homepage.h"
 
-#include <QFileInfo>
-#include <QDesktopServices>
-#include <QStandardPaths>
-#include <QDir>
-#include <QRegularExpression>
+
 #include <QCryptographicHash>
+#include <QDesktopServices>
+#include <QDir>
+#include <QDirIterator>
+#include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QProcess>
+#include <QRegularExpression>
+#include <QStandardPaths>
 #include <QTimer>
-#include <QDirIterator>
+
 
 #include "ElaToolTip.h"
 
 HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidget *parent)
-    : QWidget(parent)
-    , ui(new Ui::HomePageChild_TrackFile)
+    : QWidget(parent), ui(new Ui::HomePageChild_TrackFile)
 {
     /*初始化*/
     ui->setupUi(this);
@@ -28,36 +29,27 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
     m_FilePathWithCode = FilePathWithCode;
     /*显示设置*/
     ui->label->setText(QFileInfo(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8())).fileName());
-    ElaToolTip* NameToolTip = new ElaToolTip(ui->label);
+    ElaToolTip *NameToolTip = new ElaToolTip(ui->label);
     NameToolTip->setToolTip(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8()));
 
-
-
     /*开始备份*/
-
     QTimer *timer = new QTimer(this);
     timer->setInterval(1500); // 1.5秒扫描一次
-
     QString rootPath = QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8());
     rootPath = QDir::cleanPath(rootPath);
-
     QMap<QString, QString> lastState; // path -> fingerprint
-
-    // 计算文件指纹：一般备份场景足够
+    //计算文件指纹
     auto calcFingerprint = [](const QFileInfo &info) -> QString
     {
         return QString::number(info.size()) + "|" +
                QString::number(info.lastModified().toMSecsSinceEpoch());
     };
-
-    // 递归扫描
-    // 递归扫描：按值捕获 rootPath（非常关键：不能用 [&]）
+    //递归扫描
     auto scanDirectory = [rootPath](QMap<QString, QString> &state)
     {
         QDirIterator it(rootPath,
                         QDir::Files | QDir::Readable | QDir::NoSymLinks,
                         QDirIterator::Subdirectories);
-
         while (it.hasNext())
         {
             it.next();
@@ -80,16 +72,14 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
         }
     };
 
-    // 初始化
+    //初始化
     scanDirectory(lastState);
 
-    // 防止备份重入（备份过程中不重复触发）
-    bool *busy = new bool(false); // 简单做法；也可用成员变量更干净
-
+    //防止备份重入（备份过程中不重复触发）
+    bool *busy = new bool(false); //简单做法；也可用成员变量更干净
     connect(timer, &QTimer::timeout, this, [=]() mutable
             {
                 if (*busy) return;
-
                 QMap<QString, QString> newState;
                 scanDirectory(newState);
 
@@ -97,14 +87,10 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
                 {
                     *busy = true;
                     qInfo() << "检测到文件系统变化";
-
-                    BackupFile(); // 若耗时很长，建议改成异步/线程
-
+                    BackupFile();
                     lastState = std::move(newState);
                     *busy = false;
-                }
-            });
-
+                } });
     timer->start();
 }
 
@@ -123,9 +109,9 @@ void HomePageChild_TrackFile::on_pushButton_OpenFile_clicked()
 void HomePageChild_TrackFile::on_pushButton_RemoveTrack_clicked()
 {
     //删除文件夹
-    QString docPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation)+"/ZcVersionBox/Backup";
+    QString docPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/ZcVersionBox/Backup";
     QDir dir(BackupPath + "/" + m_FilePathWithCode);
-    qInfo()<<"移除追踪："<<dir;
+    qInfo() << "移除追踪：" << dir;
     dir.removeRecursively();
     this->deleteLater();
 }
@@ -135,7 +121,8 @@ void HomePageChild_TrackFile::BackupFile()
 {
     QString FilePathWithoutCode = QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8());
     QString backupDirPath = BackupPath + "/" + m_FilePathWithCode + "/" + QFileInfo(FilePathWithoutCode).fileName();
-    if (QFile::exists(backupDirPath)) QFile::remove(backupDirPath);
+    if (QFile::exists(backupDirPath))
+        QFile::remove(backupDirPath);
     FileUtils::copyDirectory(FilePathWithoutCode, backupDirPath);
     /*Git自动Commit*/
     QProcess git;
@@ -163,5 +150,3 @@ void HomePageChild_TrackFile::on_pushButton_Backup_clicked()
     HomePage *mw = qobject_cast<HomePage *>(this->parent()->parent()->parent());
     mw->openBackup(m_FilePathWithCode);
 }
-
-

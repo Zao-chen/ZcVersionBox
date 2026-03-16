@@ -33,7 +33,6 @@ class HomePage : public QWidget
     void ApplyRemoteUrlFromInput(bool showSuccessMessage);
     QString m_NowFilePathWithCode;
     ElaLineEdit *m_RemoteUrlEdit{nullptr}; //远程仓库地址输入框
-    bool m_RemoteUiSyncing{false}; //是否正在进行远程开关，防止反复
 };
 
 #endif // HOMEPAGE_H
