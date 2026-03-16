@@ -3,7 +3,8 @@
 
 #include <QWidget>
 
-namespace Ui {
+namespace Ui
+{
 class HomePageChild_TrackFile;
 }
 
@@ -11,16 +12,16 @@ class HomePageChild_TrackFile : public QWidget
 {
     Q_OBJECT
 
-public:
+  public:
     explicit HomePageChild_TrackFile(QString FilePath, QWidget *parent = nullptr);
     ~HomePageChild_TrackFile();
 
-private slots:
+  private slots:
     void on_pushButton_OpenFile_clicked();
     void on_pushButton_RemoveTrack_clicked();
     void on_pushButton_Backup_clicked();
 
-private:
+  private:
     Ui::HomePageChild_TrackFile *ui;
     QString m_FilePathWithCode;
     void BackupFile(); //备份文件

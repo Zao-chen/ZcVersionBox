@@ -1,10 +1,9 @@
 #include "homepagechild_trackfile.h"
 #include "ui_homepagechild_trackfile.h"
 
-#include "../../../GlobalConstants.h"
-#include "../../../utils/fileutils.h"
-#include "homepage.h"
-
+#include "../../../../GlobalConstants.h"
+#include "../../../../utils/fileutils.h"
+#include "../homepage.h"
 
 #include <QCryptographicHash>
 #include <QDesktopServices>
@@ -16,7 +15,6 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTimer>
-
 
 #include "ElaToolTip.h"
 

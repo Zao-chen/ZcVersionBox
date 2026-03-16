@@ -29,6 +29,8 @@ class HomePage : public QWidget
   private:
     Ui::HomePage *ui;
     ElaToggleSwitch *m_ToggleSwitch_Remote{nullptr};
+    void SetupTrackFilesPage();
+    void SetupBackupPage();
     void LoadBackupFileList();
     void ApplyRemoteUrlFromInput(bool showSuccessMessage);
     QString m_NowFilePathWithCode;
