@@ -9,6 +9,7 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
+#include <QFile>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
 #include <QProcess>
@@ -35,6 +36,7 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
     timer->setInterval(1500); // 1.5秒扫描一次
     QString rootPath = QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8());
     rootPath = QDir::cleanPath(rootPath);
+    const bool isTrackedFile = QFileInfo(rootPath).isFile();
     QMap<QString, QString> lastState; // path -> fingerprint
     //计算文件指纹
     auto calcFingerprint = [](const QFileInfo &info) -> QString
@@ -43,8 +45,19 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
                QString::number(info.lastModified().toMSecsSinceEpoch());
     };
     //递归扫描
-    auto scanDirectory = [rootPath](QMap<QString, QString> &state)
+    auto scanState = [rootPath, isTrackedFile](QMap<QString, QString> &state)
     {
+        if (isTrackedFile)
+        {
+            QFileInfo info(rootPath);
+            if (info.exists() && info.isFile())
+            {
+                state[rootPath] = QString::number(info.size()) + "|" +
+                                  QString::number(info.lastModified().toMSecsSinceEpoch());
+            }
+            return;
+        }
+
         QDirIterator it(rootPath,
                         QDir::Files | QDir::Readable | QDir::NoSymLinks,
                         QDirIterator::Subdirectories);
@@ -71,7 +84,7 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
     };
 
     //初始化
-    scanDirectory(lastState);
+    scanState(lastState);
 
     //防止备份重入（备份过程中不重复触发）
     bool *busy = new bool(false); //简单做法；也可用成员变量更干净
@@ -79,7 +92,7 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
             {
                 if (*busy) return;
                 QMap<QString, QString> newState;
-                scanDirectory(newState);
+                scanState(newState);
 
                 if (newState != lastState)
                 {
@@ -119,9 +132,19 @@ void HomePageChild_TrackFile::BackupFile()
 {
     QString FilePathWithoutCode = QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8());
     QString backupDirPath = BackupPath + "/" + m_FilePathWithCode + "/" + QFileInfo(FilePathWithoutCode).fileName();
+    const QFileInfo sourceInfo(FilePathWithoutCode);
     if (QFile::exists(backupDirPath))
         QFile::remove(backupDirPath);
-    FileUtils::copyDirectory(FilePathWithoutCode, backupDirPath);
+
+    if (sourceInfo.isFile())
+    {
+        QFile::copy(FilePathWithoutCode, backupDirPath);
+    }
+    else
+    {
+        FileUtils::copyDirectory(FilePathWithoutCode, backupDirPath);
+    }
+
     /*Git自动Commit*/
     QProcess git;
     git.setWorkingDirectory(BackupPath + "/" + m_FilePathWithCode);

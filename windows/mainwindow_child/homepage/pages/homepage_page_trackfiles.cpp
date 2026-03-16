@@ -91,35 +91,42 @@ void HomePage::on_pushButton_AddFromLoc_clicked()
     connect(&dlg, &ElaContentDialog::leftButtonClicked, &dlg, [&]()
             {
                 choose = 1;
-                dlg.accept(); });
+                dlg.close(); });
 
     connect(&dlg, &ElaContentDialog::middleButtonClicked, &dlg, [&]()
             {
                 choose = 2;
-                dlg.accept(); });
+                dlg.close(); });
 
     connect(&dlg, &ElaContentDialog::rightButtonClicked, &dlg, [&]()
-            { dlg.reject(); });
+            {
+                choose = 0;
+                dlg.close(); });
 
-    if (dlg.exec() != QDialog::Accepted)
-        return;
+    dlg.exec();
 
     QString path;
+    QWidget *owner = this->window();
+
     if (choose == 1)
     {
+        QFileDialog::Options options;
         path = QFileDialog::getOpenFileName(
-            this,
+            owner,
             tr("选择文件"),
             QDir::homePath(),
-            tr("All Files (*.*)"));
+            tr("All Files (*.*)"),
+            nullptr,
+            options);
     }
     else if (choose == 2)
     {
+        QFileDialog::Options options = QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks;
         path = QFileDialog::getExistingDirectory(
-            this,
+            owner,
             tr("选择文件夹"),
             QDir::homePath(),
-            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+            options);
     }
     else
     {

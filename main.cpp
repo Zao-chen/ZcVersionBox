@@ -5,6 +5,8 @@
 #include "utils/fileutils.h"
 
 #include <QApplication>
+#include <QFile>
+#include <QFileInfo>
 #include <QMessageBox>
 #include <QProcess>
 #include <QSystemTrayIcon>
@@ -28,14 +30,24 @@ int main(int argc, char *argv[])
     {
         /*同步文件到仓库*/
         QDir dir(BackupPath);
-        dir.mkpath(BackupPath + "/" + QUrl::toPercentEncoding(args.first()));
-        FileUtils::copyDirectory(
-            args.first(), BackupPath + "/" + QUrl::toPercentEncoding(args.first()) +
-                              "/" + QFileInfo(args.first()).fileName());
+        const QString sourcePath = args.first();
+        const QString repoPath = BackupPath + "/" + QUrl::toPercentEncoding(sourcePath);
+        const QString backupPath = repoPath + "/" + QFileInfo(sourcePath).fileName();
+        dir.mkpath(repoPath);
+
+        if (QFileInfo(sourcePath).isFile())
+        {
+            QFile::remove(backupPath);
+            QFile::copy(sourcePath, backupPath);
+        }
+        else
+        {
+            FileUtils::copyDirectory(sourcePath, backupPath);
+        }
+
         /*创建初始化Git仓库*/
         QProcess git;
-        git.setWorkingDirectory(BackupPath + "/" +
-                                QUrl::toPercentEncoding(args.first()));
+        git.setWorkingDirectory(repoPath);
         git.start("git", QStringList() << "init");
         git.waitForFinished();
         git.start("git", QStringList() << "add" << ".");
