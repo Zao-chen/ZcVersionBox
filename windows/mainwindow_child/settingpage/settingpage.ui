@@ -52,7 +52,7 @@
          </font>
         </property>
         <property name="text">
-         <string>添加到右键菜单</string>
+         <string>在右键菜单显示快捷入口</string>
         </property>
        </widget>
       </item>

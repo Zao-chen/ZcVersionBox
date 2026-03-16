@@ -50,21 +50,21 @@
       <item>
        <widget class="ElaPushButton" name="pushButton_OpenFile">
         <property name="text">
-         <string>打开仓库</string>
+         <string>打开文件</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="ElaPushButton" name="pushButton_Backup">
         <property name="text">
-         <string>查看备份</string>
+         <string>查看历史备份</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="ElaPushButton" name="pushButton_RemoveTrack">
         <property name="text">
-         <string>移除追踪</string>
+         <string>停止自动备份</string>
         </property>
        </widget>
       </item>

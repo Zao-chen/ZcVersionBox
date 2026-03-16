@@ -8,16 +8,12 @@
 #include <QmessageBox>
 
 MainWindow::MainWindow(QWidget *parent)
-    : ElaWindow(parent)
-    , ui(new Ui::MainWindow)
+    : ElaWindow(parent), ui(new Ui::MainWindow)
 {
     /*初始化设定*/
     setUserInfoCardVisible(false);
     setWindowTitle("ZcVersionBox");
     setUserInfoCardTitle("VersionBox");
-
-    qDebug() << "cwd=" << QDir::currentPath();
-    qDebug() << "appDir=" << QCoreApplication::applicationDirPath();
 
     /*托盘*/
     //创建托盘
@@ -29,8 +25,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_exitAppAction = new QAction("退出", this);
     m_menu->addAction(m_exitAppAction);
     m_sysTrayIcon->setContextMenu(m_menu);
-    connect(m_showWin,SIGNAL(triggered()),this,SLOT(on_showMainAction()));
-    connect(m_exitAppAction,SIGNAL(triggered()),this,SLOT(on_exitAppAction()));
+    connect(m_showWin, SIGNAL(triggered()), this, SLOT(on_showMainAction()));
+    connect(m_exitAppAction, SIGNAL(triggered()), this, SLOT(on_exitAppAction()));
     //设置图标
     QIcon icon = QIcon(":/img/ico/res/img/logo.png"); //资源文件添加的图标
     m_sysTrayIcon->setIcon(icon);
@@ -39,7 +35,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_sysTrayIcon, &QSystemTrayIcon::activated, //给QSystemTrayIcon添加槽函数
             [=](QSystemTrayIcon::ActivationReason reason)
             {
-                switch(reason)
+                switch (reason)
                 {
                 case QSystemTrayIcon::Trigger: //单击托盘图标
                     //显示主窗口

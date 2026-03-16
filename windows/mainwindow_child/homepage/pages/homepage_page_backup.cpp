@@ -24,6 +24,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+/*页面初始化*/
 void HomePage::SetupBackupPage()
 {
     /*远程开关*/
@@ -40,7 +41,7 @@ void HomePage::SetupBackupPage()
     drawerIcon->setFixedSize(25, 25);
 
     //文本描述
-    ElaText *drawerText = new ElaText("远程仓库", this);
+    ElaText *drawerText = new ElaText("云端同步", this);
     drawerText->setTextPixelSize(15);
 
     //开关
@@ -69,10 +70,10 @@ void HomePage::SetupBackupPage()
     //展开内容
     QWidget *remoteDrawerContent = new QWidget(this);
     QVBoxLayout *remoteDrawerLayout = new QVBoxLayout(remoteDrawerContent);
-    ElaText *remoteHintText = new ElaText("远程仓库地址", remoteDrawerContent);
+    ElaText *remoteHintText = new ElaText("云端地址", remoteDrawerContent);
     remoteHintText->setTextPixelSize(13);
     m_RemoteUrlEdit = new ElaLineEdit(remoteDrawerContent);
-    m_RemoteUrlEdit->setPlaceholderText(u8"请输入远程仓库地址");
+    m_RemoteUrlEdit->setPlaceholderText(u8"请输入云端地址（例如 Git 仓库链接）");
 
     QHBoxLayout *remoteRowLayout = new QHBoxLayout();
     remoteRowLayout->addWidget(remoteHintText);
@@ -81,13 +82,13 @@ void HomePage::SetupBackupPage()
     //创建同步和上传图标按钮
     ElaIconButton *btnPull = new ElaIconButton(ElaIconType::Download, 16, remoteDrawerContent);
     btnPull->setFixedSize(32, 32);
-    btnPull->setToolTip("从远程仓库同步");
+    btnPull->setToolTip("从云端拉取最新内容");
     ElaIconButton *btnPush = new ElaIconButton(ElaIconType::Upload, 16, remoteDrawerContent);
     btnPush->setFixedSize(32, 32);
-    btnPush->setToolTip("上传到远程仓库");
+    btnPush->setToolTip("上传本地更改到云端");
     ElaIconButton *btnOpen = new ElaIconButton(ElaIconType::Link, 16, remoteDrawerContent);
     btnOpen->setFixedSize(32, 32);
-    btnOpen->setToolTip("打开远程仓库");
+    btnOpen->setToolTip("在浏览器打开云端地址");
 
     remoteRowLayout->addWidget(btnOpen);
     remoteRowLayout->addWidget(btnPull);
@@ -104,7 +105,7 @@ void HomePage::SetupBackupPage()
                 {
                     ElaMessageBar::warning(ElaMessageBarType::BottomRight,
                                            "打开失败",
-                                           "请先输入远程仓库地址",
+                                           "请先填写云端地址",
                                            2000,
                                            parentWidget());
                     return;
@@ -123,8 +124,8 @@ void HomePage::SetupBackupPage()
                 if (pullProcess.exitCode() == 0)
                 {
                     ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                                           "同步成功",
-                                           "已从远程仓库拉取最新版本",
+                                           "已同步",
+                                           "已从云端获取最新内容",
                                            2000,
                                            parentWidget());
                     openBackup(m_NowFilePathWithCode);
@@ -134,7 +135,7 @@ void HomePage::SetupBackupPage()
                     QString errorMsg = pullProcess.readAllStandardError();
                     ElaMessageBar::error(ElaMessageBarType::BottomRight,
                                          "同步失败",
-                                         errorMsg.isEmpty() ? "请检查网络连接和仓库配置" : errorMsg,
+                                         errorMsg.isEmpty() ? "请检查网络和云端地址是否正确" : errorMsg,
                                          3000,
                                          parentWidget());
                 } });
@@ -150,8 +151,8 @@ void HomePage::SetupBackupPage()
                 if (pushProcess.exitCode() == 0)
                 {
                     ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                                           "上传成功",
-                                           "已将本地版本推送到远程仓库",
+                                           "上传完成",
+                                           "本地更改已上传到云端",
                                            2000,
                                            parentWidget());
                 }
@@ -160,7 +161,7 @@ void HomePage::SetupBackupPage()
                     QString errorMsg = pushProcess.readAllStandardError();
                     ElaMessageBar::error(ElaMessageBarType::BottomRight,
                                          "上传失败",
-                                         errorMsg.isEmpty() ? "请检查网络连接和推送权限" : errorMsg,
+                                         errorMsg.isEmpty() ? "请检查网络和上传权限" : errorMsg,
                                          3000,
                                          parentWidget());
                 } });
@@ -170,7 +171,7 @@ void HomePage::SetupBackupPage()
     ui->ElaDrawerArea_Remote->addDrawer(remoteDrawerContent);
 }
 
-//写入仓库
+/*写入仓库*/
 void HomePage::ApplyRemoteUrlFromInput(bool showSuccessMessage)
 {
     const QString url = m_RemoteUrlEdit->text().trimmed();
@@ -195,7 +196,7 @@ void HomePage::ApplyRemoteUrlFromInput(bool showSuccessMessage)
     if (setProcess.exitCode() != 0)
     {
         ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "远程仓库设置失败",
+                             "云端地址保存失败",
                              setProcess.readAllStandardError(),
                              3000,
                              parentWidget());
@@ -211,7 +212,7 @@ void HomePage::ApplyRemoteUrlFromInput(bool showSuccessMessage)
     if (showSuccessMessage)
     {
         ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                               "远程仓库已自动保存",
+                               "云端地址已保存",
                                url,
                                2000,
                                parentWidget());
@@ -232,7 +233,7 @@ void HomePage::openBackup(QString FilePathWithCode)
     //初始化表格模型
     QStandardItemModel *model = new QStandardItemModel(this);
     model->setColumnCount(3);
-    model->setHorizontalHeaderLabels(QStringList() << "Commit" << "Message" << "操作"); //三列: commit hash, message, 操作
+    model->setHorizontalHeaderLabels(QStringList() << "版本号" << "说明" << "操作"); //三列: commit hash, message, 操作
 
     //获取 Git 仓库的所有 commit
     QString repoPath = BackupPath + "/" + FilePathWithCode;
@@ -281,8 +282,8 @@ void HomePage::openBackup(QString FilePathWithCode)
         layout->setContentsMargins(4, 2, 4, 2);
         layout->setSpacing(4);
 
-        ElaPushButton *button1 = new ElaPushButton("预览", buttonWidget);
-        ElaPushButton *button2 = new ElaPushButton("还原", buttonWidget);
+        ElaPushButton *button1 = new ElaPushButton("查看", buttonWidget);
+        ElaPushButton *button2 = new ElaPushButton("恢复", buttonWidget);
         QFont font;
         font.setPointSize(10); //字体大小统一
         button1->setFont(font);
@@ -338,7 +339,7 @@ void HomePage::openBackup(QString FilePathWithCode)
                     //提示
                     ElaMessageBar::success(ElaMessageBarType::BottomRight,
                                            "还原成功",
-                                           "已还原至" + currentHash,
+                                           "已恢复到版本 " + currentHash,
                                            3000,
                                            parentWidget());
 
@@ -413,7 +414,7 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
             if (m_RemoteUrlEdit)
                 m_RemoteUrlEdit->clear();
             ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                                   "已解绑远程仓库",
+                                   "已关闭云端同步",
                                    "",
                                    2000,
                                    parentWidget());
@@ -421,7 +422,7 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
         else
         {
             ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "解绑失败",
+                                 "关闭云端同步失败",
                                  process.readAllStandardError(),
                                  3000,
                                  parentWidget());
@@ -439,8 +440,8 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
     {
         ui->ElaDrawerArea_Remote->expand();
         ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                               "请输入远程仓库地址",
-                               "输入完成后将自动保存",
+                               "请输入云端地址",
+                               "填写后会自动保存",
                                2500,
                                parentWidget());
         ApplyRemoteUrlFromInput(false);
@@ -453,7 +454,7 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
         m_RemoteUrlEdit->setText(originUrl);
     }
     ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                           "远程同步已开启",
+                           "云端同步已开启",
                            "",
                            2000,
                            parentWidget());

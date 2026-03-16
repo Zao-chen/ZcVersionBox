@@ -21,12 +21,12 @@ int main(int argc, char *argv[])
     /*获取启动参数*/
     QStringList args = QCoreApplication::arguments();
     args.removeFirst(); //args[0]是程序自身路径，去掉
-
+    /*启动*/
     if (args.isEmpty()) //程序正常启动
     {
         w.show();
     }
-    else // 使用右键菜单或拖拽启动
+    else //使用右键菜单或拖拽启动
     {
         /*同步文件到仓库*/
         QDir dir(BackupPath);
@@ -34,7 +34,7 @@ int main(int argc, char *argv[])
         const QString repoPath = BackupPath + "/" + QUrl::toPercentEncoding(sourcePath);
         const QString backupPath = repoPath + "/" + QFileInfo(sourcePath).fileName();
         dir.mkpath(repoPath);
-
+        /*添加文件到备份目录*/
         if (QFileInfo(sourcePath).isFile())
         {
             QFile::remove(backupPath);
@@ -44,7 +44,6 @@ int main(int argc, char *argv[])
         {
             FileUtils::copyDirectory(sourcePath, backupPath);
         }
-
         /*创建初始化Git仓库*/
         QProcess git;
         git.setWorkingDirectory(repoPath);

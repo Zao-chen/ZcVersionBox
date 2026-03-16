@@ -27,7 +27,7 @@ void HomePage::SetupTrackFilesPage()
 
     /*创建面包屑*/
     ui->widget_BreadcrumbBar->setTextPixelSize(25);
-    ui->widget_BreadcrumbBar->appendBreadcrumb("追踪中的文件");
+    ui->widget_BreadcrumbBar->appendBreadcrumb("备份中文件");
 
     /*监控追踪中的文件*/
     QFileSystemWatcher *watcher = new QFileSystemWatcher(this);
@@ -77,7 +77,7 @@ void HomePage::on_pushButton_AddFromLoc_clicked()
     QWidget *central = new QWidget(&dlg);
     QVBoxLayout *layout = new QVBoxLayout(central);
 
-    ElaText *label = new ElaText(tr("请选择要添加的是文件还是文件夹"), central);
+    ElaText *label = new ElaText(tr("你要添加单个文件，还是整个文件夹？"), central);
     label->setTextPixelSize(16);
     layout->addWidget(label);
 

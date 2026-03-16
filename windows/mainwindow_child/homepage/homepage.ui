@@ -88,7 +88,7 @@
             </sizepolicy>
            </property>
            <property name="text">
-            <string>从本地添加仓库</string>
+            <string>备份本地文件</string>
            </property>
           </widget>
          </item>
@@ -101,7 +101,7 @@
             </sizepolicy>
            </property>
            <property name="text">
-            <string>从远程导入仓库</string>
+            <string>从云端导入备份</string>
            </property>
           </widget>
          </item>

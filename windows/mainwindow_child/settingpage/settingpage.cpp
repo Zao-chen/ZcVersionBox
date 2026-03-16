@@ -3,13 +3,13 @@
 
 #include "../../../Globalconstants.h"
 
+#include <QDir>
 #include <QSettings>
 #include <QStandardPaths>
-#include <QDir>
+
 
 SettingPage::SettingPage(QWidget *parent)
-    : QWidget(parent)
-    , ui(new Ui::SettingPage)
+    : QWidget(parent), ui(new Ui::SettingPage)
 {
     ui->setupUi(this);
     //创建面包屑
@@ -29,7 +29,7 @@ SettingPage::~SettingPage()
 void SettingPage::on_ToggleSwitch_RightClickMenu_toggled(bool checked)
 {
     QString appPath = QCoreApplication::applicationFilePath().replace("/", "\\");
-    QString menuText = QStringLiteral("添加到ZcVersionBox进行版本控制");
+    QString menuText = QStringLiteral("使用ZcVersionBox自动备份");
 
     if (checked)
     {

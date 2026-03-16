@@ -21,10 +21,9 @@ class HomePage : public QWidget
     ~HomePage();
 
   private slots:
-    void on_widget_BreadcrumbBar_breadcrumbClicked(QString breadcrumb, QStringList lastBreadcrumbList);
-    void on_ToggleSwitch_Remote_toggled(bool checked);
-
-    void on_pushButton_AddFromLoc_clicked();
+    void on_widget_BreadcrumbBar_breadcrumbClicked(QString breadcrumb, QStringList lastBreadcrumbList); //面包屑
+    void on_ToggleSwitch_Remote_toggled(bool checked);                                                  //打开关闭远程同步
+    void on_pushButton_AddFromLoc_clicked();                                                            //添加本地文件
 
   private:
     Ui::HomePage *ui;
