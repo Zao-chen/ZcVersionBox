@@ -24,6 +24,7 @@ class HomePage : public QWidget
     void on_widget_BreadcrumbBar_breadcrumbClicked(QString breadcrumb, QStringList lastBreadcrumbList); //面包屑
     void on_ToggleSwitch_Remote_toggled(bool checked);                                                  //打开关闭远程同步
     void on_pushButton_AddFromLoc_clicked();                                                            //添加本地文件
+    void on_pushButton_AddFromRemo_clicked();                                                           //从云端导入
 
   private:
     Ui::HomePage *ui;

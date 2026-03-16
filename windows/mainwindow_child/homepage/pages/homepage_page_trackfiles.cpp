@@ -4,20 +4,27 @@
 #undef HOMEPAGE_UI_HEADER
 
 #include "../../../../GlobalConstants.h"
+#include "../../../../utils/fileutils.h"
 #include "../trackfiles/homepagechild_trackfile.h"
 
 #include "ElaText.h"
 
 #include <ElaContentDialog.h>
 #include <ElaDialog.h>
+#include <ElaMessageBar.h>
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QLineEdit>
 #include <QProcess>
 #include <QSpacerItem>
 #include <QStandardPaths>
+#include <QUrl>
 #include <QVBoxLayout>
 
 void HomePage::SetupTrackFilesPage()
@@ -138,4 +145,211 @@ void HomePage::on_pushButton_AddFromLoc_clicked()
 
     QString exePath = QCoreApplication::applicationFilePath();
     QProcess::startDetached(exePath, QStringList() << path);
+}
+
+/*从云端导入备份*/
+void HomePage::on_pushButton_AddFromRemo_clicked()
+{
+    ElaContentDialog urlDialog(this);
+
+    QWidget *urlCentral = new QWidget(&urlDialog);
+    QVBoxLayout *urlLayout = new QVBoxLayout(urlCentral);
+
+    ElaText *hintText = new ElaText(tr("请输入云端仓库地址"), urlCentral);
+    hintText->setTextPixelSize(16);
+    urlLayout->addWidget(hintText);
+
+    QLineEdit *urlEdit = new QLineEdit(urlCentral);
+    urlEdit->setPlaceholderText(tr("例如: https://github.com/user/repo.git"));
+    urlLayout->addWidget(urlEdit);
+
+    urlDialog.setCentralWidget(urlCentral);
+    urlDialog.setLeftButtonText(tr("确定"));
+    urlDialog.setMiddleButtonText(tr("检查链接"));
+    urlDialog.setRightButtonText(tr("取消"));
+
+    int confirm = 0;
+    connect(&urlDialog, &ElaContentDialog::leftButtonClicked, &urlDialog, [&]()
+            {
+                confirm = 1;
+                urlDialog.close(); });
+    connect(&urlDialog, &ElaContentDialog::middleButtonClicked, &urlDialog, [&]()
+            {
+                const QString testUrl = urlEdit->text().trimmed();
+                if (testUrl.isEmpty())
+                {
+                    ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                                           "检查失败",
+                                           "请先输入云端仓库地址",
+                                           2000,
+                                           parentWidget());
+                    return;
+                }
+
+                QProcess checkProcess;
+                checkProcess.start("git", QStringList() << "ls-remote" << "--heads" << testUrl);
+                checkProcess.waitForFinished();
+
+                if (checkProcess.exitCode() == 0)
+                {
+                    ElaMessageBar::success(ElaMessageBarType::BottomRight,
+                                           "检查成功",
+                                           "仓库地址可访问",
+                                           2000,
+                                           parentWidget());
+                }
+                else
+                {
+                    const QString errorText = QString::fromUtf8(checkProcess.readAllStandardError()).trimmed();
+                    ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                         "检查失败",
+                                         errorText.isEmpty() ? "仓库地址不可用，请检查链接和网络" : errorText,
+                                         3000,
+                                         parentWidget());
+                } });
+    connect(&urlDialog, &ElaContentDialog::rightButtonClicked, &urlDialog, [&]()
+            {
+                confirm = 0;
+                urlDialog.close(); });
+
+    urlDialog.exec();
+
+    if (confirm != 1)
+        return;
+
+    const QString repoUrl = urlEdit->text().trimmed();
+
+    if (repoUrl.isEmpty())
+    {
+        ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                               "导入失败",
+                               "云端仓库地址不能为空",
+                               2000,
+                               parentWidget());
+        return;
+    }
+
+    QDir().mkpath(BackupPath);
+
+    QString repoName = QFileInfo(QUrl(repoUrl).path()).baseName();
+    if (repoName.isEmpty())
+        repoName = "repo";
+    const QString timeSuffix = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
+    const QString tempRepoPath = QDir(BackupPath).filePath("_import_tmp_" + repoName + "_" + timeSuffix);
+
+    QProcess cloneProcess;
+    cloneProcess.start("git", QStringList() << "clone" << repoUrl << tempRepoPath);
+    cloneProcess.waitForFinished();
+
+    if (cloneProcess.exitCode() != 0)
+    {
+        const QString errorText = QString::fromUtf8(cloneProcess.readAllStandardError()).trimmed();
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "导入失败",
+                             errorText.isEmpty() ? "仓库克隆失败，请检查仓库地址和网络连接" : errorText,
+                             3000,
+                             parentWidget());
+        return;
+    }
+
+    QDir tempRepoDir(tempRepoPath);
+    const QFileInfoList rootEntries = tempRepoDir.entryInfoList(QDir::NoDotAndDotDot | QDir::AllEntries, QDir::Name);
+    QFileInfo trackedEntry;
+    for (const QFileInfo &entry : rootEntries)
+    {
+        if (entry.fileName() == ".git")
+            continue;
+        trackedEntry = entry;
+        break;
+    }
+
+    if (!trackedEntry.exists())
+    {
+        QDir(tempRepoPath).removeRecursively();
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "导入失败",
+                             "仓库中未找到可导入内容",
+                             3000,
+                             parentWidget());
+        return;
+    }
+
+    QString targetPath;
+    QWidget *owner = this->window();
+    if (trackedEntry.isFile())
+    {
+        targetPath = QFileDialog::getSaveFileName(
+            owner,
+            tr("选择追踪文件位置"),
+            QDir::home().filePath(trackedEntry.fileName()),
+            tr("All Files (*.*)"));
+    }
+    else
+    {
+        const QString targetParent = QFileDialog::getExistingDirectory(
+            owner,
+            tr("选择追踪文件夹位置"),
+            QDir::homePath(),
+            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+        if (!targetParent.isEmpty())
+            targetPath = QDir(targetParent).filePath(trackedEntry.fileName());
+    }
+
+    if (targetPath.isEmpty())
+    {
+        QDir(tempRepoPath).removeRecursively();
+        return;
+    }
+
+    const QString encodedPath = QString::fromUtf8(QUrl::toPercentEncoding(targetPath));
+    const QString finalRepoPath = QDir(BackupPath).filePath(encodedPath);
+    if (QDir(finalRepoPath).exists())
+    {
+        QDir(tempRepoPath).removeRecursively();
+        ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                               "导入失败",
+                               "该位置已存在追踪记录，请更换位置",
+                               3000,
+                               parentWidget());
+        return;
+    }
+
+    const QString targetName = QFileInfo(targetPath).fileName();
+    if (trackedEntry.fileName() != targetName)
+    {
+        tempRepoDir.rename(trackedEntry.fileName(), targetName);
+    }
+
+    if (!QDir(BackupPath).rename(QFileInfo(tempRepoPath).fileName(), encodedPath))
+    {
+        QDir(tempRepoPath).removeRecursively();
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "导入失败",
+                             "无法写入备份仓库，请检查权限",
+                             3000,
+                             parentWidget());
+        return;
+    }
+
+    if (trackedEntry.isFile())
+    {
+        QDir().mkpath(QFileInfo(targetPath).absolutePath());
+        if (QFile::exists(targetPath))
+            QFile::remove(targetPath);
+        QFile::copy(QDir(finalRepoPath).filePath(targetName), targetPath);
+    }
+    else
+    {
+        QDir targetDir(targetPath);
+        if (targetDir.exists())
+            targetDir.removeRecursively();
+        FileUtils::copyDirectory(QDir(finalRepoPath).filePath(targetName), targetPath);
+    }
+
+    ElaMessageBar::success(ElaMessageBarType::BottomRight,
+                           "导入成功",
+                           "云端备份已加入追踪",
+                           2500,
+                           parentWidget());
+    LoadBackupFileList();
 }
