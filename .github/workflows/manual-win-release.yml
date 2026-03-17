@@ -25,18 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      #========================
-      # Windows工具链
-      #========================
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
 
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
 
-      #========================
-      # Qt
-      #========================
       - name: Install Qt
         uses: jurplel/install-qt-action@v3
         with:
@@ -45,9 +39,6 @@ jobs:
           arch: win64_msvc2019_64
           cache: true
 
-      #========================
-      # 构建
-      #========================
       - name: Configure
         shell: pwsh
         run: |
@@ -59,9 +50,6 @@ jobs:
         shell: pwsh
         run: cmake --build build
 
-      #========================================================
-      # Windows：windeployqt + 3rdparty dll + setup.exe
-      #========================================================
       - name: Package Windows (windeployqt)
         shell: pwsh
         run: |
@@ -93,19 +81,12 @@ jobs:
             Copy-Item $f.FullName "dist\" -Force
           }
 
-          "Copied dll count: $($dlls.Count)"
-
-      - name: Check dist files (Windows)
+      - name: Check dist files
         shell: pwsh
         run: |
           if (!(Test-Path "dist\ZcVersionBox.exe")) { throw "dist\ZcVersionBox.exe missing" }
           if (!(Test-Path "dist\Qt6Core.dll")) { throw "dist\Qt6Core.dll missing" }
           if (!(Test-Path "dist\platforms\qwindows.dll")) { throw "dist\platforms\qwindows.dll missing (windeployqt failed?)" }
-
-          $dlls = Get-ChildItem "dist" -File -Filter *.dll -ErrorAction SilentlyContinue
-          if ($dlls.Count -eq 0) { throw "No *.dll found in dist" }
-
-          "dist root dll count: $($dlls.Count)"
 
       - name: Install Inno Setup
         shell: pwsh
@@ -120,48 +101,50 @@ jobs:
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           $ver = "${{ inputs.tag_name }}".TrimStart("v")
 
-          $iss = @"
-#define MyAppName "ZcVersionBox"
-#define MyAppVersion "${ver}"
-#define MyAppExeName "ZcVersionBox.exe"
+          $issLines = @(
+            '#define MyAppName "ZcVersionBox"',
+            "#define MyAppVersion \"$ver\"",
+            '#define MyAppExeName "ZcVersionBox.exe"',
+            '',
+            '[Setup]',
+            'AppId={{6CA0B4A8-7B63-4D88-9AD0-CDF11A5D4F20}',
+            'AppName={#MyAppName}',
+            'AppVersion={#MyAppVersion}',
+            'DefaultDirName={autopf}\{#MyAppName}',
+            'DefaultGroupName={#MyAppName}',
+            'OutputDir=.',
+            "OutputBaseFilename=ZcVersionBox-${{ inputs.tag_name }}-setup",
+            'Compression=lzma',
+            'SolidCompression=yes',
+            'ArchitecturesInstallIn64BitMode=x64',
+            '',
+            '[Languages]',
+            'Name: "english"; MessagesFile: "compiler:Default.isl"',
+            '',
+            '[Tasks]',
+            'Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"; Flags: unchecked',
+            '',
+            '[Files]',
+            'Source: "dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs',
+            '',
+            '[Icons]',
+            'Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"',
+            'Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon',
+            '',
+            '[Run]',
+            'Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent'
+          )
 
-[Setup]
-AppId={{6CA0B4A8-7B63-4D88-9AD0-CDF11A5D4F20}
-AppName={#MyAppName}
-AppVersion={#MyAppVersion}
-DefaultDirName={autopf}\\{#MyAppName}
-DefaultGroupName={#MyAppName}
-OutputDir=.
-OutputBaseFilename=ZcVersionBox-${{ inputs.tag_name }}-setup
-Compression=lzma
-SolidCompression=yes
-ArchitecturesInstallIn64BitMode=x64
-
-[Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
-
-[Tasks]
-Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"; Flags: unchecked
-
-[Files]
-Source: "dist\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-
-[Icons]
-Name: "{autoprograms}\\{#MyAppName}"; Filename: "{app}\\{#MyAppExeName}"
-Name: "{autodesktop}\\{#MyAppName}"; Filename: "{app}\\{#MyAppExeName}"; Tasks: desktopicon
-
-[Run]
-Filename: "{app}\\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
-"@
-
-          Set-Content -Path "installer-temp.iss" -Value $iss -Encoding utf8
-          & $iscc "installer-temp.iss"
+          $issLines | Set-Content -Path installer-temp.iss -Encoding utf8
+          & $iscc installer-temp.iss
 
           if (!(Test-Path "ZcVersionBox-${{ inputs.tag_name }}-setup.exe")) {
             throw "Installer output not found"
           }
 
-      - name: Upload artifacts (Windows setup)
+          Remove-Item installer-temp.iss -Force -ErrorAction SilentlyContinue
+
+      - name: Upload artifact (Windows setup)
         uses: actions/upload-artifact@v4
         with:
           name: pkg-windows-setup
