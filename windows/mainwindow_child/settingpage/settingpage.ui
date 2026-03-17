@@ -52,7 +52,7 @@
          </font>
         </property>
         <property name="text">
-         <string>在右键菜单显示快捷入口</string>
+         <string>右键菜单快捷入口</string>
         </property>
        </widget>
       </item>
@@ -63,9 +63,42 @@
     </widget>
    </item>
    <item>
+    <widget class="ElaScrollPageArea" name="widget_2" native="true">
+     <layout class="QHBoxLayout" name="horizontalLayout_2">
+      <property name="leftMargin">
+       <number>12</number>
+      </property>
+      <property name="topMargin">
+       <number>12</number>
+      </property>
+      <property name="rightMargin">
+       <number>12</number>
+      </property>
+      <property name="bottomMargin">
+       <number>12</number>
+      </property>
+      <item>
+       <widget class="ElaText" name="label_2">
+        <property name="font">
+         <font>
+          <pointsize>12</pointsize>
+         </font>
+        </property>
+        <property name="text">
+         <string>开机自动启动</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="ElaToggleSwitch" name="ToggleSwitch_AutoStart" native="true"/>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <spacer name="verticalSpacer">
      <property name="orientation">
-      <enum>Qt::Orientation::Vertical</enum>
+      <enum>Qt::Vertical</enum>
      </property>
      <property name="sizeHint" stdset="0">
       <size>

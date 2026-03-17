@@ -17,6 +17,7 @@ public:
 
 private slots:
     void on_ToggleSwitch_RightClickMenu_toggled(bool checked);
+    void on_ToggleSwitch_AutoStart_toggled(bool checked);
 
 private:
     Ui::SettingPage *ui;

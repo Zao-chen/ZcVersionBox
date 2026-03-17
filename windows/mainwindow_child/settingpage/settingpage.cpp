@@ -19,6 +19,7 @@ SettingPage::SettingPage(QWidget *parent)
     //读取ini并初始化配置项
     QSettings ini(Settingpath, QSettings::IniFormat);
     ui->ToggleSwitch_RightClickMenu->setIsToggled(ini.value("RightClickMenu", false).toBool());
+    ui->ToggleSwitch_AutoStart->setIsToggled(ini.value("AutoStart", false).toBool());
 }
 
 SettingPage::~SettingPage()
@@ -81,4 +82,24 @@ void SettingPage::on_ToggleSwitch_RightClickMenu_toggled(bool checked)
     }
     QSettings ini(Settingpath, QSettings::IniFormat);
     ini.setValue("RightClickMenu", checked);
+}
+
+void SettingPage::on_ToggleSwitch_AutoStart_toggled(bool checked)
+{
+    const QString runRegPath = R"(HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run)";
+    const QString runName = QStringLiteral("ZcVersionBox");
+    QString appPath = QCoreApplication::applicationFilePath().replace("/", "\\");
+
+    QSettings runSetting(runRegPath, QSettings::NativeFormat);
+    if (checked)
+    {
+        runSetting.setValue(runName, "\"" + appPath + "\"");
+    }
+    else
+    {
+        runSetting.remove(runName);
+    }
+
+    QSettings ini(Settingpath, QSettings::IniFormat);
+    ini.setValue("AutoStart", checked);
 }

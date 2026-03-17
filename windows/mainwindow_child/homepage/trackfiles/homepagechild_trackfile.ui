@@ -64,7 +64,7 @@
       <item>
        <widget class="ElaPushButton" name="pushButton_RemoveTrack">
         <property name="text">
-         <string>停止自动备份</string>
+         <string>停止并删除备份</string>
         </property>
        </widget>
       </item>
