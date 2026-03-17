@@ -7,7 +7,6 @@
 #include <QSettings>
 #include <QStandardPaths>
 
-
 SettingPage::SettingPage(QWidget *parent)
     : QWidget(parent), ui(new Ui::SettingPage)
 {

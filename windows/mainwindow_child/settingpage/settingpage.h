@@ -3,7 +3,8 @@
 
 #include <QWidget>
 
-namespace Ui {
+namespace Ui
+{
 class SettingPage;
 }
 
@@ -11,15 +12,15 @@ class SettingPage : public QWidget
 {
     Q_OBJECT
 
-public:
+  public:
     explicit SettingPage(QWidget *parent = nullptr);
     ~SettingPage();
 
-private slots:
+  private slots:
     void on_ToggleSwitch_RightClickMenu_toggled(bool checked);
     void on_ToggleSwitch_AutoStart_toggled(bool checked);
 
-private:
+  private:
     Ui::SettingPage *ui;
 };
 
