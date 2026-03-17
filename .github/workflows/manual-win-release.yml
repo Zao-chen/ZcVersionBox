@@ -103,7 +103,7 @@ jobs:
 
           $issLines = @(
             '#define MyAppName "ZcVersionBox"',
-            "#define MyAppVersion \"$ver\"",
+            ('#define MyAppVersion "{0}"' -f $ver),
             '#define MyAppExeName "ZcVersionBox.exe"',
             '',
             '[Setup]',
