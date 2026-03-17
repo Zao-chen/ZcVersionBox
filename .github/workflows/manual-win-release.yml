@@ -155,15 +155,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100
+
       - uses: actions/download-artifact@v4
         with:
           path: release_assets
+
+      - name: Generate release notes from commits
+        shell: bash
+        run: |
+          {
+            echo "ZcVersionBox ${{ inputs.tag_name }}"
+            echo
+            echo "Built from commit: ${GITHUB_SHA}"
+            echo
+            echo "Recent commits:"
+            git log -n 20 --pretty=format:'- %h %s (%an)'
+          } > RELEASE_NOTES.md
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag_name }}
           name: ZcVersionBox ${{ inputs.tag_name }}
-          generate_release_notes: true
+          generate_release_notes: false
+          body_path: RELEASE_NOTES.md
           files: release_assets/**/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
