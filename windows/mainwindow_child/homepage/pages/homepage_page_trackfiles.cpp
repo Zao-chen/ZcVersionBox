@@ -169,11 +169,11 @@ void HomePage::on_pushButton_AddFromRemo_clicked()
     urlDialog.setRightButtonText(tr("取消"));
 
     int confirm = 0;
-    connect(&urlDialog, &ElaContentDialog::leftButtonClicked, &urlDialog, [&]()
+    connect(&urlDialog, &ElaContentDialog::leftButtonClicked, &urlDialog, [&]() //确认
             {
                 confirm = 1;
                 urlDialog.close(); });
-    connect(&urlDialog, &ElaContentDialog::middleButtonClicked, &urlDialog, [&]()
+    connect(&urlDialog, &ElaContentDialog::middleButtonClicked, &urlDialog, [&]() //检查链接
             {
                 const QString testUrl = urlEdit->text().trimmed();
                 if (testUrl.isEmpty())
@@ -207,7 +207,7 @@ void HomePage::on_pushButton_AddFromRemo_clicked()
                                          3000,
                                          parentWidget());
                 } });
-    connect(&urlDialog, &ElaContentDialog::rightButtonClicked, &urlDialog, [&]()
+    connect(&urlDialog, &ElaContentDialog::rightButtonClicked, &urlDialog, [&]() //取消
             {
                 confirm = 0;
                 urlDialog.close(); });
@@ -231,6 +231,7 @@ void HomePage::on_pushButton_AddFromRemo_clicked()
 
     QDir().mkpath(BackupPath);
 
+    /*Clone仓库到暂存*/
     QString repoName = QFileInfo(QUrl(repoUrl).path()).baseName();
     if (repoName.isEmpty())
         repoName = "repo";
@@ -274,6 +275,7 @@ void HomePage::on_pushButton_AddFromRemo_clicked()
         return;
     }
 
+    /*选择保存位置*/
     QString targetPath;
     QWidget *owner = this->window();
     if (trackedEntry.isFile())

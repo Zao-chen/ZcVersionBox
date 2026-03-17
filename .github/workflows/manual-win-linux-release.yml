@@ -1,0 +1,186 @@
+name: Manual Build+Package+Release (ZcVersionBox Windows Setup)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag (example: v1.0.0)"
+        required: true
+      qt_version:
+        description: "Qt version"
+        required: false
+        default: "6.6.0"
+      build_type:
+        description: "CMake build type"
+        required: false
+        default: "Release"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      #========================
+      # Windows工具链
+      #========================
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      #========================
+      # Qt
+      #========================
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: ${{ inputs.qt_version }}
+          target: desktop
+          arch: win64_msvc2019_64
+          cache: true
+
+      #========================
+      # 构建
+      #========================
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} `
+            -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build
+
+      #========================================================
+      # Windows：windeployqt + 3rdparty dll + setup.exe
+      #========================================================
+      - name: Package Windows (windeployqt)
+        shell: pwsh
+        run: |
+          if (!(Test-Path "build\ZcVersionBox.exe")) { throw "Not found: build\ZcVersionBox.exe" }
+
+          Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force dist | Out-Null
+
+          Copy-Item build\ZcVersionBox.exe dist\
+
+          $qtBin = Join-Path "${{ env.Qt6_DIR }}" "bin"
+          $windeploy = Join-Path $qtBin "windeployqt.exe"
+          if (!(Test-Path $windeploy)) { throw "windeployqt not found: $windeploy" }
+
+          & $windeploy --release --compiler-runtime dist\ZcVersionBox.exe
+
+      - name: Copy 3rdparty dlls
+        shell: pwsh
+        run: |
+          $root = "3rdparty"
+          if (!(Test-Path $root)) { throw "Not found: $root" }
+
+          $dlls = Get-ChildItem -Path $root -Recurse -File -Filter *.dll |
+            Where-Object { $_.FullName -match "(\\|/)bin(\\|/)" }
+
+          if ($dlls.Count -eq 0) { throw "No dll found under 3rdparty/**/bin/*.dll" }
+
+          foreach ($f in $dlls) {
+            Copy-Item $f.FullName "dist\" -Force
+          }
+
+          "Copied dll count: $($dlls.Count)"
+
+      - name: Check dist files (Windows)
+        shell: pwsh
+        run: |
+          if (!(Test-Path "dist\ZcVersionBox.exe")) { throw "dist\ZcVersionBox.exe missing" }
+          if (!(Test-Path "dist\Qt6Core.dll")) { throw "dist\Qt6Core.dll missing" }
+          if (!(Test-Path "dist\platforms\qwindows.dll")) { throw "dist\platforms\qwindows.dll missing (windeployqt failed?)" }
+
+          $dlls = Get-ChildItem "dist" -File -Filter *.dll -ErrorAction SilentlyContinue
+          if ($dlls.Count -eq 0) { throw "No *.dll found in dist" }
+
+          "dist root dll count: $($dlls.Count)"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup -y
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { throw "ISCC not found: $iscc" }
+
+      - name: Build Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          $ver = "${{ inputs.tag_name }}".TrimStart("v")
+
+          $iss = @"
+#define MyAppName "ZcVersionBox"
+#define MyAppVersion "${ver}"
+#define MyAppExeName "ZcVersionBox.exe"
+
+[Setup]
+AppId={{6CA0B4A8-7B63-4D88-9AD0-CDF11A5D4F20}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+DefaultDirName={autopf}\\{#MyAppName}
+DefaultGroupName={#MyAppName}
+OutputDir=.
+OutputBaseFilename=ZcVersionBox-${{ inputs.tag_name }}-setup
+Compression=lzma
+SolidCompression=yes
+ArchitecturesInstallIn64BitMode=x64
+
+[Languages]
+Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Tasks]
+Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"; Flags: unchecked
+
+[Files]
+Source: "dist\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Icons]
+Name: "{autoprograms}\\{#MyAppName}"; Filename: "{app}\\{#MyAppExeName}"
+Name: "{autodesktop}\\{#MyAppName}"; Filename: "{app}\\{#MyAppExeName}"; Tasks: desktopicon
+
+[Run]
+Filename: "{app}\\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+"@
+
+          Set-Content -Path "installer-temp.iss" -Value $iss -Encoding utf8
+          & $iscc "installer-temp.iss"
+
+          if (!(Test-Path "ZcVersionBox-${{ inputs.tag_name }}-setup.exe")) {
+            throw "Installer output not found"
+          }
+
+      - name: Upload artifacts (Windows setup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-windows-setup
+          path: ZcVersionBox-${{ inputs.tag_name }}-setup.exe
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release_assets
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          name: ZcVersionBox ${{ inputs.tag_name }}
+          generate_release_notes: true
+          files: release_assets/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
