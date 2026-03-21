@@ -23,6 +23,25 @@
 #include <QStandardItem>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QAbstractItemModel>
+#include <QItemDelegate>
+
+// 自定义委体，只允许第二列编辑
+class EditableColumnDelegate : public QItemDelegate
+{
+public:
+    explicit EditableColumnDelegate(QObject *parent = nullptr) : QItemDelegate(parent) {}
+
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        // 只允许第二列（索引1）编辑
+        if (index.column() == 1)
+        {
+            return QItemDelegate::createEditor(parent, option, index);
+        }
+        return nullptr;
+    }
+};
 
 /*页面初始化*/
 void HomePage::SetupBackupPage()
@@ -266,8 +285,12 @@ void HomePage::openBackup(QString FilePathWithCode)
 
     ui->tableView_BackupFiles->setModel(model);
     ui->tableView_BackupFiles->verticalHeader()->setVisible(false);
-    ui->tableView_BackupFiles->setSelectionMode(QAbstractItemView::NoSelection);
-    ui->tableView_BackupFiles->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    ui->tableView_BackupFiles->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->tableView_BackupFiles->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
+    
+    // 设置自定义委体，限制只能编辑第二列
+    ui->tableView_BackupFiles->setItemDelegate(new EditableColumnDelegate(ui->tableView_BackupFiles));
+    
     //设置列宽和表头行为
     ui->tableView_BackupFiles->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     ui->tableView_BackupFiles->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
@@ -361,6 +384,81 @@ void HomePage::openBackup(QString FilePathWithCode)
         QModelIndex index = model->index(row, 2);
         ui->tableView_BackupFiles->setIndexWidget(index, buttonWidget);
     }
+
+    // 连接模型的itemChanged信号，处理提交消息编辑
+    connect(model, &QStandardItemModel::itemChanged, this, [=](QStandardItem *item)
+    {
+        // 只处理第二列（说明列）的修改
+        if (item->column() != 1)
+            return;
+
+        int row = item->row();
+        QString hash = model->item(row, 0)->text();
+        QString newMessage = item->text();
+
+        if (newMessage.isEmpty())
+        {
+            ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                                   "错误",
+                                   "提交说明不能为空",
+                                   2000,
+                                   parentWidget());
+            return;
+        }
+
+        // 使用 git commit --amend 修改提交消息
+        // 注意：只能修改最新的提交，对于历史提交需要使用 rebase
+        QString gitRepoPath = BackupPath + "/" + m_NowFilePathWithCode;
+        
+        // 获取当前HEAD的hash
+        QProcess getCurrentHash;
+        getCurrentHash.setWorkingDirectory(gitRepoPath);
+        getCurrentHash.start("git", QStringList() << "rev-parse" << "HEAD");
+        getCurrentHash.waitForFinished();
+        QString currentHash = QString::fromUtf8(getCurrentHash.readAllStandardOutput()).trimmed();
+
+        if (hash == currentHash)
+        {
+            // 修改最新提交的消息
+            QProcess amendProcess;
+            amendProcess.setWorkingDirectory(gitRepoPath);
+            amendProcess.start("git", QStringList() << "commit" << "--amend" << "-m" << newMessage);
+            amendProcess.waitForFinished();
+
+            if (amendProcess.exitCode() == 0)
+            {
+                ElaMessageBar::success(ElaMessageBarType::BottomRight,
+                                       "已保存",
+                                       "提交说明已更新",
+                                       2000,
+                                       parentWidget());
+            }
+            else
+            {
+                QString error = QString::fromUtf8(amendProcess.readAllStandardError());
+                ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                     "保存失败",
+                                     error.isEmpty() ? "更新提交说明失败" : error,
+                                     3000,
+                                     parentWidget());
+            }
+        }
+        else
+        {
+            ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                                   "无法编辑",
+                                   "只能编辑最新的提交说明",
+                                   2000,
+                                   parentWidget());
+            // 恢复为原来的文本
+            QProcess getCommitMsg;
+            getCommitMsg.setWorkingDirectory(gitRepoPath);
+            getCommitMsg.start("git", QStringList() << "log" << "-1" << "--format=%B" << hash);
+            getCommitMsg.waitForFinished();
+            QString originalMessage = QString::fromUtf8(getCommitMsg.readAllStandardOutput()).trimmed();
+            item->setText(originalMessage);
+        }
+    });
 
     //初始化远程开关与远程地址输入框
     QProcess checkProcess;
