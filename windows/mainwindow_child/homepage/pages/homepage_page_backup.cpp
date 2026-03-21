@@ -13,23 +13,24 @@
 #include "ElaToggleSwitch.h"
 #include "elapushbutton.h"
 
+#include <QAbstractItemModel>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QHeaderView>
+#include <QItemDelegate>
 #include <QProcess>
 #include <QSignalBlocker>
 #include <QStandardItem>
 #include <QUrl>
 #include <QVBoxLayout>
-#include <QAbstractItemModel>
-#include <QItemDelegate>
+
 
 // 自定义委体，只允许第二列编辑
 class EditableColumnDelegate : public QItemDelegate
 {
-public:
+  public:
     explicit EditableColumnDelegate(QObject *parent = nullptr) : QItemDelegate(parent) {}
 
     QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const override
@@ -287,10 +288,10 @@ void HomePage::openBackup(QString FilePathWithCode)
     ui->tableView_BackupFiles->verticalHeader()->setVisible(false);
     ui->tableView_BackupFiles->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->tableView_BackupFiles->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
-    
+
     // 设置自定义委体，限制只能编辑第二列
     ui->tableView_BackupFiles->setItemDelegate(new EditableColumnDelegate(ui->tableView_BackupFiles));
-    
+
     //设置列宽和表头行为
     ui->tableView_BackupFiles->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     ui->tableView_BackupFiles->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
@@ -387,7 +388,7 @@ void HomePage::openBackup(QString FilePathWithCode)
 
     // 连接模型的itemChanged信号，处理提交消息编辑
     connect(model, &QStandardItemModel::itemChanged, this, [=](QStandardItem *item)
-    {
+            {
         // 只处理第二列（说明列）的修改
         if (item->column() != 1)
             return;
@@ -457,8 +458,7 @@ void HomePage::openBackup(QString FilePathWithCode)
             getCommitMsg.waitForFinished();
             QString originalMessage = QString::fromUtf8(getCommitMsg.readAllStandardOutput()).trimmed();
             item->setText(originalMessage);
-        }
-    });
+        } });
 
     //初始化远程开关与远程地址输入框
     QProcess checkProcess;
