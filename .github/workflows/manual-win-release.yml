@@ -88,6 +88,22 @@ jobs:
           if (!(Test-Path "dist\Qt6Core.dll")) { throw "dist\Qt6Core.dll missing" }
           if (!(Test-Path "dist\platforms\qwindows.dll")) { throw "dist\platforms\qwindows.dll missing (windeployqt failed?)" }
 
+      - name: Download Git for Windows
+        shell: pwsh
+        run: |
+          $gitInstallerUrl = "https://github.com/git-for-windows/git/releases/download/v2.43.0.windows.1/Git-2.43.0-64-bit.exe"
+          $gitInstallerPath = "dist\GitInstaller.exe"
+          
+          Write-Host "Downloading Git for Windows..."
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Invoke-WebRequest -Uri $gitInstallerUrl -OutFile $gitInstallerPath
+          
+          if (!(Test-Path $gitInstallerPath)) {
+            throw "Failed to download Git installer"
+          }
+          
+          Write-Host "Git installer downloaded: $gitInstallerPath"
+
       - name: Install Inno Setup
         shell: pwsh
         run: |
@@ -125,11 +141,52 @@ jobs:
             'Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"; Flags: unchecked',
             '',
             '[Files]',
-            'Source: "dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs',
+            'Source: "dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs excludes: "GitInstaller.exe"',
+            'Source: "dist\GitInstaller.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall',
             '',
             '[Icons]',
             'Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"',
             'Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon',
+            '',
+            '[Code]',
+            'function GitIsInstalled: Boolean;',
+            'var',
+            '  GitPath: string;',
+            'begin',
+            '  GitPath := ''C:\Program Files\Git\cmd\git.exe'';',
+            '  if FileExists(GitPath) then',
+            '    Result := True',
+            '  else',
+            '  begin',
+            '    GitPath := ''C:\Program Files (x86)\Git\cmd\git.exe'';',
+            '    Result := FileExists(GitPath);',
+            '  end;',
+            'end;',
+            '',
+            'procedure InstallGit;',
+            'var',
+            '  ResultCode: Integer;',
+            'begin',
+            '  MsgBox(''Git is not installed. ZcVersionBox requires Git for version control.'', mbInformation, MB_OK);',
+            '  if ShellExec(''open'', ExpandConstant(''{tmp}\GitInstaller.exe''), ''/VERYSILENT /NORESTART'', '''', SW_HIDE, ewWaitUntilTerminated, ResultCode) then',
+            '  begin',
+            '    if ResultCode = 0 then',
+            '      MsgBox(''Git installed successfully. Please restart the application.'', mbInformation, MB_OK)',
+            '    else',
+            '      MsgBox(''Git installation failed with exit code '' + IntToStr(ResultCode) + ''. Please install Git manually from https://git-scm.com'', mbError, MB_OK);',
+            '  end',
+            '  else',
+            '    MsgBox(''Failed to launch Git installer. Please install Git manually from https://git-scm.com'', mbError, MB_OK);',
+            'end;',
+            '',
+            'procedure CurStepChanged(CurStep: TSetupStep);',
+            'begin',
+            '  if CurStep = ssInstall then',
+            '  begin',
+            '    if not GitIsInstalled then',
+            '      InstallGit;',
+            '  end;',
+            'end;',
             '',
             '[Run]',
             'Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent'
