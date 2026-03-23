@@ -144,7 +144,14 @@ void HomePage::on_pushButton_AddFromLoc_clicked()
         return;
 
     QString exePath = QCoreApplication::applicationFilePath();
-    QProcess::startDetached(exePath, QStringList() << path);
+    if (!QProcess::startDetached(exePath, QStringList() << path))
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "添加失败",
+                             "无法启动新进程，请检查程序权限",
+                             3000,
+                             parentWidget());
+    }
 }
 
 /*从云端导入备份*/
@@ -188,6 +195,15 @@ void HomePage::on_pushButton_AddFromRemo_clicked()
 
                 QProcess checkProcess;
                 checkProcess.start("git", QStringList() << "ls-remote" << "--heads" << testUrl);
+                if (!checkProcess.waitForStarted())
+                {
+                    ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                         "检查失败",
+                                         "无法启动 git，请确认 git 已安装",
+                                         3000,
+                                         parentWidget());
+                    return;
+                }
                 checkProcess.waitForFinished();
 
                 if (checkProcess.exitCode() == 0)
@@ -240,6 +256,15 @@ void HomePage::on_pushButton_AddFromRemo_clicked()
 
     QProcess cloneProcess;
     cloneProcess.start("git", QStringList() << "clone" << repoUrl << tempRepoPath);
+    if (!cloneProcess.waitForStarted())
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "导入失败",
+                             "无法启动 git，请确认 git 已安装",
+                             3000,
+                             parentWidget());
+        return;
+    }
     cloneProcess.waitForFinished();
 
     if (cloneProcess.exitCode() != 0)
@@ -266,7 +291,15 @@ void HomePage::on_pushButton_AddFromRemo_clicked()
 
     if (!trackedEntry.exists())
     {
-        QDir(tempRepoPath).removeRecursively();
+        if (!QDir(tempRepoPath).removeRecursively())
+        {
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "导入失败",
+                                 "清理临时仓库失败",
+                                 3000,
+                                 parentWidget());
+            return;
+        }
         ElaMessageBar::error(ElaMessageBarType::BottomRight,
                              "导入失败",
                              "仓库中未找到可导入内容",
@@ -319,7 +352,16 @@ void HomePage::on_pushButton_AddFromRemo_clicked()
     const QString targetName = QFileInfo(targetPath).fileName();
     if (trackedEntry.fileName() != targetName)
     {
-        tempRepoDir.rename(trackedEntry.fileName(), targetName);
+        if (!tempRepoDir.rename(trackedEntry.fileName(), targetName))
+        {
+            QDir(tempRepoPath).removeRecursively();
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "导入失败",
+                                 "重命名导入内容失败",
+                                 3000,
+                                 parentWidget());
+            return;
+        }
     }
 
     if (!QDir(BackupPath).rename(QFileInfo(tempRepoPath).fileName(), encodedPath))
@@ -335,17 +377,61 @@ void HomePage::on_pushButton_AddFromRemo_clicked()
 
     if (trackedEntry.isFile())
     {
-        QDir().mkpath(QFileInfo(targetPath).absolutePath());
+        if (!QDir().mkpath(QFileInfo(targetPath).absolutePath()))
+        {
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "导入失败",
+                                 "无法创建目标目录",
+                                 3000,
+                                 parentWidget());
+            return;
+        }
         if (QFile::exists(targetPath))
-            QFile::remove(targetPath);
-        QFile::copy(QDir(finalRepoPath).filePath(targetName), targetPath);
+        {
+            if (!QFile::remove(targetPath))
+            {
+                ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                     "导入失败",
+                                     "无法覆盖现有文件",
+                                     3000,
+                                     parentWidget());
+                return;
+            }
+        }
+        if (!QFile::copy(QDir(finalRepoPath).filePath(targetName), targetPath))
+        {
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "导入失败",
+                                 "复制导入文件失败",
+                                 3000,
+                                 parentWidget());
+            return;
+        }
     }
     else
     {
         QDir targetDir(targetPath);
         if (targetDir.exists())
-            targetDir.removeRecursively();
-        FileUtils::copyDirectory(QDir(finalRepoPath).filePath(targetName), targetPath);
+        {
+            if (!targetDir.removeRecursively())
+            {
+                ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                     "导入失败",
+                                     "清理目标文件夹失败",
+                                     3000,
+                                     parentWidget());
+                return;
+            }
+        }
+        if (!FileUtils::copyDirectory(QDir(finalRepoPath).filePath(targetName), targetPath))
+        {
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "导入失败",
+                                 "复制导入文件夹失败",
+                                 3000,
+                                 parentWidget());
+            return;
+        }
     }
 
     ElaMessageBar::success(ElaMessageBarType::BottomRight,

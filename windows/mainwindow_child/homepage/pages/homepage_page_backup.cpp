@@ -26,7 +26,6 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
-
 // 自定义委体，只允许第二列编辑
 class EditableColumnDelegate : public QItemDelegate
 {
@@ -130,15 +129,40 @@ void HomePage::SetupBackupPage()
                                            parentWidget());
                     return;
                 }
-                QDesktopServices::openUrl(QUrl(repoUrl)); });
+                if (!QDesktopServices::openUrl(QUrl(repoUrl)))
+                {
+                    ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                         "打开失败",
+                                         "无法打开云端地址，请检查链接格式",
+                                         3000,
+                                         parentWidget());
+                } });
     //从远程仓库同步（git pull）
     connect(btnPull, &ElaIconButton::clicked, this, [=]()
             {
                 const QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
+                if (!QDir(repoPath).exists())
+                {
+                    ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                         "同步失败",
+                                         "本地备份仓库不存在",
+                                         3000,
+                                         parentWidget());
+                    return;
+                }
                 //执行 git pull
                 QProcess pullProcess;
                 pullProcess.setWorkingDirectory(repoPath);
                 pullProcess.start("git", QStringList() << "pull" << "origin" << "master");
+                if (!pullProcess.waitForStarted())
+                {
+                    ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                         "同步失败",
+                                         "无法启动 git，请确认 git 已安装",
+                                         3000,
+                                         parentWidget());
+                    return;
+                }
                 pullProcess.waitForFinished();
                 //推送结果判断
                 if (pullProcess.exitCode() == 0)
@@ -163,10 +187,28 @@ void HomePage::SetupBackupPage()
     connect(btnPush, &ElaIconButton::clicked, this, [=]()
             {
                 const QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
+                if (!QDir(repoPath).exists())
+                {
+                    ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                         "上传失败",
+                                         "本地备份仓库不存在",
+                                         3000,
+                                         parentWidget());
+                    return;
+                }
                 // 执行 git push
                 QProcess pushProcess;
                 pushProcess.setWorkingDirectory(repoPath);
                 pushProcess.start("git", QStringList() << "push" << "origin" << "master");
+                if (!pushProcess.waitForStarted())
+                {
+                    ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                         "上传失败",
+                                         "无法启动 git，请确认 git 已安装",
+                                         3000,
+                                         parentWidget());
+                    return;
+                }
                 pushProcess.waitForFinished();
                 if (pushProcess.exitCode() == 0)
                 {
@@ -197,10 +239,39 @@ void HomePage::ApplyRemoteUrlFromInput(bool showSuccessMessage)
     const QString url = m_RemoteUrlEdit->text().trimmed();
     const QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
 
+    if (url.isEmpty())
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "云端地址保存失败",
+                             "云端地址不能为空",
+                             3000,
+                             parentWidget());
+        return;
+    }
+
+    if (!QDir(repoPath).exists())
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "云端地址保存失败",
+                             "本地备份仓库不存在",
+                             3000,
+                             parentWidget());
+        return;
+    }
+
     QProcess checkProcess;
     //设置远程仓库
     checkProcess.setWorkingDirectory(repoPath);
     checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
+    if (!checkProcess.waitForStarted())
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "云端地址保存失败",
+                             "无法启动 git，请确认 git 已安装",
+                             3000,
+                             parentWidget());
+        return;
+    }
     checkProcess.waitForFinished();
 
     const bool hasOrigin = (checkProcess.exitCode() == 0);
@@ -211,6 +282,15 @@ void HomePage::ApplyRemoteUrlFromInput(bool showSuccessMessage)
         setProcess.start("git", QStringList() << "remote" << "set-url" << "origin" << url);
     else
         setProcess.start("git", QStringList() << "remote" << "add" << "origin" << url);
+    if (!setProcess.waitForStarted())
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "云端地址保存失败",
+                             "无法启动 git，请确认 git 已安装",
+                             3000,
+                             parentWidget());
+        return;
+    }
     setProcess.waitForFinished();
 
     if (setProcess.exitCode() != 0)
@@ -260,7 +340,26 @@ void HomePage::openBackup(QString FilePathWithCode)
     QProcess git;
     git.setWorkingDirectory(repoPath);
     git.start("git", QStringList() << "log" << "--oneline");
+    if (!git.waitForStarted())
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "打开备份失败",
+                             "无法启动 git，请确认 git 已安装",
+                             3000,
+                             parentWidget());
+        return;
+    }
     git.waitForFinished();
+
+    if (git.exitCode() != 0)
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "打开备份失败",
+                             QString::fromUtf8(git.readAllStandardError()).trimmed(),
+                             3000,
+                             parentWidget());
+        return;
+    }
 
     QString output = git.readAllStandardOutput();
     QStringList commitList = output.split("\n", Qt::SkipEmptyParts);
@@ -326,23 +425,89 @@ void HomePage::openBackup(QString FilePathWithCode)
                     git.setWorkingDirectory(sourceRepoPath);
                     QString shortId = currentHash; //获取短 ID 方便后续命名
                     git.start("git", QStringList() << "checkout" << "-f" << shortId); //强制切换到历史版本
+                    if (!git.waitForStarted())
+                    {
+                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                             "查看失败",
+                                             "无法启动 git，请确认 git 已安装",
+                                             3000,
+                                             parentWidget());
+                        return;
+                    }
                     git.waitForFinished();
+                    if (git.exitCode() != 0)
+                    {
+                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                             "查看失败",
+                                             QString::fromUtf8(git.readAllStandardError()).trimmed(),
+                                             3000,
+                                             parentWidget());
+                        return;
+                    }
 
                     /*准备临时目标路径*/
                     QString pureFolderName = QFileInfo(m_NowFilePathWithCode).fileName();
                     QString destinationPath = QDir::tempPath() + "/ZcBox_Preview_" + shortId + "_" + pureFolderName;
                     QDir oldDir(destinationPath); //清理已存在的旧预览目录
                     if (oldDir.exists())
-                        oldDir.removeRecursively();
+                    {
+                        if (!oldDir.removeRecursively())
+                        {
+                            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                                 "查看失败",
+                                                 "清理旧预览目录失败",
+                                                 3000,
+                                                 parentWidget());
+                            git.start("git", QStringList() << "checkout" << "-f" << "master");
+                            git.waitForFinished();
+                            return;
+                        }
+                    }
 
                     /*执行复制并处理属性*/
-                    FileUtils::copyDirectory(sourceRepoPath, destinationPath);
+                    if (!FileUtils::copyDirectory(sourceRepoPath, destinationPath))
+                    {
+                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                             "查看失败",
+                                             "复制预览文件失败",
+                                             3000,
+                                             parentWidget());
+                        git.start("git", QStringList() << "checkout" << "-f" << "master");
+                        git.waitForFinished();
+                        return;
+                    }
                     FileUtils::setReadOnlyRecursive(destinationPath); //设置只读保护
-                    QDesktopServices::openUrl(QUrl::fromLocalFile(destinationPath)); //打开文件夹
+                    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(destinationPath)))
+                    {
+                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                             "查看失败",
+                                             "无法打开预览目录",
+                                             3000,
+                                             parentWidget());
+                    }
 
                     /*将备份仓库切回 master*/
                     git.start("git", QStringList() << "checkout" << "-f" << "master");
-                    git.waitForFinished(); });
+                    if (git.waitForStarted())
+                    {
+                        git.waitForFinished();
+                        if (git.exitCode() != 0)
+                        {
+                            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                                 "查看失败",
+                                                 "恢复工作分支失败，请手动执行 git checkout -f master",
+                                                 3500,
+                                                 parentWidget());
+                        }
+                    }
+                    else
+                    {
+                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                             "查看失败",
+                                             "无法启动 git 恢复工作分支",
+                                             3500,
+                                             parentWidget());
+                    } });
 
         connect(button2, &QPushButton::clicked, this, [=]()
                 {
@@ -351,14 +516,50 @@ void HomePage::openBackup(QString FilePathWithCode)
                     git.setWorkingDirectory(BackupPath + "/" + m_NowFilePathWithCode);
                     QString shortId = currentHash;
                     git.start("git", QStringList() << "reset" << "--hard" << shortId);
+                    if (!git.waitForStarted())
+                    {
+                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                             "还原失败",
+                                             "无法启动 git，请确认 git 已安装",
+                                             3000,
+                                             parentWidget());
+                        return;
+                    }
                     git.waitForFinished();
+                    if (git.exitCode() != 0)
+                    {
+                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                             "还原失败",
+                                             QString::fromUtf8(git.readAllStandardError()).trimmed(),
+                                             3000,
+                                             parentWidget());
+                        return;
+                    }
 
                     //替换源文件
                     QString sourceFilePath = QUrl::fromPercentEncoding(m_NowFilePathWithCode.toUtf8());
                     QString backupFilePath = BackupPath + "/" + m_NowFilePathWithCode + "/" + QFileInfo(sourceFilePath).fileName();
                     if (QFile::exists(sourceFilePath))
-                        QFile::remove(sourceFilePath);
-                    QFile::copy(backupFilePath, sourceFilePath);
+                    {
+                        if (!QFile::remove(sourceFilePath))
+                        {
+                            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                                 "还原失败",
+                                                 "无法删除原文件，请检查占用状态",
+                                                 3000,
+                                                 parentWidget());
+                            return;
+                        }
+                    }
+                    if (!QFile::copy(backupFilePath, sourceFilePath))
+                    {
+                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                             "还原失败",
+                                             "复制备份文件失败，请检查权限",
+                                             3000,
+                                             parentWidget());
+                        return;
+                    }
 
                     //提示
                     ElaMessageBar::success(ElaMessageBarType::BottomRight,
@@ -464,6 +665,15 @@ void HomePage::openBackup(QString FilePathWithCode)
     QProcess checkProcess;
     checkProcess.setWorkingDirectory(repoPath);
     checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
+    if (!checkProcess.waitForStarted())
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "云端同步失败",
+                             "无法启动 git，请确认 git 已安装",
+                             3000,
+                             parentWidget());
+        return;
+    }
     checkProcess.waitForFinished();
 
     //读取并设置到输入框
@@ -498,6 +708,15 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
         QProcess checkProcess;
         checkProcess.setWorkingDirectory(repoPath);
         checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
+        if (!checkProcess.waitForStarted())
+        {
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "关闭云端同步失败",
+                                 "无法启动 git，请确认 git 已安装",
+                                 3000,
+                                 parentWidget());
+            return;
+        }
         checkProcess.waitForFinished();
         if (checkProcess.exitCode() != 0)
             return;
@@ -505,6 +724,15 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
         QProcess process;
         process.setWorkingDirectory(repoPath);
         process.start("git", QStringList() << "remote" << "remove" << "origin");
+        if (!process.waitForStarted())
+        {
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "关闭云端同步失败",
+                                 "无法启动 git，请确认 git 已安装",
+                                 3000,
+                                 parentWidget());
+            return;
+        }
         process.waitForFinished();
 
         if (process.exitCode() == 0)
@@ -532,6 +760,15 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
     QProcess checkProcess;
     checkProcess.setWorkingDirectory(repoPath);
     checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
+    if (!checkProcess.waitForStarted())
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "云端同步失败",
+                             "无法启动 git，请确认 git 已安装",
+                             3000,
+                             parentWidget());
+        return;
+    }
     checkProcess.waitForFinished();
     //结果反馈和提示
     if (checkProcess.exitCode() != 0)

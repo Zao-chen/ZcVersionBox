@@ -17,6 +17,7 @@
 #include <QStandardPaths>
 #include <QTimer>
 
+#include "ElaMessageBar.h"
 #include "ElaToolTip.h"
 
 HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidget *parent)
@@ -113,7 +114,14 @@ HomePageChild_TrackFile::~HomePageChild_TrackFile()
 /*打开文件*/
 void HomePageChild_TrackFile::on_pushButton_OpenFile_clicked()
 {
-    QDesktopServices::openUrl(QUrl::fromLocalFile(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8())));
+    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8()))))
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "打开失败",
+                             "无法打开目标路径",
+                             3000,
+                             this);
+    }
 }
 
 /*移除追踪*/
@@ -123,7 +131,15 @@ void HomePageChild_TrackFile::on_pushButton_RemoveTrack_clicked()
     QString docPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/ZcVersionBox/Backup";
     QDir dir(BackupPath + "/" + m_FilePathWithCode);
     qInfo() << "移除追踪：" << dir;
-    dir.removeRecursively();
+    if (!dir.removeRecursively())
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "移除追踪失败",
+                             "删除备份目录失败，请检查权限或文件占用",
+                             3000,
+                             this);
+        return;
+    }
     this->deleteLater();
 }
 
@@ -133,16 +149,68 @@ void HomePageChild_TrackFile::BackupFile()
     QString FilePathWithoutCode = QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8());
     QString backupDirPath = BackupPath + "/" + m_FilePathWithCode + "/" + QFileInfo(FilePathWithoutCode).fileName();
     const QFileInfo sourceInfo(FilePathWithoutCode);
-    if (QFile::exists(backupDirPath))
-        QFile::remove(backupDirPath);
+    if (!sourceInfo.exists())
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "自动备份失败",
+                             "源文件或文件夹不存在",
+                             3000,
+                             this);
+        return;
+    }
+
+    const QFileInfo backupInfo(backupDirPath);
+    if (backupInfo.exists())
+    {
+        if (backupInfo.isDir())
+        {
+            if (!QDir(backupDirPath).removeRecursively())
+            {
+                ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                     "自动备份失败",
+                                     "清理旧备份目录失败",
+                                     3000,
+                                     this);
+                return;
+            }
+        }
+        else
+        {
+            if (!QFile::remove(backupDirPath))
+            {
+                ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                     "自动备份失败",
+                                     "清理旧备份文件失败",
+                                     3000,
+                                     this);
+                return;
+            }
+        }
+    }
 
     if (sourceInfo.isFile())
     {
-        QFile::copy(FilePathWithoutCode, backupDirPath);
+        if (!QFile::copy(FilePathWithoutCode, backupDirPath))
+        {
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "自动备份失败",
+                                 "复制文件失败，请检查权限",
+                                 3000,
+                                 this);
+            return;
+        }
     }
     else
     {
-        FileUtils::copyDirectory(FilePathWithoutCode, backupDirPath);
+        if (!FileUtils::copyDirectory(FilePathWithoutCode, backupDirPath))
+        {
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "自动备份失败",
+                                 "复制文件夹失败，请检查权限",
+                                 3000,
+                                 this);
+            return;
+        }
     }
 
     /*Git自动Commit*/
@@ -150,16 +218,60 @@ void HomePageChild_TrackFile::BackupFile()
     git.setWorkingDirectory(BackupPath + "/" + m_FilePathWithCode);
     //添加变更
     git.start("git", QStringList() << "add" << ".");
+    if (!git.waitForStarted())
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "自动备份失败",
+                             "无法启动 git，请确认 git 已安装",
+                             3000,
+                             this);
+        return;
+    }
     git.waitForFinished();
+    if (git.exitCode() != 0)
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "自动备份失败",
+                             QString::fromUtf8(git.readAllStandardError()).trimmed(),
+                             3000,
+                             this);
+        return;
+    }
     //检查是否真的有改动（避免空提交）
     git.start("git", QStringList() << "diff" << "--cached" << "--quiet");
+    if (!git.waitForStarted())
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "自动备份失败",
+                             "无法启动 git，请确认 git 已安装",
+                             3000,
+                             this);
+        return;
+    }
     git.waitForFinished();
     if (git.exitCode() != 0)
     {
         // 获取当前时间
         QString timeStr = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
         git.start("git", QStringList() << "commit" << "-m" << QString("Auto backup - %1").arg(timeStr));
+        if (!git.waitForStarted())
+        {
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "自动备份失败",
+                                 "无法启动 git，请确认 git 已安装",
+                                 3000,
+                                 this);
+            return;
+        }
         git.waitForFinished();
+        if (git.exitCode() != 0)
+        {
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "自动备份失败",
+                                 QString::fromUtf8(git.readAllStandardError()).trimmed(),
+                                 3000,
+                                 this);
+        }
     }
 }
 
