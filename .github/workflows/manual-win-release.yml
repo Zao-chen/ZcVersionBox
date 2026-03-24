@@ -141,7 +141,7 @@ jobs:
             'Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"; Flags: unchecked',
             '',
             '[Files]',
-            'Source: "dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs excludes: "GitInstaller.exe"',
+            'Source: "dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "GitInstaller.exe"',
             'Source: "dist\GitInstaller.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall',
             '',
             '[Icons]',

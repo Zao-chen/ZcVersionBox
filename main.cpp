@@ -48,7 +48,7 @@ int main(int argc, char *argv[])
         QProcess git;
         git.setWorkingDirectory(repoPath);
 
-        // 初始化仓库
+        //初始化仓库
         git.start("git", QStringList() << "init");
         if (!git.waitForStarted())
         {
@@ -70,13 +70,13 @@ int main(int argc, char *argv[])
             return 0;
         }
 
-        // 配置本地 git user（如果全局未配置）
+        //配置本地 git user（如果全局未配置）
         git.start("git", QStringList() << "config" << "user.name" << "ZcVersionBox");
         git.waitForFinished();
         git.start("git", QStringList() << "config" << "user.email" << "backup@zcversionbox.local");
         git.waitForFinished();
 
-        // 添加文件
+        //添加文件
         git.start("git", QStringList() << "add" << ".");
         if (!git.waitForStarted())
         {
@@ -100,7 +100,7 @@ int main(int argc, char *argv[])
             return 0;
         }
 
-        // 创建初始提交
+        //创建初始提交
         git.start("git", QStringList() << "commit" << "-m" << "Initial backup");
         if (!git.waitForStarted())
         {
@@ -124,7 +124,7 @@ int main(int argc, char *argv[])
             return 0;
         }
 
-        /*相关提示*/
+        //完成提示
         static QSystemTrayIcon trayIcon;
         trayIcon.setIcon(QIcon(":/img/ico/res/img/logo.png"));
         trayIcon.show();
