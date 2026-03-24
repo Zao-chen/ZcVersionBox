@@ -88,22 +88,6 @@ jobs:
           if (!(Test-Path "dist\Qt6Core.dll")) { throw "dist\Qt6Core.dll missing" }
           if (!(Test-Path "dist\platforms\qwindows.dll")) { throw "dist\platforms\qwindows.dll missing (windeployqt failed?)" }
 
-      - name: Download Git for Windows
-        shell: pwsh
-        run: |
-          $gitInstallerUrl = "https://github.com/git-for-windows/git/releases/download/v2.43.0.windows.1/Git-2.43.0-64-bit.exe"
-          $gitInstallerPath = "dist\GitInstaller.exe"
-          
-          Write-Host "Downloading Git for Windows..."
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-          Invoke-WebRequest -Uri $gitInstallerUrl -OutFile $gitInstallerPath
-          
-          if (!(Test-Path $gitInstallerPath)) {
-            throw "Failed to download Git installer"
-          }
-          
-          Write-Host "Git installer downloaded: $gitInstallerPath"
-
       - name: Install Inno Setup
         shell: pwsh
         run: |
@@ -141,14 +125,20 @@ jobs:
             'Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"; Flags: unchecked',
             '',
             '[Files]',
-            'Source: "dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "GitInstaller.exe"',
-            'Source: "dist\GitInstaller.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall',
+            'Source: "dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs',
             '',
             '[Icons]',
             'Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"',
             'Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon',
             '',
             '[Code]',
+            'const',
+            '  GitInstallerUrl = ''https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe'';',
+            '  GitDownloadPage = ''https://git-scm.com/download/win'';',
+            '',
+            'function URLDownloadToFile(Caller: Integer; URL: string; FileName: string; Reserved: Integer; StatusCB: Integer): Integer;',
+            '  external ''URLDownloadToFileA@urlmon.dll stdcall'';',
+            '',
             'function GitIsInstalled: Boolean;',
             'var',
             '  GitPath: string;',
@@ -166,9 +156,19 @@ jobs:
             'procedure InstallGit;',
             'var',
             '  ResultCode: Integer;',
+            '  DownloadCode: Integer;',
+            '  InstallerPath: string;',
             'begin',
             '  MsgBox(''Git is not installed. ZcVersionBox requires Git for version control.'', mbInformation, MB_OK);',
-            '  if ShellExec(''open'', ExpandConstant(''{tmp}\GitInstaller.exe''), ''/VERYSILENT /NORESTART'', '''', SW_HIDE, ewWaitUntilTerminated, ResultCode) then',
+            '  InstallerPath := ExpandConstant(''{tmp}\GitInstaller.exe'');',
+            '  DownloadCode := URLDownloadToFile(0, GitInstallerUrl, InstallerPath, 0, 0);',
+            '  if (DownloadCode <> 0) or (not FileExists(InstallerPath)) then',
+            '  begin',
+            '    MsgBox(''Failed to download Git installer automatically. The Git download page will be opened for manual installation.'', mbError, MB_OK);',
+            '    ShellExec(''open'', GitDownloadPage, '''', '''', SW_SHOWNORMAL, ewNoWait, ResultCode);',
+            '    exit;',
+            '  end;',
+            '  if ShellExec(''open'', InstallerPath, ''/VERYSILENT /NORESTART'', '''', SW_HIDE, ewWaitUntilTerminated, ResultCode) then',
             '  begin',
             '    if ResultCode = 0 then',
             '      MsgBox(''Git installed successfully. Please restart the application.'', mbInformation, MB_OK)',
@@ -214,7 +214,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 100
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -223,13 +223,31 @@ jobs:
       - name: Generate release notes from commits
         shell: bash
         run: |
+          current_tag="${{ inputs.tag_name }}"
+          prev_tag="$(git tag --sort=-v:refname | grep -Fxv "$current_tag" | head -n 1)"
+
+          if [ -n "$prev_tag" ]; then
+            if git rev-parse "$current_tag" >/dev/null 2>&1; then
+              commit_range="$prev_tag..$current_tag"
+            else
+              commit_range="$prev_tag..HEAD"
+            fi
+          else
+            commit_range="HEAD"
+          fi
+
           {
             echo "ZcVersionBox ${{ inputs.tag_name }}"
             echo
             echo "Built from commit: ${GITHUB_SHA}"
             echo
             echo "Recent commits:"
-            git log -n 20 --pretty=format:'- %h %s (%an)'
+            if [ -n "$prev_tag" ]; then
+              echo "(from $prev_tag to $current_tag)"
+            else
+              echo "(no previous tag found; showing current history)"
+            fi
+            git log $commit_range --pretty=format:'- %h %s (%an)'
           } > RELEASE_NOTES.md
 
       - uses: softprops/action-gh-release@v2

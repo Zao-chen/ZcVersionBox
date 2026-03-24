@@ -26,7 +26,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
-// 自定义委体，只允许第二列编辑
+//自定义委体，只允许第二列编辑
 class EditableColumnDelegate : public QItemDelegate
 {
   public:
@@ -34,11 +34,9 @@ class EditableColumnDelegate : public QItemDelegate
 
     QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
-        // 只允许第二列（索引1）编辑
+        //只允许第二列（索引1）编辑
         if (index.column() == 1)
-        {
             return QItemDelegate::createEditor(parent, option, index);
-        }
         return nullptr;
     }
 };
@@ -46,7 +44,7 @@ class EditableColumnDelegate : public QItemDelegate
 /*页面初始化*/
 void HomePage::SetupBackupPage()
 {
-    /*远程开关*/
+    /*远程选关*/
     m_ToggleSwitch_Remote = new ElaToggleSwitch(this);
 
     QWidget *drawerHeader = new QWidget(this);

@@ -83,5 +83,5 @@ void MainWindow::on_exitAppAction()
 void MainWindow::closeEvent(QCloseEvent *e)
 {
     this->hide();
-    e->ignore(); //阻止真正 close
+    e->ignore(); //阻止真正close
 }
