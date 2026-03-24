@@ -26,6 +26,7 @@ SettingPage::~SettingPage()
     delete ui;
 }
 
+/*右键菜单*/
 void SettingPage::on_ToggleSwitch_RightClickMenu_toggled(bool checked)
 {
     QString appPath = QCoreApplication::applicationFilePath().replace("/", "\\");
@@ -83,6 +84,7 @@ void SettingPage::on_ToggleSwitch_RightClickMenu_toggled(bool checked)
     ini.setValue("RightClickMenu", checked);
 }
 
+/*开机自启*/
 void SettingPage::on_ToggleSwitch_AutoStart_toggled(bool checked)
 {
     const QString runRegPath = R"(HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run)";

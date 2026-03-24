@@ -257,8 +257,8 @@ void HomePage::ApplyRemoteUrlFromInput(bool showSuccessMessage)
         return;
     }
 
-    QProcess checkProcess;
     //设置远程仓库
+    QProcess checkProcess;
     checkProcess.setWorkingDirectory(repoPath);
     checkProcess.start("git", QStringList() << "remote" << "get-url" << "origin");
     if (!checkProcess.waitForStarted())
@@ -361,7 +361,8 @@ void HomePage::openBackup(QString FilePathWithCode)
 
     QString output = git.readAllStandardOutput();
     QStringList commitList = output.split("\n", Qt::SkipEmptyParts);
-    //填充模型
+
+    //填充列表
     for (const QString &commitInfo : std::as_const(commitList))
     {
         QStringList parts = commitInfo.split(' ', Qt::SkipEmptyParts);
@@ -415,6 +416,7 @@ void HomePage::openBackup(QString FilePathWithCode)
         layout->addStretch();
 
         QString currentHash = model->item(row, 0)->text();
+        //预览
         connect(button1, &QPushButton::clicked, this, [=]()
                 {
                     /*切换到指定的commit*/
@@ -506,7 +508,7 @@ void HomePage::openBackup(QString FilePathWithCode)
                                              3500,
                                              parentWidget());
                     } });
-
+        //恢复
         connect(button2, &QPushButton::clicked, this, [=]()
                 {
                     //回滚仓库
@@ -585,10 +587,10 @@ void HomePage::openBackup(QString FilePathWithCode)
         ui->tableView_BackupFiles->setIndexWidget(index, buttonWidget);
     }
 
-    // 连接模型的itemChanged信号，处理提交消息编辑
+    //修改提交信息
     connect(model, &QStandardItemModel::itemChanged, this, [=](QStandardItem *item)
             {
-        // 只处理第二列（说明列）的修改
+        //只处理第二列（说明列）的修改
         if (item->column() != 1)
             return;
 
@@ -606,11 +608,10 @@ void HomePage::openBackup(QString FilePathWithCode)
             return;
         }
 
-        // 使用 git commit --amend 修改提交消息
-        // 注意：只能修改最新的提交，对于历史提交需要使用 rebase
+        //使用 git commit --amend 修改提交消息
         QString gitRepoPath = BackupPath + "/" + m_NowFilePathWithCode;
         
-        // 获取当前HEAD的hash
+        //获取当前HEAD的hash
         QProcess getCurrentHash;
         getCurrentHash.setWorkingDirectory(gitRepoPath);
         getCurrentHash.start("git", QStringList() << "rev-parse" << "HEAD");
@@ -619,7 +620,7 @@ void HomePage::openBackup(QString FilePathWithCode)
 
         if (hash == currentHash)
         {
-            // 修改最新提交的消息
+            //修改最新提交的消息
             QProcess amendProcess;
             amendProcess.setWorkingDirectory(gitRepoPath);
             amendProcess.start("git", QStringList() << "commit" << "--amend" << "-m" << newMessage);
@@ -650,7 +651,7 @@ void HomePage::openBackup(QString FilePathWithCode)
                                    "只能编辑最新的提交说明",
                                    2000,
                                    parentWidget());
-            // 恢复为原来的文本
+            //恢复为原来的文本
             QProcess getCommitMsg;
             getCommitMsg.setWorkingDirectory(gitRepoPath);
             getCommitMsg.start("git", QStringList() << "log" << "-1" << "--format=%B" << hash);
@@ -689,7 +690,7 @@ void HomePage::openBackup(QString FilePathWithCode)
     else
         ui->ElaDrawerArea_Remote->collapse();
 
-    /*设置焦点到表格，避免自动聚焦到远程URL输入框*/
+    //设置焦点到表格，避免自动聚焦到远程URL输入框
     ui->tableView_BackupFiles->setFocus();
 }
 

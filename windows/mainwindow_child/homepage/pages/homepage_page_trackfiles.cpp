@@ -115,7 +115,7 @@ void HomePage::on_pushButton_AddFromLoc_clicked()
     QString path;
     QWidget *owner = this->window();
 
-    if (choose == 1)
+    if (choose == 1) //添加文件
     {
         QFileDialog::Options options;
         path = QFileDialog::getOpenFileName(
@@ -126,7 +126,7 @@ void HomePage::on_pushButton_AddFromLoc_clicked()
             nullptr,
             options);
     }
-    else if (choose == 2)
+    else if (choose == 2) //添加文件夹
     {
         QFileDialog::Options options = QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks;
         path = QFileDialog::getExistingDirectory(
@@ -135,7 +135,7 @@ void HomePage::on_pushButton_AddFromLoc_clicked()
             QDir::homePath(),
             options);
     }
-    else
+    else //取消
     {
         return;
     }

@@ -34,7 +34,7 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
 
     /*开始备份*/
     QTimer *timer = new QTimer(this);
-    timer->setInterval(1500); // 1.5秒扫描一次
+    timer->setInterval(1500); //1.5秒扫描一次
     QString rootPath = QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8());
     rootPath = QDir::cleanPath(rootPath);
     const bool isTrackedFile = QFileInfo(rootPath).isFile();
@@ -88,7 +88,7 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
     scanState(lastState);
 
     //防止备份重入（备份过程中不重复触发）
-    bool *busy = new bool(false); //简单做法；也可用成员变量更干净
+    bool *busy = new bool(false);
     connect(timer, &QTimer::timeout, this, [=]() mutable
             {
                 if (*busy) return;
@@ -159,6 +159,7 @@ void HomePageChild_TrackFile::BackupFile()
         return;
     }
 
+    /*备份*/
     const QFileInfo backupInfo(backupDirPath);
     if (backupInfo.exists())
     {
@@ -251,7 +252,7 @@ void HomePageChild_TrackFile::BackupFile()
     git.waitForFinished();
     if (git.exitCode() != 0)
     {
-        // 获取当前时间
+        //构建
         QString timeStr = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
         git.start("git", QStringList() << "commit" << "-m" << QString("Auto backup - %1").arg(timeStr));
         if (!git.waitForStarted())
