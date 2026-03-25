@@ -31,6 +31,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.cpp
         windows/mainwindow_child/homepage/pages/homepage_page_backup.cpp
         windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.h windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.cpp windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.ui
+        windows/mainwindow_child/aboutpage/aboutpage.h windows/mainwindow_child/aboutpage/aboutpage.cpp windows/mainwindow_child/aboutpage/aboutpage.ui
         windows/mainwindow_child/settingpage/settingpage.h windows/mainwindow_child/settingpage/settingpage.cpp windows/mainwindow_child/settingpage/settingpage.ui
         GlobalConstants.h
         res.qrc
