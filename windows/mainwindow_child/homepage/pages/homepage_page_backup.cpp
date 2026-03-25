@@ -782,7 +782,6 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
                                "填写后会自动保存",
                                2500,
                                parentWidget());
-        ApplyRemoteUrlFromInput(false);
         return;
     }
 
