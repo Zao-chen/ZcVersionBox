@@ -375,9 +375,12 @@ void HomePage::openBackup(QString FilePathWithCode)
         QStandardItem *item0 = new QStandardItem(hash);
         QStandardItem *item1 = new QStandardItem(message);
         QStandardItem *item2 = new QStandardItem(""); //占位，用于按钮
-        item0->setTextAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+        item0->setFlags(item0->flags() & ~Qt::ItemIsEditable);
+        item1->setFlags(item1->flags() | Qt::ItemIsEditable);
+        item2->setFlags(item2->flags() & ~Qt::ItemIsEditable);
+        item0->setTextAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
         item1->setTextAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
-        item2->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        item2->setTextAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
         rowItems << item0 << item1 << item2;
         model->appendRow(rowItems);
     }
@@ -387,14 +390,14 @@ void HomePage::openBackup(QString FilePathWithCode)
     ui->tableView_BackupFiles->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->tableView_BackupFiles->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
 
-    // 设置自定义委体，限制只能编辑第二列
-    ui->tableView_BackupFiles->setItemDelegate(new EditableColumnDelegate(ui->tableView_BackupFiles));
+    // 使用默认委托以兼容 ElaTableView 主题渲染；通过 item flags 限制可编辑列
 
     //设置列宽和表头行为
-    ui->tableView_BackupFiles->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    ui->tableView_BackupFiles->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
     ui->tableView_BackupFiles->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
     ui->tableView_BackupFiles->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
-    ui->tableView_BackupFiles->setColumnWidth(2, 200); //操作列宽
+    ui->tableView_BackupFiles->setColumnWidth(0, 80);  //版本号列宽
+    ui->tableView_BackupFiles->setColumnWidth(2, 180); //操作列宽
 
     //为每一行添加按钮
     for (int row = 0; row < model->rowCount(); ++row)
@@ -411,6 +414,7 @@ void HomePage::openBackup(QString FilePathWithCode)
         button1->setFont(font);
         button2->setFont(font);
 
+        layout->addStretch();
         layout->addWidget(button1);
         layout->addWidget(button2);
         layout->addStretch();
