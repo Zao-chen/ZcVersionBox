@@ -2,6 +2,7 @@
 #include "ui_homepagechild_trackfile.h"
 
 #include "../../../../GlobalConstants.h"
+#include "../../../../utils/aicommitmessagehelper.h"
 #include "../../../../utils/fileutils.h"
 #include "../homepage.h"
 
@@ -14,11 +15,66 @@
 #include <QFileSystemWatcher>
 #include <QProcess>
 #include <QRegularExpression>
+#include <QSettings>
 #include <QStandardPaths>
 #include <QTimer>
 
 #include "ElaMessageBar.h"
 #include "ElaToolTip.h"
+
+namespace
+{
+
+QString buildAutoCommitMessageWithAi(const QString &repoPath)
+{
+    // Auto AI commit message is optional and controlled by settings.
+    if (!AiCommitMessageHelper::isAutoCommitEnabled())
+        return {};
+
+    QProcess diffProcess;
+    diffProcess.setWorkingDirectory(repoPath);
+    diffProcess.start("git", QStringList() << "diff" << "--cached" << "--unified=0");
+    if (!diffProcess.waitForStarted())
+    {
+        qInfo() << "自动 AI 提交信息获取 diff 失败：无法启动 git";
+        return {};
+    }
+    diffProcess.waitForFinished();
+    if (diffProcess.exitCode() != 0)
+    {
+        qInfo() << "自动 AI 提交信息获取 diff 失败：" << QString::fromUtf8(diffProcess.readAllStandardError()).trimmed();
+        return {};
+    }
+
+    const QString diffText = QString::fromUtf8(diffProcess.readAllStandardOutput()).trimmed();
+    if (diffText.isEmpty())
+    {
+        qInfo() << "自动 AI 提交信息获取到空 diff，回退默认提交信息";
+        return {};
+    }
+
+    const QString prompt = AiCommitMessageHelper::buildPromptFromDiff(diffText);
+    qInfo() << "自动 AI 提交信息请求，repo=" << repoPath
+            << "diff长度=" << diffText.length()
+            << "prompt长度=" << prompt.length();
+
+    QString aiError;
+    const QString generated = AiCommitMessageHelper::generateCommitMessageSync(diffText, 15000, &aiError);
+
+    if (generated.isEmpty())
+    {
+        if (aiError.isEmpty())
+            qInfo() << "自动 AI 提交信息失败：未知错误";
+        else
+            qInfo() << "自动 AI 提交信息失败：" << aiError;
+        return {};
+    }
+
+    qInfo() << "自动 AI 提交信息成功，message长度=" << generated.length();
+    return generated;
+}
+
+} // namespace
 
 HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidget *parent)
     : QWidget(parent), ui(new Ui::HomePageChild_TrackFile)
@@ -39,12 +95,6 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
     rootPath = QDir::cleanPath(rootPath);
     const bool isTrackedFile = QFileInfo(rootPath).isFile();
     QMap<QString, QString> lastState; // path -> fingerprint
-    //计算文件指纹
-    auto calcFingerprint = [](const QFileInfo &info) -> QString
-    {
-        return QString::number(info.size()) + "|" +
-               QString::number(info.lastModified().toMSecsSinceEpoch());
-    };
     //递归扫描
     auto scanState = [rootPath, isTrackedFile](QMap<QString, QString> &state)
     {
@@ -128,7 +178,6 @@ void HomePageChild_TrackFile::on_pushButton_OpenFile_clicked()
 void HomePageChild_TrackFile::on_pushButton_RemoveTrack_clicked()
 {
     //删除文件夹
-    QString docPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/ZcVersionBox/Backup";
     QDir dir(BackupPath + "/" + m_FilePathWithCode);
     qInfo() << "移除追踪：" << dir;
     if (!dir.removeRecursively())
@@ -216,7 +265,9 @@ void HomePageChild_TrackFile::BackupFile()
 
     /*Git自动Commit*/
     QProcess git;
-    git.setWorkingDirectory(BackupPath + "/" + m_FilePathWithCode);
+    const QString repoPath = BackupPath + "/" + m_FilePathWithCode;
+    git.setWorkingDirectory(repoPath);
+    qInfo() << "自动备份开始，repo=" << repoPath;
     //添加变更
     git.start("git", QStringList() << "add" << ".");
     if (!git.waitForStarted())
@@ -252,9 +303,14 @@ void HomePageChild_TrackFile::BackupFile()
     git.waitForFinished();
     if (git.exitCode() != 0)
     {
-        //构建
         QString timeStr = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
-        git.start("git", QStringList() << "commit" << "-m" << QString("Auto backup - %1").arg(timeStr));
+        QString commitMessage = buildAutoCommitMessageWithAi(repoPath);
+        if (commitMessage.isEmpty())
+            commitMessage = QString("Auto backup - %1").arg(timeStr);
+
+        qInfo() << "自动备份提交信息：" << commitMessage.left(120);
+
+        git.start("git", QStringList() << "commit" << "-m" << commitMessage);
         if (!git.waitForStarted())
         {
             ElaMessageBar::error(ElaMessageBarType::BottomRight,

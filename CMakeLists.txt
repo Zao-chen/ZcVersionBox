@@ -13,8 +13,8 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network)
 
 set(PROJECT_SOURCES
         main.cpp
@@ -37,6 +37,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         res.qrc
 
         utils/fileutils.h utils/fileutils.cpp
+        utils/aicommitmessagehelper.h utils/aicommitmessagehelper.cpp
     )
     set_source_files_properties(
         windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.cpp
@@ -68,9 +69,11 @@ include_directories(
 target_include_directories(ZcVersionBox PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ElaWidgetTools/include
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcWidgetTools/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/include
 )
 
 target_link_libraries(ZcVersionBox PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
+    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/lib/ZcAiLib.lib
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ElaWidgetTools/lib/elawidgettools.lib
     ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcWidgetTools/lib/ZcWidgetTools.lib
 )
@@ -106,6 +109,16 @@ if(WIN32 AND QT_VERSION_MAJOR EQUAL 6)
                     "${ZC_WIDGET_TOOLS_DLL}"
                     "$<TARGET_FILE_DIR:ZcVersionBox>/ZcWidgetTools.dll"
             COMMENT "Copying ZcWidgetTools runtime"
+        )
+    endif()
+
+    set(ZCAI_DLL "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/bin/ZcAiLib.dll")
+    if(EXISTS "${ZCAI_DLL}")
+        add_custom_command(TARGET ZcVersionBox POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${ZCAI_DLL}"
+                    "$<TARGET_FILE_DIR:ZcVersionBox>/ZcAiLib.dll"
+            COMMENT "Copying ZcAiLib runtime"
         )
     endif()
 endif()

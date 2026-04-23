@@ -1,8 +1,6 @@
 #include "aboutpage.h"
 #include "ui_aboutpage.h"
 
-#include "../../../GlobalConstants.h"
-
 #include <QCoreApplication>
 #include <QPixmap>
 

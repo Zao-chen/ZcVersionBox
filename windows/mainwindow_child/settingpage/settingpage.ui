@@ -30,83 +30,330 @@
     <widget class="ElaBreadcrumbBar" name="widget_BreadcrumbBar" native="true"/>
    </item>
    <item>
-    <widget class="ElaScrollPageArea" name="widget" native="true">
-     <layout class="QHBoxLayout" name="horizontalLayout">
-      <property name="leftMargin">
-       <number>12</number>
-      </property>
-      <property name="topMargin">
-       <number>12</number>
-      </property>
-      <property name="rightMargin">
-       <number>12</number>
-      </property>
-      <property name="bottomMargin">
-       <number>12</number>
-      </property>
-      <item>
-       <widget class="ElaText" name="label">
-        <property name="font">
-         <font>
-          <pointsize>12</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>右键菜单快捷入口</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="ElaToggleSwitch" name="ToggleSwitch_RightClickMenu" native="true"/>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="ElaScrollPageArea" name="widget_2" native="true">
-     <layout class="QHBoxLayout" name="horizontalLayout_2">
-      <property name="leftMargin">
-       <number>12</number>
-      </property>
-      <property name="topMargin">
-       <number>12</number>
-      </property>
-      <property name="rightMargin">
-       <number>12</number>
-      </property>
-      <property name="bottomMargin">
-       <number>12</number>
-      </property>
-      <item>
-       <widget class="ElaText" name="label_2">
-        <property name="font">
-         <font>
-          <pointsize>12</pointsize>
-         </font>
-        </property>
-        <property name="text">
-         <string>开机自动启动</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="ElaToggleSwitch" name="ToggleSwitch_AutoStart" native="true"/>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
-    <spacer name="verticalSpacer">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
+    <widget class="ZcStackedWidget" name="stackedWidget">
+     <property name="currentIndex">
+      <number>0</number>
      </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>40</height>
-      </size>
-     </property>
-    </spacer>
+     <widget class="QWidget" name="page_Main">
+      <layout class="QVBoxLayout" name="page_MainLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="ElaScrollPageArea" name="widget" native="true">
+         <layout class="QHBoxLayout" name="horizontalLayout">
+          <property name="leftMargin">
+           <number>12</number>
+          </property>
+          <property name="topMargin">
+           <number>12</number>
+          </property>
+          <property name="rightMargin">
+           <number>12</number>
+          </property>
+          <property name="bottomMargin">
+           <number>12</number>
+          </property>
+          <item>
+           <widget class="ElaText" name="label">
+            <property name="font">
+             <font>
+              <pointsize>12</pointsize>
+             </font>
+            </property>
+            <property name="text">
+             <string>右键菜单快捷入口</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaToggleSwitch" name="ToggleSwitch_RightClickMenu" native="true"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="ElaScrollPageArea" name="widget_2" native="true">
+         <layout class="QHBoxLayout" name="horizontalLayout_2">
+          <property name="leftMargin">
+           <number>12</number>
+          </property>
+          <property name="topMargin">
+           <number>12</number>
+          </property>
+          <property name="rightMargin">
+           <number>12</number>
+          </property>
+          <property name="bottomMargin">
+           <number>12</number>
+          </property>
+          <item>
+           <widget class="ElaText" name="label_2">
+            <property name="font">
+             <font>
+              <pointsize>12</pointsize>
+             </font>
+            </property>
+            <property name="text">
+             <string>开机自动启动</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaToggleSwitch" name="ToggleSwitch_AutoStart" native="true"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="ElaScrollPageArea" name="widget_AiEntry" native="true">
+         <layout class="QHBoxLayout" name="horizontalLayout_3">
+          <property name="leftMargin">
+           <number>12</number>
+          </property>
+          <property name="topMargin">
+           <number>12</number>
+          </property>
+          <property name="rightMargin">
+           <number>12</number>
+          </property>
+          <property name="bottomMargin">
+           <number>12</number>
+          </property>
+          <item>
+           <widget class="ElaText" name="label_AiEntry">
+            <property name="font">
+             <font>
+              <pointsize>12</pointsize>
+             </font>
+            </property>
+            <property name="text">
+             <string>AI 接入配置</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaPushButton" name="pushButton_OpenAiPage">
+            <property name="text">
+             <string>配置</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="page_Ai">
+      <layout class="QVBoxLayout" name="page_AiLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="ElaText" name="label_AiTitle">
+         <property name="font">
+          <font>
+           <pointsize>14</pointsize>
+          </font>
+         </property>
+         <property name="text">
+          <string>AI 接入配置</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="ElaScrollPageArea" name="widget_AiConnection" native="true">
+         <layout class="QHBoxLayout" name="horizontalLayout_AiConnection">
+          <property name="leftMargin">
+           <number>12</number>
+          </property>
+          <property name="topMargin">
+           <number>12</number>
+          </property>
+          <property name="rightMargin">
+           <number>12</number>
+          </property>
+          <property name="bottomMargin">
+           <number>12</number>
+          </property>
+          <item>
+           <widget class="ElaText" name="label_AiConnection">
+            <property name="text">
+             <string>连接</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaLineEdit" name="lineEdit_AiBaseUrl">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="clearButtonEnabled">
+             <bool>true</bool>
+            </property>
+            <property name="placeholderText">
+             <string>https://api.openai.com/v1/chat/completions</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaLineEdit" name="lineEdit_AiApiKey">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="clearButtonEnabled">
+             <bool>true</bool>
+            </property>
+            <property name="placeholderText">
+             <string>请输入 AI API Key</string>
+            </property>
+            <property name="echoMode">
+             <enum>QLineEdit::Password</enum>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="ElaScrollPageArea" name="widget_AiModel" native="true">
+         <layout class="QHBoxLayout" name="horizontalLayout_AiModel">
+          <property name="leftMargin">
+           <number>12</number>
+          </property>
+          <property name="topMargin">
+           <number>12</number>
+          </property>
+          <property name="rightMargin">
+           <number>12</number>
+          </property>
+          <property name="bottomMargin">
+           <number>12</number>
+          </property>
+          <item>
+           <widget class="ElaText" name="label_AiModel">
+            <property name="text">
+             <string>模型</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaComboBox" name="comboBox_AiModel">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="editable">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaPushButton" name="pushButton_FetchAiModels">
+            <property name="minimumSize">
+             <size>
+              <width>0</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="text">
+             <string>获取模型列表</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="ElaScrollPageArea" name="widget_AiAutoCommit" native="true">
+         <layout class="QHBoxLayout" name="horizontalLayout_AiAutoCommit">
+          <property name="leftMargin">
+           <number>12</number>
+          </property>
+          <property name="topMargin">
+           <number>12</number>
+          </property>
+          <property name="rightMargin">
+           <number>12</number>
+          </property>
+          <property name="bottomMargin">
+           <number>12</number>
+          </property>
+          <item>
+           <widget class="ElaText" name="label_AiAutoCommit">
+            <property name="text">
+             <string>自动提交</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaToggleSwitch" name="toggleSwitch_AiAutoCommit" native="true"/>
+          </item>
+          <item>
+           <widget class="ElaText" name="label_AiAutoCommitDesc">
+            <property name="text">
+             <string>开启后每次自动备份会先用 AI 生成 commit message</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_AiPage">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
    </item>
   </layout>
  </widget>
@@ -128,12 +375,33 @@
    <header location="global">elascrollpagearea.h</header>
    <container>1</container>
   </customwidget>
+    <customwidget>
+     <class>ElaPushButton</class>
+     <extends>QPushButton</extends>
+     <header location="global">elapushbutton.h</header>
+    </customwidget>
   <customwidget>
    <class>ElaToggleSwitch</class>
    <extends>QWidget</extends>
    <header location="global">elatoggleswitch.h</header>
    <container>1</container>
   </customwidget>
+  <customwidget>
+   <class>ElaLineEdit</class>
+   <extends>QLineEdit</extends>
+   <header location="global">elalineedit.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ElaComboBox</class>
+   <extends>QComboBox</extends>
+   <header location="global">elacombobox.h</header>
+  </customwidget>
+    <customwidget>
+     <class>ZcStackedWidget</class>
+     <extends>QStackedWidget</extends>
+     <header location="global">zcstackedwidget.h</header>
+     <container>1</container>
+    </customwidget>
  </customwidgets>
  <resources/>
  <connections/>

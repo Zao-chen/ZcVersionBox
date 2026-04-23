@@ -3,19 +3,64 @@
 
 #include "../../../Globalconstants.h"
 
-#include <QDir>
+#include "ElaMessageBar.h"
+#include "elacombobox.h"
+#include "elatoggleswitch.h"
+
+
+#include <QDebug>
 #include <QSettings>
-#include <QStandardPaths>
+#include <QSignalBlocker>
+
+
+#include "zcstackedwidget.h"
+
+namespace
+{
+
+QString deriveModelsUrl(const QString &apiUrl)
+{
+    QString url = apiUrl.trimmed();
+    if (url.isEmpty())
+        return {};
+
+    if (url.endsWith("/chat/completions"))
+    {
+        url.chop(QString("/chat/completions").size());
+        return url + "/models";
+    }
+
+    if (url.endsWith("/v1"))
+        return url + "/models";
+
+    if (url.endsWith("/"))
+        url.chop(1);
+
+    return url + "/models";
+}
+
+} // namespace
 
 SettingPage::SettingPage(QWidget *parent)
     : QWidget(parent), ui(new Ui::SettingPage)
 {
     ui->setupUi(this);
-    //创建面包屑
-    QStringList breadcrumbBarList;
+    // 一级设置页默认面包屑。
     ui->widget_BreadcrumbBar->setTextPixelSize(25);
     ui->widget_BreadcrumbBar->appendBreadcrumb("设置");
-    //读取ini并初始化配置项
+
+    m_stackedWidget = ui->stackedWidget;
+    ui->lineEdit_AiBaseUrl->setClearButtonEnabled(true);
+    ui->lineEdit_AiApiKey->setClearButtonEnabled(true);
+    ui->comboBox_AiModel->setEditable(true);
+    ui->comboBox_AiModel->setInsertPolicy(ElaComboBox::NoInsert);
+    if (ui->comboBox_AiModel->lineEdit())
+        ui->comboBox_AiModel->lineEdit()->setPlaceholderText("请先获取模型列表");
+
+    loadAiSettings();
+    m_stackedWidget->setCurrentIndex(0);
+    qInfo() << "[Setting] initialized with stacked settings pages";
+
     QSettings ini(Settingpath, QSettings::IniFormat);
     ui->ToggleSwitch_RightClickMenu->setIsToggled(ini.value("RightClickMenu", false).toBool());
     ui->ToggleSwitch_AutoStart->setIsToggled(ini.value("AutoStart", false).toBool());
@@ -24,6 +69,182 @@ SettingPage::SettingPage(QWidget *parent)
 SettingPage::~SettingPage()
 {
     delete ui;
+}
+
+void SettingPage::on_lineEdit_AiBaseUrl_editingFinished()
+{
+    QSettings ini(Settingpath, QSettings::IniFormat);
+    const QString value = ui->lineEdit_AiBaseUrl->text().trimmed();
+    ini.setValue("AI/BaseUrl", value);
+    qInfo() << "[AI Setting] base URL updated:" << value;
+}
+
+void SettingPage::on_lineEdit_AiApiKey_editingFinished()
+{
+    QSettings ini(Settingpath, QSettings::IniFormat);
+    const QString value = ui->lineEdit_AiApiKey->text().trimmed();
+    ini.setValue("AI/ApiKey", value);
+    qInfo() << "[AI Setting] API key updated, length=" << value.length();
+}
+
+void SettingPage::on_comboBox_AiModel_currentTextChanged(const QString &text)
+{
+    QSettings ini(Settingpath, QSettings::IniFormat);
+    const QString value = text.trimmed();
+    ini.setValue("AI/Model", value);
+    qInfo() << "[AI Setting] model updated:" << value;
+}
+
+void SettingPage::on_toggleSwitch_AiAutoCommit_toggled(bool checked)
+{
+    QSettings ini(Settingpath, QSettings::IniFormat);
+    ini.setValue("AI/AutoCommitMessage", checked);
+    qInfo() << "[AI Setting] auto AI commit message:" << checked;
+}
+
+void SettingPage::on_pushButton_FetchAiModels_clicked()
+{
+    refreshAiModels();
+}
+
+void SettingPage::loadAiSettings()
+{
+    if (!ui->lineEdit_AiBaseUrl || !ui->lineEdit_AiApiKey || !ui->comboBox_AiModel || !ui->toggleSwitch_AiAutoCommit)
+        return;
+
+    QSettings ini(Settingpath, QSettings::IniFormat);
+    const QString baseUrl = ini.value("AI/BaseUrl", "https://api.openai.com/v1/chat/completions").toString();
+    const QString apiKey = ini.value("AI/ApiKey", QString()).toString();
+    const QString model = ini.value("AI/Model", QString()).toString();
+    const bool autoCommit = ini.value("AI/AutoCommitMessage", false).toBool();
+    qInfo() << "[AI Setting] loaded config, model=" << model << "autoCommit=" << autoCommit;
+
+    {
+        QSignalBlocker blocker(ui->lineEdit_AiBaseUrl);
+        ui->lineEdit_AiBaseUrl->setText(baseUrl);
+    }
+    {
+        QSignalBlocker blocker(ui->lineEdit_AiApiKey);
+        ui->lineEdit_AiApiKey->setText(apiKey);
+    }
+    {
+        QSignalBlocker blocker(ui->comboBox_AiModel);
+        ui->comboBox_AiModel->setCurrentText(model);
+    }
+    {
+        QSignalBlocker blocker(ui->toggleSwitch_AiAutoCommit);
+        ui->toggleSwitch_AiAutoCommit->setIsToggled(autoCommit);
+    }
+}
+
+void SettingPage::refreshAiModels()
+{
+    if (!ui->comboBox_AiModel || !ui->lineEdit_AiBaseUrl || !ui->lineEdit_AiApiKey)
+        return;
+
+    const QString baseUrl = ui->lineEdit_AiBaseUrl->text().trimmed();
+    const QString apiKey = ui->lineEdit_AiApiKey->text().trimmed();
+    if (baseUrl.isEmpty() || apiKey.isEmpty())
+    {
+        qInfo() << "[AI Setting] skip model refresh: base URL or API key is empty";
+        return;
+    }
+
+    if (m_aiModelProvider)
+    {
+        m_aiModelProvider->deleteLater();
+        m_aiModelProvider = nullptr;
+    }
+
+    m_aiModelProvider = new AiProvider(this);
+    m_aiModelProvider->setServiceType(AiProvider::Custom);
+    m_aiModelProvider->setApiKey(apiKey);
+    m_aiModelProvider->setApiUrl(baseUrl);
+    m_aiModelProvider->setModelsApiUrl(deriveModelsUrl(baseUrl));
+    qInfo() << "[AI Setting] refreshing models from" << baseUrl;
+
+    connect(m_aiModelProvider, &AiProvider::modelsReceived, this,
+            [this](const QList<AiProvider::ModelInfo> &models)
+            {
+                qInfo() << "[AI Setting] models fetched:" << models.size();
+                applyAiModels(models);
+                m_aiModelProvider->deleteLater();
+                m_aiModelProvider = nullptr;
+            });
+    connect(m_aiModelProvider, &AiProvider::errorOccurred, this,
+            [this](const QString &error)
+            {
+                qInfo() << "[AI Setting] model refresh failed:" << error;
+                ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                                       "模型获取失败",
+                                       error,
+                                       3500,
+                                       this);
+                if (m_aiModelProvider)
+                {
+                    m_aiModelProvider->deleteLater();
+                    m_aiModelProvider = nullptr;
+                }
+            });
+
+    m_aiModelProvider->fetchModels();
+}
+
+void SettingPage::applyAiModels(const QList<AiProvider::ModelInfo> &models)
+{
+    if (!ui->comboBox_AiModel)
+        return;
+
+    const QString currentModel = ui->comboBox_AiModel->currentText().trimmed();
+    QSignalBlocker blocker(ui->comboBox_AiModel);
+
+    ui->comboBox_AiModel->clear();
+    for (const auto &model : models)
+    {
+        if (!model.id.isEmpty())
+            ui->comboBox_AiModel->addItem(model.id);
+    }
+
+    if (!currentModel.isEmpty())
+    {
+        int index = ui->comboBox_AiModel->findText(currentModel);
+        if (index >= 0)
+            ui->comboBox_AiModel->setCurrentIndex(index);
+        else
+            ui->comboBox_AiModel->setCurrentText(currentModel);
+    }
+    else if (ui->comboBox_AiModel->count() > 0)
+    {
+        ui->comboBox_AiModel->setCurrentIndex(0);
+        QSettings ini(Settingpath, QSettings::IniFormat);
+        ini.setValue("AI/Model", ui->comboBox_AiModel->currentText().trimmed());
+    }
+
+    qInfo() << "[AI Setting] model list applied, count=" << ui->comboBox_AiModel->count();
+}
+
+void SettingPage::on_pushButton_OpenAiPage_clicked()
+{
+    if (!m_stackedWidget)
+        return;
+
+    qInfo() << "[Setting] navigate to AI subpage";
+    m_stackedWidget->setCurrentIndex(1);
+    ui->widget_BreadcrumbBar->appendBreadcrumb("AI 配置");
+}
+
+void SettingPage::on_widget_BreadcrumbBar_breadcrumbClicked(QString breadcrumb, QStringList lastBreadcrumbList)
+{
+    Q_UNUSED(breadcrumb)
+    Q_UNUSED(lastBreadcrumbList)
+
+    if (!m_stackedWidget)
+    {
+        return;
+    }
+
+    qInfo() << "[Setting] breadcrumb clicked, back to root page";
+    m_stackedWidget->setCurrentIndex(0);
 }
 
 /*右键菜单*/
