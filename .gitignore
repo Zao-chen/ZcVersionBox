@@ -47,3 +47,17 @@ Thumbs.db
 
 # Log files
 *.log
+
+# Keep required prebuilt 3rdparty binaries in repository for CI builds.
+!3rdparty/ElaWidgetTools/lib/
+!3rdparty/ElaWidgetTools/lib/**
+!3rdparty/ElaWidgetTools/bin/
+!3rdparty/ElaWidgetTools/bin/**
+!3rdparty/ZcWidgetTools/lib/
+!3rdparty/ZcWidgetTools/lib/**
+!3rdparty/ZcWidgetTools/bin/
+!3rdparty/ZcWidgetTools/bin/**
+!3rdparty/ZcAILib/lib/
+!3rdparty/ZcAILib/lib/**
+!3rdparty/ZcAILib/bin/
+!3rdparty/ZcAILib/bin/**

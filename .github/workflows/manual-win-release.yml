@@ -24,6 +24,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
@@ -38,6 +40,26 @@ jobs:
           target: desktop
           arch: win64_msvc2019_64
           cache: true
+
+      - name: Verify 3rdparty import libs
+        shell: pwsh
+        run: |
+          $required = @(
+            "3rdparty/ZcAILib/lib/ZcAiLib.lib",
+            "3rdparty/ElaWidgetTools/lib/elawidgettools.lib",
+            "3rdparty/ZcWidgetTools/lib/ZcWidgetTools.lib"
+          )
+
+          $missing = @()
+          foreach ($f in $required) {
+            if (!(Test-Path $f)) { $missing += $f }
+          }
+
+          if ($missing.Count -gt 0) {
+            Write-Host "Missing required import libs:"
+            $missing | ForEach-Object { Write-Host " - $_" }
+            throw "Required prebuilt 3rdparty libs are missing from checkout. Ensure these files are committed (or fetched by CI) before build."
+          }
 
       - name: Configure
         shell: pwsh
