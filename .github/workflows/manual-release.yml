@@ -1,0 +1,394 @@
+name: Manual Build+Package+Release (ZcVersionBox Win+mac)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag (example: v1.0.0)"
+        required: true
+      qt_version:
+        description: "Qt version"
+        required: false
+        default: "6.6.3"
+      build_type:
+        description: "CMake build type"
+        required: false
+        default: "Release"
+      osx_arch:
+        description: "macOS architectures (e.g. arm64 or arm64;x86_64)"
+        required: false
+        default: "arm64"
+
+permissions:
+  contents: write
+
+jobs:
+  build_windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: ${{ inputs.qt_version }}
+          target: desktop
+          arch: win64_msvc2019_64
+          cache: true
+
+      - name: Verify 3rdparty import libs
+        shell: pwsh
+        run: |
+          $required = @(
+            "3rdparty/ZcAILib/lib/ZcAiLib.lib",
+            "3rdparty/ElaWidgetTools/lib/elawidgettools.lib",
+            "3rdparty/ZcWidgetTools/lib/ZcWidgetTools.lib"
+          )
+
+          $missing = @()
+          foreach ($f in $required) {
+            if (!(Test-Path $f)) { $missing += $f }
+          }
+
+          if ($missing.Count -gt 0) {
+            Write-Host "Missing required import libs:"
+            $missing | ForEach-Object { Write-Host " - $_" }
+            throw "Required prebuilt 3rdparty libs are missing from checkout. Ensure these files are committed (or fetched by CI) before build."
+          }
+
+      - name: Configure
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} `
+            -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}"
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build
+
+      - name: Package Windows (windeployqt)
+        shell: pwsh
+        run: |
+          if (!(Test-Path "build\ZcVersionBox.exe")) { throw "Not found: build\ZcVersionBox.exe" }
+
+          Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force dist | Out-Null
+
+          Copy-Item build\ZcVersionBox.exe dist\
+
+          $qtBin = Join-Path "${{ env.Qt6_DIR }}" "bin"
+          $windeploy = Join-Path $qtBin "windeployqt.exe"
+          if (!(Test-Path $windeploy)) { throw "windeployqt not found: $windeploy" }
+
+          & $windeploy --release --compiler-runtime dist\ZcVersionBox.exe
+
+      - name: Copy 3rdparty dlls
+        shell: pwsh
+        run: |
+          $root = "3rdparty"
+          if (!(Test-Path $root)) { throw "Not found: $root" }
+
+          $dlls = Get-ChildItem -Path $root -Recurse -File -Filter *.dll |
+            Where-Object { $_.FullName -match "(\\|/)bin(\\|/)" }
+
+          if ($dlls.Count -eq 0) { throw "No dll found under 3rdparty/**/bin/*.dll" }
+
+          foreach ($f in $dlls) {
+            Copy-Item $f.FullName "dist\" -Force
+          }
+
+      - name: Check dist files
+        shell: pwsh
+        run: |
+          if (!(Test-Path "dist\ZcVersionBox.exe")) { throw "dist\ZcVersionBox.exe missing" }
+          if (!(Test-Path "dist\Qt6Core.dll")) { throw "dist\Qt6Core.dll missing" }
+          if (!(Test-Path "dist\platforms\qwindows.dll")) { throw "dist\platforms\qwindows.dll missing (windeployqt failed?)" }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup -y
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { throw "ISCC not found: $iscc" }
+
+      - name: Build Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          $ver = "${{ inputs.tag_name }}".TrimStart("v")
+
+          $issLines = @(
+            '#define MyAppName "ZcVersionBox"',
+            ('#define MyAppVersion "{0}"' -f $ver),
+            '#define MyAppExeName "ZcVersionBox.exe"',
+            '',
+            '[Setup]',
+            'AppId={{6CA0B4A8-7B63-4D88-9AD0-CDF11A5D4F20}',
+            'AppName={#MyAppName}',
+            'AppVersion={#MyAppVersion}',
+            'DefaultDirName={autopf}\{#MyAppName}',
+            'DefaultGroupName={#MyAppName}',
+            'OutputDir=.',
+            "OutputBaseFilename=ZcVersionBox-${{ inputs.tag_name }}-setup",
+            'Compression=lzma',
+            'SolidCompression=yes',
+            'ArchitecturesInstallIn64BitMode=x64',
+            '',
+            '[Languages]',
+            'Name: "english"; MessagesFile: "compiler:Default.isl"',
+            '',
+            '[Tasks]',
+            'Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"; Flags: unchecked',
+            '',
+            '[Files]',
+            'Source: "dist\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs',
+            '',
+            '[Icons]',
+            'Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"',
+            'Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon',
+            '',
+            '[Code]',
+            'const',
+            '  GitInstallerUrl = ''https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe'';',
+            '  GitDownloadPage = ''https://git-scm.com/download/win'';',
+            '',
+            'function URLDownloadToFile(Caller: Integer; URL: string; FileName: string; Reserved: Integer; StatusCB: Integer): Integer;',
+            '  external ''URLDownloadToFileA@urlmon.dll stdcall'';',
+            '',
+            'function GitIsInstalled: Boolean;',
+            'var',
+            '  GitPath: string;',
+            'begin',
+            '  GitPath := ''C:\Program Files\Git\cmd\git.exe'';',
+            '  if FileExists(GitPath) then',
+            '    Result := True',
+            '  else',
+            '  begin',
+            '    GitPath := ''C:\Program Files (x86)\Git\cmd\git.exe'';',
+            '    Result := FileExists(GitPath);',
+            '  end;',
+            'end;',
+            '',
+            'procedure InstallGit;',
+            'var',
+            '  ResultCode: Integer;',
+            '  DownloadCode: Integer;',
+            '  InstallerPath: string;',
+            'begin',
+            '  MsgBox(''Git is not installed. ZcVersionBox requires Git for version control.'', mbInformation, MB_OK);',
+            '  InstallerPath := ExpandConstant(''{tmp}\GitInstaller.exe'');',
+            '  DownloadCode := URLDownloadToFile(0, GitInstallerUrl, InstallerPath, 0, 0);',
+            '  if (DownloadCode <> 0) or (not FileExists(InstallerPath)) then',
+            '  begin',
+            '    MsgBox(''Failed to download Git installer automatically. The Git download page will be opened for manual installation.'', mbError, MB_OK);',
+            '    ShellExec(''open'', GitDownloadPage, '''', '''', SW_SHOWNORMAL, ewNoWait, ResultCode);',
+            '    exit;',
+            '  end;',
+            '  if ShellExec(''open'', InstallerPath, ''/VERYSILENT /NORESTART'', '''', SW_HIDE, ewWaitUntilTerminated, ResultCode) then',
+            '  begin',
+            '    if ResultCode = 0 then',
+            '      MsgBox(''Git installed successfully. Please restart the application.'', mbInformation, MB_OK)',
+            '    else',
+            '      MsgBox(''Git installation failed with exit code '' + IntToStr(ResultCode) + ''. Please install Git manually from https://git-scm.com'', mbError, MB_OK);',
+            '  end',
+            '  else',
+            '    MsgBox(''Failed to launch Git installer. Please install Git manually from https://git-scm.com'', mbError, MB_OK);',
+            'end;',
+            '',
+            'procedure CurStepChanged(CurStep: TSetupStep);',
+            'begin',
+            '  if CurStep = ssInstall then',
+            '  begin',
+            '    if not GitIsInstalled then',
+            '      InstallGit;',
+            '  end;',
+            'end;',
+            '',
+            '[Run]',
+            'Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent'
+          )
+
+          $issLines | Set-Content -Path installer-temp.iss -Encoding utf8
+          & $iscc installer-temp.iss
+
+          if (!(Test-Path "ZcVersionBox-${{ inputs.tag_name }}-setup.exe")) {
+            throw "Installer output not found"
+          }
+
+          Remove-Item installer-temp.iss -Force -ErrorAction SilentlyContinue
+
+      - name: Upload artifact (Windows setup)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-windows-setup
+          path: ZcVersionBox-${{ inputs.tag_name }}-setup.exe
+
+  build_macos:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v3
+        with:
+          version: ${{ inputs.qt_version }}
+          target: desktop
+          arch: clang_64
+          cache: true
+
+      - name: Verify 3rdparty macOS dylibs
+        shell: bash
+        run: |
+          required=(
+            "3rdparty/ZcAILib/lib/libZcAiLib.dylib"
+            "3rdparty/ElaWidgetTools/lib/libElaWidgetTools.dylib"
+            "3rdparty/ZcWidgetTools/lib/libZcWidgetTools.dylib"
+          )
+
+          missing=()
+          for f in "${required[@]}"; do
+            if [[ ! -f "$f" ]]; then
+              missing+=("$f")
+            fi
+          done
+
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "Missing required macOS dylibs:"
+            printf ' - %s\n' "${missing[@]}"
+            exit 1
+          fi
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE="${{ inputs.build_type }}" \
+            -DCMAKE_PREFIX_PATH="${{ env.Qt6_DIR }}" \
+            -DCMAKE_OSX_ARCHITECTURES="${{ inputs.osx_arch }}"
+
+      - name: Build
+        shell: bash
+        run: cmake --build build
+
+      - name: Bundle app with macdeployqt
+        shell: bash
+        run: |
+          app_path="build/ZcVersionBox.app"
+          if [[ ! -d "$app_path" ]]; then
+            echo "Not found: $app_path"
+            exit 1
+          fi
+
+          qt_root="$(dirname "$(dirname "$(dirname "${{ env.Qt6_DIR }}")")")"
+          macdeployqt="$qt_root/bin/macdeployqt"
+          if [[ ! -x "$macdeployqt" ]]; then
+            echo "macdeployqt not found: $macdeployqt"
+            exit 1
+          fi
+
+          "$macdeployqt" "$app_path" -verbose=1
+
+      - name: Copy 3rdparty dylibs into bundle
+        shell: bash
+        run: |
+          app_path="build/ZcVersionBox.app"
+          frameworks_dir="$app_path/Contents/Frameworks"
+          bin_path="$app_path/Contents/MacOS/ZcVersionBox"
+          mkdir -p "$frameworks_dir"
+
+          cp -f 3rdparty/ZcAILib/lib/libZcAiLib.dylib "$frameworks_dir/"
+          cp -f 3rdparty/ElaWidgetTools/lib/libElaWidgetTools.dylib "$frameworks_dir/"
+          cp -f 3rdparty/ZcWidgetTools/lib/libZcWidgetTools.dylib "$frameworks_dir/"
+
+          for lib in "$frameworks_dir"/*.dylib; do
+            install_name_tool -id "@rpath/$(basename "$lib")" "$lib"
+          done
+
+          install_name_tool -add_rpath "@executable_path/../Frameworks" "$bin_path" || true
+
+      - name: Create DMG
+        shell: bash
+        run: |
+          app_path="build/ZcVersionBox.app"
+          dmg_name="ZcVersionBox-${{ inputs.tag_name }}-mac.dmg"
+
+          if [[ -f "$dmg_name" ]]; then
+            rm -f "$dmg_name"
+          fi
+
+          hdiutil create -volname "ZcVersionBox" -srcfolder "$app_path" -ov -format UDZO "$dmg_name"
+
+      - name: Upload artifact (macOS dmg)
+        uses: actions/upload-artifact@v4
+        with:
+          name: pkg-macos-dmg
+          path: ZcVersionBox-${{ inputs.tag_name }}-mac.dmg
+
+  release:
+    needs: [build_windows, build_macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: release_assets
+
+      - name: Generate release notes from commits
+        shell: bash
+        run: |
+          current_tag="${{ inputs.tag_name }}"
+          prev_tag="$(git tag --sort=-v:refname | grep -Fxv "$current_tag" | head -n 1)"
+
+          if [ -n "$prev_tag" ]; then
+            if git rev-parse "$current_tag" >/dev/null 2>&1; then
+              commit_range="$prev_tag..$current_tag"
+            else
+              commit_range="$prev_tag..HEAD"
+            fi
+          else
+            commit_range="HEAD"
+          fi
+
+          {
+            echo "ZcVersionBox ${{ inputs.tag_name }}"
+            echo
+            echo "Built from commit: ${GITHUB_SHA}"
+            echo
+            echo "Recent commits:"
+            if [ -n "$prev_tag" ]; then
+              echo "(from $prev_tag to $current_tag)"
+            else
+              echo "(no previous tag found; showing current history)"
+            fi
+            git log $commit_range --pretty=format:'- %h %s (%an)'
+          } > RELEASE_NOTES.md
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag_name }}
+          name: ZcVersionBox ${{ inputs.tag_name }}
+          generate_release_notes: false
+          body_path: RELEASE_NOTES.md
+          files: release_assets/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
