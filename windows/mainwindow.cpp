@@ -4,7 +4,6 @@
 #include "mainwindow_child/homepage/homepage.h"
 #include "mainwindow_child/settingpage/settingpage.h"
 
-
 #include <QCloseEvent>
 #include <QDir>
 #include <QMessageBox>

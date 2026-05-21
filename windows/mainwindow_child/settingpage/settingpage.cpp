@@ -3,15 +3,13 @@
 
 #include "../../../GlobalConstants.h"
 
-#include "ElaMessageBar.h"
 #include "ElaComboBox.h"
+#include "ElaMessageBar.h"
 #include "ElaToggleSwitch.h"
-
 
 #include <QDebug>
 #include <QSettings>
 #include <QSignalBlocker>
-
 
 #include "zcstackedwidget.h"
 
