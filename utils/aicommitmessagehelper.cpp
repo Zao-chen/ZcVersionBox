@@ -6,7 +6,7 @@
 #include <QSettings>
 #include <QTimer>
 
-#include "aiprovider.h"
+#include "AiProvider.h"
 
 namespace
 {

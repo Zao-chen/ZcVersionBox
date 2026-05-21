@@ -3,7 +3,7 @@
 
 #include <QWidget>
 
-#include "aiprovider.h"
+#include "AiProvider.h"
 
 class ZcStackedWidget;
 
