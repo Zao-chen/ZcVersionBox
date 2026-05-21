@@ -85,12 +85,13 @@ jobs:
             exit 1
           fi
 
-          qt_root="$(dirname "$(dirname "$(dirname "${{ env.Qt6_DIR }}")")")"
-          macdeployqt="$qt_root/bin/macdeployqt"
+          # install-qt-action 已将 Qt bin 目录加入 PATH，直接使用即可
+          macdeployqt=$(which macdeployqt)
           if [[ ! -x "$macdeployqt" ]]; then
-            echo "macdeployqt not found: $macdeployqt"
+            echo "macdeployqt not found in PATH"
             exit 1
           fi
+          echo "Using macdeployqt: $macdeployqt"
 
           "$macdeployqt" "$app_path" -verbose=1
 
