@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 
 project(ZcVersionBox VERSION 0.1 LANGUAGES CXX)
 
-if(NOT CMAKE_CONFIGURATION_TYPES)
-    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type")
 endif()
 
 set(CMAKE_AUTOUIC ON)
@@ -15,6 +15,42 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network)
+
+if(APPLE)
+    foreach(qt_target Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Core)
+        if(TARGET ${qt_target})
+            foreach(qt_prop INTERFACE_LINK_LIBRARIES INTERFACE_LINK_OPTIONS)
+                get_target_property(qt_values ${qt_target} ${qt_prop})
+                if(qt_values)
+                    list(FILTER qt_values EXCLUDE REGEX "AGL")
+                    set_property(TARGET ${qt_target} PROPERTY ${qt_prop} "${qt_values}")
+                endif()
+            endforeach()
+        endif()
+    endforeach()
+
+    foreach(gl_target OpenGL::OpenGL OpenGL::GL OpenGL::GLU)
+        if(TARGET ${gl_target})
+            foreach(gl_prop INTERFACE_LINK_LIBRARIES INTERFACE_LINK_OPTIONS)
+                get_target_property(gl_values ${gl_target} ${gl_prop})
+                if(gl_values)
+                    list(FILTER gl_values EXCLUDE REGEX "AGL")
+                    set_property(TARGET ${gl_target} PROPERTY ${gl_prop} "${gl_values}")
+                endif()
+            endforeach()
+        endif()
+    endforeach()
+
+    if(TARGET WrapOpenGL::WrapOpenGL)
+        foreach(wrap_prop INTERFACE_LINK_LIBRARIES INTERFACE_LINK_OPTIONS)
+            get_target_property(wrap_values WrapOpenGL::WrapOpenGL ${wrap_prop})
+            if(wrap_values)
+                list(FILTER wrap_values EXCLUDE REGEX "AGL")
+                set_property(TARGET WrapOpenGL::WrapOpenGL PROPERTY ${wrap_prop} "${wrap_values}")
+            endif()
+        endforeach()
+    endif()
+endif()
 
 set(PROJECT_SOURCES
         main.cpp
@@ -66,16 +102,88 @@ include_directories(
     include
 )
 
-target_include_directories(ZcVersionBox PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ElaWidgetTools/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcWidgetTools/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/include
+set(LOCAL_THIRDPARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty")
+set(PARENT_THIRDPARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
+
+if(APPLE)
+    target_include_directories(ZcVersionBox PRIVATE
+        ${PARENT_THIRDPARTY_DIR}/ZcAILib/src
+        ${PARENT_THIRDPARTY_DIR}/ZcWidgetTools/src
+        ${PARENT_THIRDPARTY_DIR}/ElaWidgetTools/ElaWidgetTools
+        ${LOCAL_THIRDPARTY_DIR}/ZcAILib/include
+        ${LOCAL_THIRDPARTY_DIR}/ZcWidgetTools/include
+        ${LOCAL_THIRDPARTY_DIR}/ElaWidgetTools/include
+    )
+else()
+    target_include_directories(ZcVersionBox PRIVATE
+        ${LOCAL_THIRDPARTY_DIR}/ElaWidgetTools/include
+        ${LOCAL_THIRDPARTY_DIR}/ZcWidgetTools/include
+        ${LOCAL_THIRDPARTY_DIR}/ZcAILib/include
+        ${PARENT_THIRDPARTY_DIR}/ElaWidgetTools/ElaWidgetTools
+        ${PARENT_THIRDPARTY_DIR}/ZcWidgetTools/src
+        ${PARENT_THIRDPARTY_DIR}/ZcAILib/src
+    )
+endif()
+
+if(APPLE)
+    set(ELA_WIDGETTOOLS_LIB_DIRS
+        "${PARENT_THIRDPARTY_DIR}/ElaWidgetTools/build-mac-universal/ElaWidgetTools"
+        "${LOCAL_THIRDPARTY_DIR}/ElaWidgetTools/lib"
+    )
+    set(ZC_WIDGETTOOLS_LIB_DIRS
+        "${PARENT_THIRDPARTY_DIR}/ZcWidgetTools/build-mac-universal"
+        "${LOCAL_THIRDPARTY_DIR}/ZcWidgetTools/lib"
+    )
+    set(ZCAI_LIB_DIRS
+        "${PARENT_THIRDPARTY_DIR}/ZcAILib/build"
+        "${PARENT_THIRDPARTY_DIR}/ZcAILib/build-mac-universal"
+        "${LOCAL_THIRDPARTY_DIR}/ZcAILib/lib"
+    )
+else()
+    set(ELA_WIDGETTOOLS_LIB_DIRS
+        "${LOCAL_THIRDPARTY_DIR}/ElaWidgetTools/lib"
+        "${PARENT_THIRDPARTY_DIR}/ElaWidgetTools/build-mac-universal/ElaWidgetTools"
+    )
+    set(ZC_WIDGETTOOLS_LIB_DIRS
+        "${LOCAL_THIRDPARTY_DIR}/ZcWidgetTools/lib"
+        "${PARENT_THIRDPARTY_DIR}/ZcWidgetTools/build-mac-universal"
+    )
+    set(ZCAI_LIB_DIRS
+        "${LOCAL_THIRDPARTY_DIR}/ZcAILib/lib"
+        "${PARENT_THIRDPARTY_DIR}/ZcAILib/build-mac-universal"
+    )
+endif()
+
+find_library(ELA_WIDGETTOOLS_LIB
+    NAMES ElaWidgetTools elawidgettools
+    PATHS ${ELA_WIDGETTOOLS_LIB_DIRS}
+    NO_DEFAULT_PATH
+)
+find_library(ZC_WIDGETTOOLS_LIB
+    NAMES ZcWidgetTools zcwidgettools
+    PATHS ${ZC_WIDGETTOOLS_LIB_DIRS}
+    NO_DEFAULT_PATH
+)
+find_library(ZCAI_LIB
+    NAMES ZcAiLib zcailib
+    PATHS ${ZCAI_LIB_DIRS}
+    NO_DEFAULT_PATH
 )
 
+if(NOT ELA_WIDGETTOOLS_LIB)
+    message(FATAL_ERROR "Missing ElaWidgetTools library. Put libelawidgettools.a/.dylib or elawidgettools.lib in 3rdparty/ElaWidgetTools/lib")
+endif()
+if(NOT ZC_WIDGETTOOLS_LIB)
+    message(FATAL_ERROR "Missing ZcWidgetTools library. Put libZcWidgetTools.a/.dylib or ZcWidgetTools.lib in 3rdparty/ZcWidgetTools/lib")
+endif()
+if(NOT ZCAI_LIB)
+    message(FATAL_ERROR "Missing ZcAiLib library. Put libZcAiLib.a/.dylib or ZcAiLib.lib in 3rdparty/ZcAILib/lib")
+endif()
+
 target_link_libraries(ZcVersionBox PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/lib/ZcAiLib.lib
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ElaWidgetTools/lib/elawidgettools.lib
-    ${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcWidgetTools/lib/ZcWidgetTools.lib
+    ${ZCAI_LIB}
+    ${ELA_WIDGETTOOLS_LIB}
+    ${ZC_WIDGETTOOLS_LIB}
 )
 
 if(WIN32 AND QT_VERSION_MAJOR EQUAL 6)

@@ -1,4 +1,4 @@
-#include "FileUtils.h"
+#include "fileutils.h"
 #include <QUrl>
 
 bool FileUtils::copyDirectory(const QString &srcPath, const QString &dstPath) {

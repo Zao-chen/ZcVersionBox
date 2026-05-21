@@ -1,11 +1,11 @@
 #include "settingpage.h"
 #include "ui_settingpage.h"
 
-#include "../../../Globalconstants.h"
+#include "../../../GlobalConstants.h"
 
 #include "ElaMessageBar.h"
-#include "elacombobox.h"
-#include "elatoggleswitch.h"
+#include "ElaComboBox.h"
+#include "ElaToggleSwitch.h"
 
 
 #include <QDebug>
@@ -18,7 +18,7 @@
 namespace
 {
 
-QString deriveModelsUrl(const QString &apiUrl)
+QString deriveBaseUrl(const QString &apiUrl)
 {
     QString url = apiUrl.trimmed();
     if (url.isEmpty())
@@ -27,16 +27,16 @@ QString deriveModelsUrl(const QString &apiUrl)
     if (url.endsWith("/chat/completions"))
     {
         url.chop(QString("/chat/completions").size());
-        return url + "/models";
+        return url;
     }
 
     if (url.endsWith("/v1"))
-        return url + "/models";
+        return url;
 
     if (url.endsWith("/"))
         url.chop(1);
 
-    return url + "/models";
+    return url;
 }
 
 } // namespace
@@ -159,8 +159,7 @@ void SettingPage::refreshAiModels()
     m_aiModelProvider = new AiProvider(this);
     m_aiModelProvider->setServiceType(AiProvider::Custom);
     m_aiModelProvider->setApiKey(apiKey);
-    m_aiModelProvider->setApiUrl(baseUrl);
-    m_aiModelProvider->setModelsApiUrl(deriveModelsUrl(baseUrl));
+    m_aiModelProvider->setBaseUrl(deriveBaseUrl(baseUrl));
     qInfo() << "[AI Setting] refreshing models from" << baseUrl;
 
     connect(m_aiModelProvider, &AiProvider::modelsReceived, this,

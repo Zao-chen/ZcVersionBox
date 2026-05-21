@@ -7,7 +7,7 @@
 
 #include <QCloseEvent>
 #include <QDir>
-#include <QmessageBox>
+#include <QMessageBox>
 
 MainWindow::MainWindow(QWidget *parent)
     : ElaWindow(parent), ui(new Ui::MainWindow)

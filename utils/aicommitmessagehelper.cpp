@@ -11,7 +11,7 @@
 namespace
 {
 
-QString deriveModelsUrl(const QString &apiUrl)
+QString deriveBaseUrl(const QString &apiUrl)
 {
     QString url = apiUrl.trimmed();
     if (url.isEmpty())
@@ -20,16 +20,16 @@ QString deriveModelsUrl(const QString &apiUrl)
     if (url.endsWith("/chat/completions"))
     {
         url.chop(QString("/chat/completions").size());
-        return url + "/models";
+        return url;
     }
 
     if (url.endsWith("/v1"))
-        return url + "/models";
+        return url;
 
     if (url.endsWith('/'))
         url.chop(1);
 
-    return url + "/models";
+    return url;
 }
 
 void setupProvider(AiProvider &provider,
@@ -38,8 +38,7 @@ void setupProvider(AiProvider &provider,
                    const QString &modelName)
 {
     provider.setServiceType(AiProvider::Custom);
-    provider.setApiUrl(baseUrl);
-    provider.setModelsApiUrl(deriveModelsUrl(baseUrl));
+    provider.setBaseUrl(deriveBaseUrl(baseUrl));
     provider.setApiKey(apiKey);
     provider.setModel(modelName);
     provider.setStreamEnabled(false);
