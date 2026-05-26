@@ -59,6 +59,13 @@ set(PROJECT_SOURCES
         windows/mainwindow.ui
 )
 
+if(APPLE)
+    list(APPEND PROJECT_SOURCES
+        macos/macos_services.h
+        macos/macos_services.mm
+    )
+endif()
+
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(ZcVersionBox
         MANUAL_FINALIZATION
@@ -105,39 +112,28 @@ include_directories(
 set(LOCAL_THIRDPARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty")
 set(PARENT_THIRDPARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
 
-if(APPLE)
-    target_include_directories(ZcVersionBox PRIVATE
-        ${PARENT_THIRDPARTY_DIR}/ZcAILib/src
-        ${PARENT_THIRDPARTY_DIR}/ZcWidgetTools/src
-        ${PARENT_THIRDPARTY_DIR}/ElaWidgetTools/ElaWidgetTools
-        ${LOCAL_THIRDPARTY_DIR}/ZcAILib/include
-        ${LOCAL_THIRDPARTY_DIR}/ZcWidgetTools/include
-        ${LOCAL_THIRDPARTY_DIR}/ElaWidgetTools/include
-    )
-else()
-    target_include_directories(ZcVersionBox PRIVATE
-        ${LOCAL_THIRDPARTY_DIR}/ElaWidgetTools/include
-        ${LOCAL_THIRDPARTY_DIR}/ZcWidgetTools/include
-        ${LOCAL_THIRDPARTY_DIR}/ZcAILib/include
-        ${PARENT_THIRDPARTY_DIR}/ElaWidgetTools/ElaWidgetTools
-        ${PARENT_THIRDPARTY_DIR}/ZcWidgetTools/src
-        ${PARENT_THIRDPARTY_DIR}/ZcAILib/src
-    )
-endif()
+target_include_directories(ZcVersionBox PRIVATE
+    ${LOCAL_THIRDPARTY_DIR}/ElaWidgetTools/include
+    ${LOCAL_THIRDPARTY_DIR}/ZcWidgetTools/include
+    ${LOCAL_THIRDPARTY_DIR}/ZcAILib/include
+    ${PARENT_THIRDPARTY_DIR}/ElaWidgetTools/ElaWidgetTools
+    ${PARENT_THIRDPARTY_DIR}/ZcWidgetTools/src
+    ${PARENT_THIRDPARTY_DIR}/ZcAILib/src
+)
 
 if(APPLE)
     set(ELA_WIDGETTOOLS_LIB_DIRS
-        "${PARENT_THIRDPARTY_DIR}/ElaWidgetTools/build-mac-universal/ElaWidgetTools"
         "${LOCAL_THIRDPARTY_DIR}/ElaWidgetTools/lib"
+        "${PARENT_THIRDPARTY_DIR}/ElaWidgetTools/build-mac-universal/ElaWidgetTools"
     )
     set(ZC_WIDGETTOOLS_LIB_DIRS
-        "${PARENT_THIRDPARTY_DIR}/ZcWidgetTools/build-mac-universal"
         "${LOCAL_THIRDPARTY_DIR}/ZcWidgetTools/lib"
+        "${PARENT_THIRDPARTY_DIR}/ZcWidgetTools/build-mac-universal"
     )
     set(ZCAI_LIB_DIRS
-        "${PARENT_THIRDPARTY_DIR}/ZcAILib/build"
-        "${PARENT_THIRDPARTY_DIR}/ZcAILib/build-mac-universal"
         "${LOCAL_THIRDPARTY_DIR}/ZcAILib/lib"
+        "${PARENT_THIRDPARTY_DIR}/ZcAILib/build-mac-universal"
+        "${PARENT_THIRDPARTY_DIR}/ZcAILib/build"
     )
 else()
     set(ELA_WIDGETTOOLS_LIB_DIRS
@@ -180,11 +176,36 @@ if(NOT ZCAI_LIB)
     message(FATAL_ERROR "Missing ZcAiLib library. Put libZcAiLib.a/.dylib or ZcAiLib.lib in 3rdparty/ZcAILib/lib")
 endif()
 
-target_link_libraries(ZcVersionBox PRIVATE Qt${QT_VERSION_MAJOR}::Widgets
+target_link_libraries(ZcVersionBox PRIVATE
+    Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Network
     ${ZCAI_LIB}
     ${ELA_WIDGETTOOLS_LIB}
     ${ZC_WIDGETTOOLS_LIB}
 )
+
+if(APPLE)
+    set_target_properties(ZcVersionBox PROPERTIES
+        BUILD_RPATH "@executable_path/../Frameworks"
+        INSTALL_RPATH "@executable_path/../Frameworks"
+    )
+
+    function(copy_macos_runtime_library target library_path runtime_name)
+        if(library_path MATCHES "\\.dylib$")
+            add_custom_command(TARGET ${target} POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>/../Frameworks"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${library_path}"
+                        "$<TARGET_FILE_DIR:${target}>/../Frameworks/${runtime_name}"
+                COMMENT "Copying ${runtime_name} into macOS app bundle"
+            )
+        endif()
+    endfunction()
+
+    copy_macos_runtime_library(ZcVersionBox "${ZCAI_LIB}" "libZcAiLib.1.dylib")
+    copy_macos_runtime_library(ZcVersionBox "${ELA_WIDGETTOOLS_LIB}" "libElaWidgetTools.dylib")
+    copy_macos_runtime_library(ZcVersionBox "${ZC_WIDGETTOOLS_LIB}" "libZcWidgetTools.1.dylib")
+endif()
 
 if(WIN32 AND QT_VERSION_MAJOR EQUAL 6)
     get_target_property(QT_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
@@ -231,14 +252,8 @@ if(WIN32 AND QT_VERSION_MAJOR EQUAL 6)
     endif()
 endif()
 
-# Qt for iOS sets MACOSX_BUNDLE_GUI_IDENTIFIER automatically since Qt 6.1.
-# If you are developing for iOS or macOS you should consider setting an
-# explicit, fixed bundle identifier manually though.
-if(${QT_VERSION} VERSION_LESS 6.1.0)
-  set(BUNDLE_ID_OPTION MACOSX_BUNDLE_GUI_IDENTIFIER com.example.ZcVersionBox)
-endif()
 set_target_properties(ZcVersionBox PROPERTIES
-    ${BUNDLE_ID_OPTION}
+    MACOSX_BUNDLE_GUI_IDENTIFIER com.zc.versionbox
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     MACOSX_BUNDLE TRUE

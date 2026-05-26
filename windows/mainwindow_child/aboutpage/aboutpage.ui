@@ -116,19 +116,19 @@
   <customwidget>
    <class>ElaBreadcrumbBar</class>
    <extends>QWidget</extends>
-   <header location="global">elabreadcrumbbar.h</header>
+   <header location="global">ElaBreadcrumbBar.h</header>
    <container>1</container>
   </customwidget>
   <customwidget>
    <class>ElaScrollPageArea</class>
    <extends>QWidget</extends>
-   <header location="global">elascrollpagearea.h</header>
+   <header location="global">ElaScrollPageArea.h</header>
    <container>1</container>
   </customwidget>
   <customwidget>
    <class>ElaText</class>
    <extends>QLabel</extends>
-   <header location="global">elatext.h</header>
+   <header location="global">ElaText.h</header>
   </customwidget>
  </customwidgets>
  <resources/>
