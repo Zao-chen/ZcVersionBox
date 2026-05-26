@@ -20,6 +20,7 @@ class HomePageChild_TrackFile : public QWidget
     void on_pushButton_OpenFile_clicked();
     void on_pushButton_RemoveTrack_clicked();
     void on_pushButton_Backup_clicked();
+    void on_pushButton_Rebuild_clicked();
 
   private:
     Ui::HomePageChild_TrackFile *ui;
