@@ -12,7 +12,7 @@
 #include "ElaMessageBar.h"
 #include "ElaText.h"
 #include "ElaToggleSwitch.h"
-#include "elapushbutton.h"
+#include "ElaPushButton.h"
 
 #include <QAbstractItemModel>
 #include <QDebug>
