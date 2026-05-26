@@ -59,6 +59,13 @@ set(PROJECT_SOURCES
         windows/mainwindow.ui
 )
 
+if(APPLE)
+    list(APPEND PROJECT_SOURCES
+        macos/macos_services.h
+        macos/macos_services.mm
+    )
+endif()
+
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(ZcVersionBox
         MANUAL_FINALIZATION

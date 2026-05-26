@@ -3,6 +3,10 @@
 
 #include "../../../GlobalConstants.h"
 
+#ifdef Q_OS_MACOS
+#include "../../../macos/macos_services.h"
+#endif
+
 #include "ElaComboBox.h"
 #include "ElaMessageBar.h"
 #include "ElaToggleSwitch.h"
@@ -247,6 +251,7 @@ void SettingPage::on_widget_BreadcrumbBar_breadcrumbClicked(QString breadcrumb, 
 /*右键菜单*/
 void SettingPage::on_ToggleSwitch_RightClickMenu_toggled(bool checked)
 {
+#ifdef Q_OS_WIN
     QString appPath = QCoreApplication::applicationFilePath().replace("/", "\\");
     QString menuText = QStringLiteral("使用ZcVersionBox自动备份");
 
@@ -298,6 +303,15 @@ void SettingPage::on_ToggleSwitch_RightClickMenu_toggled(bool checked)
             settings.remove("ZcVersionOpen");
         }
     }
+#elif defined(Q_OS_MACOS)
+    setMacServicesProviderEnabled(checked);
+    ElaMessageBar::information(ElaMessageBarType::BottomRight,
+                               "右键菜单快捷入口",
+                               checked ? "已启用 Finder 服务：添加到 ZcVersionBox"
+                                       : "已停用 Finder 服务",
+                               3000,
+                               this);
+#endif
     QSettings ini(Settingpath, QSettings::IniFormat);
     ini.setValue("RightClickMenu", checked);
 }

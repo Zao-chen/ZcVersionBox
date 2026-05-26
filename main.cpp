@@ -4,11 +4,16 @@
 #include "GlobalConstants.h"
 #include "utils/fileutils.h"
 
+#ifdef Q_OS_MACOS
+#include "macos/macos_services.h"
+#endif
+
 #include <QApplication>
 #include <QFile>
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QProcess>
+#include <QSettings>
 #include <QSystemTrayIcon>
 #include <QUrl>
 #include <qlogging.h>
@@ -23,6 +28,10 @@ int main(int argc, char *argv[])
     if (args.isEmpty()) //程序正常启动
     {
         eApp->init();
+#ifdef Q_OS_MACOS
+        QSettings ini(Settingpath, QSettings::IniFormat);
+        setMacServicesProviderEnabled(ini.value("RightClickMenu", false).toBool());
+#endif
         MainWindow w;
         w.show();
         return a.exec();
