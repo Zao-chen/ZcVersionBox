@@ -10,7 +10,6 @@
 #include "ElaText.h"
 
 #include <ElaContentDialog.h>
-#include <ElaDialog.h>
 #include <ElaMessageBar.h>
 
 #include <QCoreApplication>
@@ -24,8 +23,42 @@
 #include <QProcess>
 #include <QSpacerItem>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
+
+#include <functional>
+
+namespace
+{
+class SafeElaContentDialog : public ElaContentDialog
+{
+public:
+    using ElaContentDialog::ElaContentDialog;
+
+    void onLeftButtonClicked() override
+    {
+        if (leftClicked)
+            leftClicked();
+    }
+
+    void onMiddleButtonClicked() override
+    {
+        if (middleClicked)
+            middleClicked();
+    }
+
+    void onRightButtonClicked() override
+    {
+        if (rightClicked)
+            rightClicked();
+    }
+
+    std::function<void()> leftClicked;
+    std::function<void()> middleClicked;
+    std::function<void()> rightClicked;
+};
+}
 
 void HomePage::SetupTrackFilesPage()
 {
@@ -79,38 +112,34 @@ void HomePage::LoadBackupFileList()
 /*添加本地仓库*/
 void HomePage::on_pushButton_AddFromLoc_clicked()
 {
-    ElaContentDialog dlg(this);
+    SafeElaContentDialog *dlg = new SafeElaContentDialog(this);
 
-    QWidget *central = new QWidget(&dlg);
+    QWidget *central = new QWidget(dlg);
     QVBoxLayout *layout = new QVBoxLayout(central);
 
     ElaText *label = new ElaText(tr("你要添加单个文件，还是整个文件夹？"), central);
     label->setTextPixelSize(16);
     layout->addWidget(label);
 
-    dlg.setCentralWidget(central);
-    dlg.setLeftButtonText(tr("文件"));
-    dlg.setMiddleButtonText(tr("文件夹"));
-    dlg.setRightButtonText(tr("取消"));
+    dlg->setCentralWidget(central);
+    dlg->setLeftButtonText(tr("文件"));
+    dlg->setMiddleButtonText(tr("文件夹"));
+    dlg->setRightButtonText(tr("取消"));
 
     int choose = 0;
+    dlg->leftClicked = [&]() { choose = 1; };
+    dlg->middleClicked = [&]()
+    {
+        choose = 2;
+        dlg->reject();
+    };
+    dlg->rightClicked = [&]() { choose = 0; };
 
-    connect(&dlg, &ElaContentDialog::leftButtonClicked, &dlg, [&]()
-            {
-                choose = 1;
-                dlg.close(); });
-
-    connect(&dlg, &ElaContentDialog::middleButtonClicked, &dlg, [&]()
-            {
-                choose = 2;
-                dlg.close(); });
-
-    connect(&dlg, &ElaContentDialog::rightButtonClicked, &dlg, [&]()
-            {
-                choose = 0;
-                dlg.close(); });
-
-    dlg.exec();
+    dlg->exec();
+    dlg->leftClicked = nullptr;
+    dlg->middleClicked = nullptr;
+    dlg->rightClicked = nullptr;
+    QTimer::singleShot(1000, dlg, &QObject::deleteLater);
 
     QString path;
     QWidget *owner = this->window();
@@ -157,9 +186,9 @@ void HomePage::on_pushButton_AddFromLoc_clicked()
 /*从云端导入备份*/
 void HomePage::on_pushButton_AddFromRemo_clicked()
 {
-    ElaContentDialog urlDialog(this);
+    SafeElaContentDialog *urlDialog = new SafeElaContentDialog(this);
 
-    QWidget *urlCentral = new QWidget(&urlDialog);
+    QWidget *urlCentral = new QWidget(urlDialog);
     QVBoxLayout *urlLayout = new QVBoxLayout(urlCentral);
 
     ElaText *hintText = new ElaText(tr("请输入云端仓库地址"), urlCentral);
@@ -170,70 +199,70 @@ void HomePage::on_pushButton_AddFromRemo_clicked()
     urlEdit->setPlaceholderText(tr("例如: https://github.com/user/repo.git"));
     urlLayout->addWidget(urlEdit);
 
-    urlDialog.setCentralWidget(urlCentral);
-    urlDialog.setLeftButtonText(tr("确定"));
-    urlDialog.setMiddleButtonText(tr("检查链接"));
-    urlDialog.setRightButtonText(tr("取消"));
+    urlDialog->setCentralWidget(urlCentral);
+    urlDialog->setLeftButtonText(tr("确定"));
+    urlDialog->setMiddleButtonText(tr("检查链接"));
+    urlDialog->setRightButtonText(tr("取消"));
 
     int confirm = 0;
-    connect(&urlDialog, &ElaContentDialog::leftButtonClicked, &urlDialog, [&]() //确认
-            {
-                confirm = 1;
-                urlDialog.close(); });
-    connect(&urlDialog, &ElaContentDialog::middleButtonClicked, &urlDialog, [&]() //检查链接
-            {
-                const QString testUrl = urlEdit->text().trimmed();
-                if (testUrl.isEmpty())
-                {
-                    ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                                           "检查失败",
-                                           "请先输入云端仓库地址",
-                                           2000,
-                                           parentWidget());
-                    return;
-                }
+    urlDialog->leftClicked = [&]() { confirm = 1; };
+    urlDialog->middleClicked = [&]() //检查链接
+    {
+        const QString testUrl = urlEdit->text().trimmed();
+        if (testUrl.isEmpty())
+        {
+            ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                                   "检查失败",
+                                   "请先输入云端仓库地址",
+                                   2000,
+                                   parentWidget());
+            return;
+        }
 
-                QProcess checkProcess;
-                checkProcess.start("git", QStringList() << "ls-remote" << "--heads" << testUrl);
-                if (!checkProcess.waitForStarted())
-                {
-                    ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                         "检查失败",
-                                         "无法启动 git，请确认 git 已安装",
-                                         3000,
-                                         parentWidget());
-                    return;
-                }
-                checkProcess.waitForFinished();
+        QProcess checkProcess;
+        checkProcess.start("git", QStringList() << "ls-remote" << "--heads" << testUrl);
+        if (!checkProcess.waitForStarted())
+        {
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "检查失败",
+                                 "无法启动 git，请确认 git 已安装",
+                                 3000,
+                                 parentWidget());
+            return;
+        }
+        checkProcess.waitForFinished();
 
-                if (checkProcess.exitCode() == 0)
-                {
-                    ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                                           "检查成功",
-                                           "仓库地址可访问",
-                                           2000,
-                                           parentWidget());
-                }
-                else
-                {
-                    const QString errorText = QString::fromUtf8(checkProcess.readAllStandardError()).trimmed();
-                    ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                         "检查失败",
-                                         errorText.isEmpty() ? "仓库地址不可用，请检查链接和网络" : errorText,
-                                         3000,
-                                         parentWidget());
-                } });
-    connect(&urlDialog, &ElaContentDialog::rightButtonClicked, &urlDialog, [&]() //取消
-            {
-                confirm = 0;
-                urlDialog.close(); });
+        if (checkProcess.exitCode() == 0)
+        {
+            ElaMessageBar::success(ElaMessageBarType::BottomRight,
+                                   "检查成功",
+                                   "仓库地址可访问",
+                                   2000,
+                                   parentWidget());
+        }
+        else
+        {
+            const QString errorText = QString::fromUtf8(checkProcess.readAllStandardError()).trimmed();
+            ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                 "检查失败",
+                                 errorText.isEmpty() ? "仓库地址不可用，请检查链接和网络" : errorText,
+                                 3000,
+                                 parentWidget());
+        }
+    };
+    urlDialog->rightClicked = [&]() { confirm = 0; };
 
-    urlDialog.exec();
+    urlDialog->exec();
+    const QString repoUrl = urlEdit->text().trimmed();
+    urlDialog->leftClicked = nullptr;
+    urlDialog->middleClicked = nullptr;
+    urlDialog->rightClicked = nullptr;
+    QTimer::singleShot(1000, urlDialog, &QObject::deleteLater);
 
     if (confirm != 1)
+    {
         return;
-
-    const QString repoUrl = urlEdit->text().trimmed();
+    }
 
     if (repoUrl.isEmpty())
     {

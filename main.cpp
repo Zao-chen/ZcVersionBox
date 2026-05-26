@@ -16,15 +16,16 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
-    eApp->init();
-    MainWindow w;
     /*获取启动参数*/
     QStringList args = QCoreApplication::arguments();
     args.removeFirst(); //args[0]是程序自身路径，去掉
     /*启动*/
     if (args.isEmpty()) //程序正常启动
     {
+        eApp->init();
+        MainWindow w;
         w.show();
+        return a.exec();
     }
     else //使用右键菜单或拖拽启动
     {
@@ -132,5 +133,4 @@ int main(int argc, char *argv[])
                              QSystemTrayIcon::Information, 3000);
         return 0;
     }
-    return a.exec();
 }
