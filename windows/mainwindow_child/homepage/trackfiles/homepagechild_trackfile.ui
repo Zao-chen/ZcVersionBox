@@ -72,21 +72,21 @@
       <item>
        <widget class="ElaPushButton" name="pushButton_Backup">
         <property name="text">
-         <string>查看历史备份</string>
+         <string>查看备份</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="ElaPushButton" name="pushButton_RemoveTrack">
         <property name="text">
-         <string>停止并删除备份</string>
+         <string>删除备份</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="ElaPushButton" name="pushButton_Rebuild">
         <property name="text">
-         <string>重建仓库</string>
+         <string>重建备份</string>
         </property>
        </widget>
       </item>
