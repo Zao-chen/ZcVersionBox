@@ -319,6 +319,7 @@ void SettingPage::on_ToggleSwitch_RightClickMenu_toggled(bool checked)
 /*开机自启*/
 void SettingPage::on_ToggleSwitch_AutoStart_toggled(bool checked)
 {
+#ifdef Q_OS_WIN
     const QString runRegPath = R"(HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run)";
     const QString runName = QStringLiteral("ZcVersionBox");
     QString appPath = QCoreApplication::applicationFilePath().replace("/", "\\");
@@ -332,6 +333,26 @@ void SettingPage::on_ToggleSwitch_AutoStart_toggled(bool checked)
     {
         runSetting.remove(runName);
     }
+#elif defined(Q_OS_MACOS)
+    const bool success = setMacAutoStartEnabled(checked);
+    if (!success)
+    {
+        QSignalBlocker blocker(ui->ToggleSwitch_AutoStart);
+        ui->ToggleSwitch_AutoStart->setIsToggled(!checked);
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "开机自启设置失败",
+                             "无法写入用户 LaunchAgent",
+                             3000,
+                             this);
+        return;
+    }
+    ElaMessageBar::information(ElaMessageBarType::BottomRight,
+                               "开机自启",
+                               checked ? "已启用 macOS 登录时自动启动"
+                                       : "已停用 macOS 登录时自动启动",
+                               3000,
+                               this);
+#endif
 
     QSettings ini(Settingpath, QSettings::IniFormat);
     ini.setValue("AutoStart", checked);

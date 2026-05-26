@@ -31,6 +31,15 @@ QString workflowPath()
     return home + "/Library/Services/添加到 ZcVersionBox.workflow";
 }
 
+QString launchAgentPath()
+{
+    const QString home = QStandardPaths::writableLocation(QStandardPaths::HomeLocation);
+    if (home.isEmpty()) {
+        return {};
+    }
+    return home + "/Library/LaunchAgents/com.zc.versionbox.autostart.plist";
+}
+
 bool writeTextFile(const QString &path, const QString &content)
 {
     QFile file(path);
@@ -203,7 +212,58 @@ void removeFinderQuickAction()
     }
 }
 
+bool installLaunchAgent()
+{
+    const QString path = launchAgentPath();
+    if (path.isEmpty()) {
+        return false;
+    }
+
+    QDir dir;
+    if (!dir.mkpath(QStandardPaths::writableLocation(QStandardPaths::HomeLocation) + "/Library/LaunchAgents")) {
+        return false;
+    }
+
+    const QString executablePath = QCoreApplication::applicationFilePath();
+    const QString plist = QString(R"(<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.zc.versionbox.autostart</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>%1</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+)")
+                              .arg(xmlEscaped(executablePath));
+
+    return writeTextFile(path, plist);
+}
+
+bool removeLaunchAgent()
+{
+    const QString path = launchAgentPath();
+    if (path.isEmpty()) {
+        return false;
+    }
+
+    if (!QFile::exists(path)) {
+        return true;
+    }
+    return QFile::remove(path);
+}
+
 } // namespace
+
+bool setMacAutoStartEnabled(bool enabled)
+{
+    return enabled ? installLaunchAgent() : removeLaunchAgent();
+}
 
 void setMacServicesProviderEnabled(bool enabled)
 {
