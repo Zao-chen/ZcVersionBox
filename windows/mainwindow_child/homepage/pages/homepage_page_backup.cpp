@@ -4,7 +4,6 @@
 #undef HOMEPAGE_UI_HEADER
 
 #include "../../../../GlobalConstants.h"
-#include "../../../../utils/aicommitmessagehelper.h"
 #include "../../../../utils/fileutils.h"
 
 #include "ElaIconButton.h"
@@ -325,8 +324,8 @@ void HomePage::openBackup(QString FilePathWithCode)
     m_NowFilePathWithCode = FilePathWithCode;
 
     /*设置面包屑*/
-    ui->widget_BreadcrumbBar->appendBreadcrumb(
-        QFileInfo(QUrl::fromPercentEncoding(FilePathWithCode.toUtf8())).baseName());
+    const QString displayName = QFileInfo(QUrl::fromPercentEncoding(FilePathWithCode.toUtf8())).baseName();
+    ui->widget_BreadcrumbBar->setBreadcrumbList(QStringList() << "备份中文件" << displayName);
     ui->stackedWidget->setCurrentIndex(1);
 
     /*设置表格*/
@@ -411,7 +410,7 @@ void HomePage::openBackup(QString FilePathWithCode)
 
         ElaPushButton *button1 = new ElaPushButton("查看", buttonWidget);
         ElaPushButton *button2 = new ElaPushButton("恢复", buttonWidget);
-        ElaPushButton *button3 = new ElaPushButton("AI", buttonWidget);
+        ElaPushButton *button3 = new ElaPushButton("对比", buttonWidget);
         QFont font;
         font.setPointSize(10); //字体大小统一
         button1->setFont(font);
@@ -592,81 +591,10 @@ void HomePage::openBackup(QString FilePathWithCode)
                         }
                     } });
 
-        //AI生成提交说明
+        //对比上一版本
         connect(button3, &QPushButton::clicked, this, [=]()
                 {
-                    const QString gitRepoPath = BackupPath + "/" + m_NowFilePathWithCode;
-                    if (!QDir(gitRepoPath).exists())
-                    {
-                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                             "AI 生成失败",
-                                             "本地备份仓库不存在",
-                                             3000,
-                                             parentWidget());
-                        return;
-                    }
-
-                    QProcess diffProcess;
-                    diffProcess.setWorkingDirectory(gitRepoPath);
-                    diffProcess.start("git", QStringList() << "show" << "--format=medium" << "--unified=0" << currentHash);
-                    diffProcess.waitForStarted();
-                    diffProcess.waitForFinished();
-
-                    if (diffProcess.exitCode() != 0)
-                    {
-                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                             "AI 生成失败",
-                                             QString::fromUtf8(diffProcess.readAllStandardError()).trimmed(),
-                                             3000,
-                                             parentWidget());
-                        return;
-                    }
-
-                    const QString diffText = QString::fromUtf8(diffProcess.readAllStandardOutput()).trimmed();
-
-
-                    qInfo() << "[AI] diff length:" << diffText.size();
-                    qInfo().noquote() << "[AI] diff preview (first 2000 chars):\n"
-                                      << diffText.left(2000);
-
-                    const QString prompt = AiCommitMessageHelper::buildPromptFromDiff(diffText);
-                    const QString systemPrompt = AiCommitMessageHelper::systemPrompt();
-                    qInfo() << "[AI] request summary:" << "systemPromptLen=" << systemPrompt.size()
-                            << "promptLen=" << prompt.size();
-                    qInfo().noquote() << "[AI] prompt preview (first 2000 chars):\n"
-                                      << prompt.left(2000);
-
-                    AiCommitMessageHelper::generateCommitMessageAsync(
-                        diffText,
-                        this,
-                        [=](const QString &generatedMessage)
-                        {
-                            ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                                                   "AI 已生成",
-                                                   generatedMessage,
-                                                   4500,
-                                                   parentWidget());
-                        },
-                        [=](const QString &error)
-                        {
-                            const bool missingConfig = error.contains("Base URL") || error.contains("API Key") || error.contains("模型");
-                            if (missingConfig)
-                            {
-                                ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                                                       "AI 未配置",
-                                                       error,
-                                                       3500,
-                                                       parentWidget());
-                            }
-                            else
-                            {
-                                ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                                     "AI 生成失败",
-                                                     error,
-                                                     4000,
-                                                     parentWidget());
-                            }
-                        });
+                    openDiff(currentHash);
                 });
 
         QModelIndex index = model->index(row, 2);

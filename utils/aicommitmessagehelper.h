@@ -18,10 +18,19 @@ QString buildPromptFromDiff(const QString &diffText);
 
 QString systemPrompt();
 
+QString buildDiffSummaryPrompt(const QString &diffText);
+
+QString diffSummarySystemPrompt();
+
 void generateCommitMessageAsync(const QString &diffText,
                                 QObject *context,
                                 const std::function<void(const QString &)> &onSuccess,
                                 const std::function<void(const QString &)> &onError);
+
+void generateDiffSummaryAsync(const QString &diffText,
+                              QObject *context,
+                              const std::function<void(const QString &)> &onSuccess,
+                              const std::function<void(const QString &)> &onError);
 
 QString generateCommitMessageSync(const QString &diffText,
                                   int timeoutMs = 15000,
