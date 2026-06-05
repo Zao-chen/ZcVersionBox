@@ -35,14 +35,15 @@ QString deriveBaseUrl(const QString &apiUrl)
 void setupProvider(AiProvider &provider,
                    const QString &baseUrl,
                    const QString &apiKey,
-                   const QString &modelName)
+                   const QString &modelName,
+                   const QString &systemPrompt)
 {
     provider.setServiceType(AiProvider::Custom);
     provider.setBaseUrl(deriveBaseUrl(baseUrl));
     provider.setApiKey(apiKey);
     provider.setModel(modelName);
     provider.setStreamEnabled(false);
-    provider.setSystemPrompt(AiCommitMessageHelper::systemPrompt());
+    provider.setSystemPrompt(systemPrompt);
 }
 
 } // namespace
@@ -81,6 +82,16 @@ QString systemPrompt()
     return QStringLiteral("你是一个资深的 Git 提交信息助手。根据用户提供的 git diff 生成一条简洁、准确的 commit message，只返回提交信息本身，不要返回解释、列表、代码块或多余标点。");
 }
 
+QString buildDiffSummaryPrompt(const QString &diffText)
+{
+    return QStringLiteral("请分析下面的 git diff，用中文输出版本对比结果。要求：先用一句话概括整体变化，再列出 3 到 6 条关键变更；如果发现潜在风险或需要注意的地方，请单独写一行“注意：...”。\n\n%1").arg(diffText);
+}
+
+QString diffSummarySystemPrompt()
+{
+    return QStringLiteral("你是一个资深代码审阅助手。根据用户提供的 git diff 做清晰、简洁的中文版本对比分析，重点说明改了什么、影响什么、是否有风险。不要输出代码块。");
+}
+
 void generateCommitMessageAsync(const QString &diffText,
                                 QObject *context,
                                 const std::function<void(const QString &)> &onSuccess,
@@ -98,7 +109,7 @@ void generateCommitMessageAsync(const QString &diffText,
     }
 
     auto *provider = new AiProvider(context);
-    setupProvider(*provider, baseUrl, apiKey, modelName);
+    setupProvider(*provider, baseUrl, apiKey, modelName, systemPrompt());
 
     QObject::connect(provider, &AiProvider::replyReceived, context, [provider, onSuccess, onError](const QString &reply)
                      {
@@ -123,6 +134,48 @@ void generateCommitMessageAsync(const QString &diffText,
     provider->chat(buildPromptFromDiff(diffText));
 }
 
+void generateDiffSummaryAsync(const QString &diffText,
+                              QObject *context,
+                              const std::function<void(const QString &)> &onSuccess,
+                              const std::function<void(const QString &)> &onError)
+{
+    QString baseUrl;
+    QString apiKey;
+    QString modelName;
+    QString errorMessage;
+    if (!loadAiConfig(baseUrl, apiKey, modelName, &errorMessage))
+    {
+        if (onError)
+            onError(errorMessage);
+        return;
+    }
+
+    auto *provider = new AiProvider(context);
+    setupProvider(*provider, baseUrl, apiKey, modelName, diffSummarySystemPrompt());
+
+    QObject::connect(provider, &AiProvider::replyReceived, context, [provider, onSuccess, onError](const QString &reply)
+                     {
+                         const QString generated = reply.trimmed();
+                         if (generated.isEmpty())
+                         {
+                             if (onError)
+                                 onError(QStringLiteral("AI 未返回有效对比分析"));
+                         }
+                         else if (onSuccess)
+                         {
+                             onSuccess(generated);
+                         }
+                         provider->deleteLater(); });
+
+    QObject::connect(provider, &AiProvider::errorOccurred, context, [provider, onError](const QString &error)
+                     {
+                         if (onError)
+                             onError(error);
+                         provider->deleteLater(); });
+
+    provider->chat(buildDiffSummaryPrompt(diffText));
+}
+
 QString generateCommitMessageSync(const QString &diffText, int timeoutMs, QString *errorMessage)
 {
     QString baseUrl;
@@ -137,7 +190,7 @@ QString generateCommitMessageSync(const QString &diffText, int timeoutMs, QStrin
     }
 
     AiProvider provider;
-    setupProvider(provider, baseUrl, apiKey, modelName);
+    setupProvider(provider, baseUrl, apiKey, modelName, systemPrompt());
 
     QString generated;
     QEventLoop loop;

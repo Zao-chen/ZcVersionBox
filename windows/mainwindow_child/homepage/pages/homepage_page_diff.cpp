@@ -4,6 +4,7 @@
 #undef HOMEPAGE_UI_HEADER
 
 #include "../../../../GlobalConstants.h"
+#include "../../../../utils/aicommitmessagehelper.h"
 
 #include "ElaMessageBar.h"
 
@@ -129,6 +130,23 @@ QString buildDiffHtml(const QString &diffText)
             html += htmlLine(line, "line");
     }
 
+    html += "</body></html>";
+    return html;
+}
+
+QString buildPlainTextHtml(const QString &title, const QString &text)
+{
+    QString escaped = text.toHtmlEscaped();
+    escaped.replace('\n', "<br>");
+
+    QString html;
+    html += "<html><head><style>";
+    html += "body{font-family:sans-serif;font-size:14px;line-height:1.55;margin:16px;color:#202124;}";
+    html += "h3{margin:0 0 12px 0;font-size:18px;}";
+    html += ".content{white-space:normal;}";
+    html += "</style></head><body>";
+    html += QString("<h3>%1</h3>").arg(title.toHtmlEscaped());
+    html += QString("<div class=\"content\">%1</div>").arg(escaped);
     html += "</body></html>";
     return html;
 }
@@ -336,6 +354,83 @@ void HomePage::LoadDiffFile(const QString &filePath)
     }
 
     ui->textEdit_DiffContent->setHtml(buildDiffHtml(diffText));
+}
+
+/*AI分析当前版本对比*/
+void HomePage::on_pushButton_DiffAi_clicked()
+{
+    if (m_DiffRepoPath.isEmpty() || m_DiffOldCommit.isEmpty() || m_DiffNewCommit.isEmpty())
+    {
+        ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                               "AI 分析失败",
+                               "请先打开一个版本对比",
+                               2500,
+                               parentWidget());
+        return;
+    }
+
+    bool ok = false;
+    QString errorMessage;
+    const QString diffText = runGit(m_DiffRepoPath,
+                                    QStringList() << "diff" << "--no-color" << "--unified=20"
+                                                  << m_DiffOldCommit << m_DiffNewCommit,
+                                    &ok,
+                                    &errorMessage);
+    if (!ok)
+    {
+        ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                             "AI 分析失败",
+                             errorMessage,
+                             3000,
+                             parentWidget());
+        return;
+    }
+
+    if (diffText.trimmed().isEmpty())
+    {
+        ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                               "AI 分析失败",
+                               "当前版本对比没有可分析的变更",
+                               2500,
+                               parentWidget());
+        return;
+    }
+
+    ui->textEdit_DiffContent->setHtml(buildPlainTextHtml("AI 正在分析版本对比...", "请稍候"));
+
+    AiCommitMessageHelper::generateDiffSummaryAsync(
+        diffText,
+        this,
+        [=](const QString &summary)
+        {
+            ui->textEdit_DiffContent->setHtml(buildPlainTextHtml("AI 版本对比分析", summary));
+            ElaMessageBar::success(ElaMessageBarType::BottomRight,
+                                   "AI 分析完成",
+                                   "已生成当前版本对比分析",
+                                   2500,
+                                   parentWidget());
+        },
+        [=](const QString &error)
+        {
+            const bool missingConfig = error.contains("Base URL") || error.contains("API Key") || error.contains("模型");
+            ui->textEdit_DiffContent->setHtml(buildPlainTextHtml("AI 分析失败", error));
+            if (missingConfig)
+            {
+                ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                                       "AI 未配置",
+                                       error,
+                                       3500,
+                                       parentWidget());
+            }
+            else
+            {
+                ElaMessageBar::error(ElaMessageBarType::BottomRight,
+                                     "AI 分析失败",
+                                     error,
+                                     4000,
+                                     parentWidget());
+            }
+        });
 }
 
 /*返回*/

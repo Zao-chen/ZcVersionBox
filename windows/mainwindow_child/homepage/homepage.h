@@ -27,6 +27,7 @@ class HomePage : public QWidget
     void on_ToggleSwitch_Remote_toggled(bool checked);                                                  //打开关闭远程同步
     void on_pushButton_AddFromLoc_clicked();                                                            //添加本地文件
     void on_pushButton_AddFromRemo_clicked();                                                           //从云端导入
+    void on_pushButton_DiffAi_clicked();                                                                //AI分析当前对比
     void on_pushButton_DiffBack_clicked();                                                              //返回版本列表
 
   private:
