@@ -115,41 +115,7 @@
         </widget>
        </item>
        <item>
-        <widget class="ElaScrollPageArea" name="widget_AiEntry" native="true">
-         <layout class="QHBoxLayout" name="horizontalLayout_3">
-          <property name="leftMargin">
-           <number>12</number>
-          </property>
-          <property name="topMargin">
-           <number>12</number>
-          </property>
-          <property name="rightMargin">
-           <number>12</number>
-          </property>
-          <property name="bottomMargin">
-           <number>12</number>
-          </property>
-          <item>
-           <widget class="ElaText" name="label_AiEntry">
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
-            <property name="text">
-             <string>AI 接入配置</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="ElaPushButton" name="pushButton_OpenAiPage">
-            <property name="text">
-             <string>配置</string>
-            </property>
-           </widget>
-          </item>
-         </layout>
-        </widget>
+        <widget class="ElaDrawerArea" name="ElaDrawerArea_Ai" native="true"/>
        </item>
        <item>
         <spacer name="verticalSpacer">
@@ -166,8 +132,8 @@
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="page_Ai">
-      <layout class="QVBoxLayout" name="page_AiLayout">
+     <widget class="QWidget" name="page_AiProviders">
+      <layout class="QVBoxLayout" name="page_AiProvidersLayout">
        <property name="leftMargin">
         <number>0</number>
        </property>
@@ -181,8 +147,8 @@
         <number>0</number>
        </property>
        <item>
-        <widget class="ElaScrollPageArea" name="widget_AiConnection" native="true">
-         <layout class="QHBoxLayout" name="horizontalLayout_AiConnection" stretch="3,2,2">
+        <widget class="ElaScrollPageArea" name="widget_OpenAiProvider" native="true">
+         <layout class="QHBoxLayout" name="horizontalLayout_OpenAiProvider" stretch="1,0,0">
           <property name="leftMargin">
            <number>12</number>
           </property>
@@ -196,30 +162,238 @@
            <number>12</number>
           </property>
           <item>
-           <widget class="ElaText" name="label_AiConnection">
+           <widget class="ElaText" name="label_OpenAiProvider">
             <property name="font">
              <font>
               <pointsize>12</pointsize>
              </font>
             </property>
             <property name="text">
-             <string>连接</string>
+             <string>OpenAI</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="ElaLineEdit" name="lineEdit_AiBaseUrl">
+           <widget class="ElaText" name="label_OpenAiProvider_Status">
+            <property name="visible">
+             <bool>false</bool>
+            </property>
+            <property name="font">
+             <font>
+              <pointsize>16</pointsize>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">color: #2EAD4B;</string>
+            </property>
+            <property name="text">
+             <string>√</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaPushButton" name="pushButton_OpenAiProvider_Set">
+            <property name="toolTip">
+             <string>配置 OpenAI API Key，并拉取当前账号可用的模型列表</string>
+            </property>
             <property name="minimumSize">
              <size>
-              <width>0</width>
+              <width>96</width>
               <height>34</height>
              </size>
             </property>
-            <property name="placeholderText">
-             <string>https://api.openai.com/v1/chat/completions</string>
+            <property name="text">
+             <string>配置</string>
             </property>
-            <property name="clearButtonEnabled">
-             <bool>true</bool>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="ElaScrollPageArea" name="widget_DeepSeekProvider" native="true">
+         <layout class="QHBoxLayout" name="horizontalLayout_DeepSeekProvider" stretch="1,0,0">
+          <property name="leftMargin">
+           <number>12</number>
+          </property>
+          <property name="topMargin">
+           <number>12</number>
+          </property>
+          <property name="rightMargin">
+           <number>12</number>
+          </property>
+          <property name="bottomMargin">
+           <number>12</number>
+          </property>
+          <item>
+           <widget class="ElaText" name="label_DeepSeekProvider">
+            <property name="font">
+             <font>
+              <pointsize>12</pointsize>
+             </font>
+            </property>
+            <property name="text">
+             <string>DeepSeek</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaText" name="label_DeepSeekProvider_Status">
+            <property name="visible">
+             <bool>false</bool>
+            </property>
+            <property name="font">
+             <font>
+              <pointsize>16</pointsize>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">color: #2EAD4B;</string>
+            </property>
+            <property name="text">
+             <string>√</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaPushButton" name="pushButton_DeepSeekProvider_Set">
+            <property name="toolTip">
+             <string>配置 DeepSeek API Key，并拉取当前账号可用的模型列表</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>96</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="text">
+             <string>配置</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="ElaScrollPageArea" name="widget_CustomProvider" native="true">
+         <layout class="QHBoxLayout" name="horizontalLayout_CustomProvider" stretch="1,0,0">
+          <property name="leftMargin">
+           <number>12</number>
+          </property>
+          <property name="topMargin">
+           <number>12</number>
+          </property>
+          <property name="rightMargin">
+           <number>12</number>
+          </property>
+          <property name="bottomMargin">
+           <number>12</number>
+          </property>
+          <item>
+           <widget class="ElaText" name="label_CustomProvider">
+            <property name="font">
+             <font>
+              <pointsize>12</pointsize>
+             </font>
+            </property>
+            <property name="text">
+             <string>Custom</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaText" name="label_CustomProvider_Status">
+            <property name="visible">
+             <bool>false</bool>
+            </property>
+            <property name="font">
+             <font>
+              <pointsize>16</pointsize>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="styleSheet">
+             <string notr="true">color: #2EAD4B;</string>
+            </property>
+            <property name="text">
+             <string>√</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="ElaPushButton" name="pushButton_CustomProvider_Set">
+            <property name="toolTip">
+             <string>配置兼容 OpenAI 接口格式的自定义服务</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>96</width>
+              <height>34</height>
+             </size>
+            </property>
+            <property name="text">
+             <string>配置</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_AiProviders">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="page_AiProviderDetail">
+      <layout class="QVBoxLayout" name="page_AiProviderDetailLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="ElaScrollPageArea" name="widget_AiApiKey" native="true">
+         <layout class="QHBoxLayout" name="horizontalLayout_AiApiKey" stretch="3,4">
+          <property name="leftMargin">
+           <number>12</number>
+          </property>
+          <property name="topMargin">
+           <number>12</number>
+          </property>
+          <property name="rightMargin">
+           <number>12</number>
+          </property>
+          <property name="bottomMargin">
+           <number>12</number>
+          </property>
+          <item>
+           <widget class="ElaText" name="label_AiApiKey">
+            <property name="font">
+             <font>
+              <pointsize>12</pointsize>
+             </font>
+            </property>
+            <property name="text">
+             <string>API Key</string>
             </property>
            </widget>
           </item>
@@ -235,7 +409,7 @@
              <enum>QLineEdit::Password</enum>
             </property>
             <property name="placeholderText">
-             <string>请输入 AI API Key</string>
+             <string>请输入当前服务商的 API Key</string>
             </property>
             <property name="clearButtonEnabled">
              <bool>true</bool>
@@ -246,8 +420,11 @@
         </widget>
        </item>
        <item>
-        <widget class="ElaScrollPageArea" name="widget_AiModel" native="true">
-         <layout class="QHBoxLayout" name="horizontalLayout_AiModel" stretch="3,2,2">
+        <widget class="ElaScrollPageArea" name="widget_AiBaseUrl" native="true">
+         <property name="visible">
+          <bool>false</bool>
+         </property>
+         <layout class="QHBoxLayout" name="horizontalLayout_AiBaseUrl" stretch="3,4">
           <property name="leftMargin">
            <number>12</number>
           </property>
@@ -261,93 +438,83 @@
            <number>12</number>
           </property>
           <item>
-           <widget class="ElaText" name="label_AiModel">
+           <widget class="ElaText" name="label_AiBaseUrl">
             <property name="font">
              <font>
               <pointsize>12</pointsize>
              </font>
             </property>
             <property name="text">
-             <string>模型</string>
+             <string>Base URL</string>
             </property>
            </widget>
           </item>
           <item>
-           <widget class="ElaComboBox" name="comboBox_AiModel">
+           <widget class="ElaLineEdit" name="lineEdit_AiBaseUrl">
             <property name="minimumSize">
              <size>
               <width>0</width>
               <height>34</height>
              </size>
             </property>
-            <property name="editable">
+            <property name="placeholderText">
+             <string>https://api.example.com/v1</string>
+            </property>
+            <property name="clearButtonEnabled">
              <bool>true</bool>
             </property>
            </widget>
           </item>
-          <item>
-           <widget class="ElaPushButton" name="pushButton_FetchAiModels">
-            <property name="minimumSize">
-             <size>
-              <width>0</width>
-              <height>34</height>
-             </size>
-            </property>
-            <property name="text">
-             <string>获取模型列表</string>
-            </property>
-           </widget>
-          </item>
          </layout>
         </widget>
        </item>
        <item>
-        <widget class="ElaScrollPageArea" name="widget_AiAutoCommit" native="true">
-         <layout class="QHBoxLayout" name="horizontalLayout_AiAutoCommit">
-          <property name="leftMargin">
-           <number>12</number>
-          </property>
-          <property name="topMargin">
-           <number>12</number>
-          </property>
-          <property name="rightMargin">
-           <number>12</number>
-          </property>
-          <property name="bottomMargin">
-           <number>12</number>
-          </property>
-          <item>
-           <widget class="ElaText" name="label_AiAutoCommit">
-            <property name="font">
-             <font>
-              <pointsize>12</pointsize>
-             </font>
-            </property>
-            <property name="text">
-             <string>自动提交</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="ElaToggleSwitch" name="toggleSwitch_AiAutoCommit" native="true"/>
-          </item>
-         </layout>
+        <layout class="QHBoxLayout" name="horizontalLayout_AiModelListHeader">
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="ElaText" name="label_AiModelList">
+           <property name="font">
+            <font>
+             <pointsize>10</pointsize>
+            </font>
+           </property>
+           <property name="text">
+            <string>模型列表</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="ElaPushButton" name="pushButton_FetchAiModels">
+           <property name="minimumSize">
+            <size>
+             <width>112</width>
+             <height>34</height>
+            </size>
+           </property>
+           <property name="text">
+            <string>获取模型列表</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="ElaListView" name="listView_AiModels">
+         <property name="verticalScrollBarPolicy">
+          <enum>Qt::ScrollBarAsNeeded</enum>
+         </property>
+         <property name="horizontalScrollBarPolicy">
+          <enum>Qt::ScrollBarAsNeeded</enum>
+         </property>
+         <property name="selectionMode">
+          <enum>QAbstractItemView::SingleSelection</enum>
+         </property>
         </widget>
        </item>
        <item>
-        <widget class="ElaText" name="label_AiAutoCommitDesc">
-         <property name="font">
-          <font>
-           <pointsize>9</pointsize>
-          </font>
-         </property>
-         <property name="text">
-          <string>开启后每次自动备份会先用 AI 生成 commit message</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <spacer name="verticalSpacer_AiPage">
+        <spacer name="verticalSpacer_AiProviderDetail">
          <property name="orientation">
           <enum>Qt::Vertical</enum>
          </property>
@@ -395,6 +562,12 @@
    <container>1</container>
   </customwidget>
   <customwidget>
+   <class>ElaDrawerArea</class>
+   <extends>QWidget</extends>
+   <header location="global">ElaDrawerArea.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
    <class>ElaLineEdit</class>
    <extends>QLineEdit</extends>
    <header location="global">ElaLineEdit.h</header>
@@ -403,6 +576,11 @@
    <class>ElaComboBox</class>
    <extends>QComboBox</extends>
    <header location="global">ElaComboBox.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ElaListView</class>
+   <extends>QListView</extends>
+   <header location="global">ElaListView.h</header>
   </customwidget>
   <customwidget>
    <class>ZcStackedWidget</class>

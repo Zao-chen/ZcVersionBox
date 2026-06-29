@@ -7,41 +7,21 @@
 #include <QTimer>
 
 #include "AiProvider.h"
+#include "aiconfighelper.h"
 
 namespace
 {
 
-QString deriveBaseUrl(const QString &apiUrl)
-{
-    QString url = apiUrl.trimmed();
-    if (url.isEmpty())
-        return {};
-
-    if (url.endsWith("/chat/completions"))
-    {
-        url.chop(QString("/chat/completions").size());
-        return url;
-    }
-
-    if (url.endsWith("/v1"))
-        return url;
-
-    if (url.endsWith('/'))
-        url.chop(1);
-
-    return url;
-}
-
 void setupProvider(AiProvider &provider,
-                   const QString &baseUrl,
-                   const QString &apiKey,
-                   const QString &modelName,
+                   const AiConfigHelper::RuntimeConfig &config,
                    const QString &systemPrompt)
 {
-    provider.setServiceType(AiProvider::Custom);
-    provider.setBaseUrl(deriveBaseUrl(baseUrl));
-    provider.setApiKey(apiKey);
-    provider.setModel(modelName);
+    provider.setServiceType(config.serviceType);
+    // Custom 才覆盖 Base URL。
+    if (config.serviceType == AiProvider::Custom)
+        provider.setBaseUrl(AiConfigHelper::deriveBaseUrl(config.baseUrl));
+    provider.setApiKey(config.apiKey);
+    provider.setModel(config.modelName);
     provider.setStreamEnabled(false);
     provider.setSystemPrompt(systemPrompt);
 }
@@ -54,22 +34,20 @@ namespace AiCommitMessageHelper
 bool isAutoCommitEnabled()
 {
     QSettings ini(Settingpath, QSettings::IniFormat);
-    return ini.value("AI/AutoCommitMessage", false).toBool();
+    // 兼容旧自动提交开关。
+    return ini.value("AI/Enabled", ini.value("AI/AutoCommitMessage", false)).toBool();
 }
 
 bool loadAiConfig(QString &baseUrl, QString &apiKey, QString &modelName, QString *errorMessage)
 {
-    QSettings ini(Settingpath, QSettings::IniFormat);
-    baseUrl = ini.value("AI/BaseUrl", QString()).toString().trimmed();
-    apiKey = ini.value("AI/ApiKey", QString()).toString().trimmed();
-    modelName = ini.value("AI/Model", QString()).toString().trimmed();
+    AiConfigHelper::RuntimeConfig config;
+    if (!AiConfigHelper::loadRuntimeConfig(config, errorMessage))
+        return false;
 
-    if (!baseUrl.isEmpty() && !apiKey.isEmpty() && !modelName.isEmpty())
-        return true;
-
-    if (errorMessage)
-        *errorMessage = QStringLiteral("请先在设置中填写 Base URL、API Key 和模型");
-    return false;
+    baseUrl = config.baseUrl;
+    apiKey = config.apiKey;
+    modelName = config.modelName;
+    return true;
 }
 
 QString buildPromptFromDiff(const QString &diffText)
@@ -97,11 +75,9 @@ void generateCommitMessageAsync(const QString &diffText,
                                 const std::function<void(const QString &)> &onSuccess,
                                 const std::function<void(const QString &)> &onError)
 {
-    QString baseUrl;
-    QString apiKey;
-    QString modelName;
+    AiConfigHelper::RuntimeConfig config;
     QString errorMessage;
-    if (!loadAiConfig(baseUrl, apiKey, modelName, &errorMessage))
+    if (!AiConfigHelper::loadRuntimeConfig(config, &errorMessage))
     {
         if (onError)
             onError(errorMessage);
@@ -109,7 +85,7 @@ void generateCommitMessageAsync(const QString &diffText,
     }
 
     auto *provider = new AiProvider(context);
-    setupProvider(*provider, baseUrl, apiKey, modelName, systemPrompt());
+    setupProvider(*provider, config, systemPrompt());
 
     QObject::connect(provider, &AiProvider::replyReceived, context, [provider, onSuccess, onError](const QString &reply)
                      {
@@ -139,11 +115,9 @@ void generateDiffSummaryAsync(const QString &diffText,
                               const std::function<void(const QString &)> &onSuccess,
                               const std::function<void(const QString &)> &onError)
 {
-    QString baseUrl;
-    QString apiKey;
-    QString modelName;
+    AiConfigHelper::RuntimeConfig config;
     QString errorMessage;
-    if (!loadAiConfig(baseUrl, apiKey, modelName, &errorMessage))
+    if (!AiConfigHelper::loadRuntimeConfig(config, &errorMessage))
     {
         if (onError)
             onError(errorMessage);
@@ -151,7 +125,7 @@ void generateDiffSummaryAsync(const QString &diffText,
     }
 
     auto *provider = new AiProvider(context);
-    setupProvider(*provider, baseUrl, apiKey, modelName, diffSummarySystemPrompt());
+    setupProvider(*provider, config, diffSummarySystemPrompt());
 
     QObject::connect(provider, &AiProvider::replyReceived, context, [provider, onSuccess, onError](const QString &reply)
                      {
@@ -178,11 +152,9 @@ void generateDiffSummaryAsync(const QString &diffText,
 
 QString generateCommitMessageSync(const QString &diffText, int timeoutMs, QString *errorMessage)
 {
-    QString baseUrl;
-    QString apiKey;
-    QString modelName;
+    AiConfigHelper::RuntimeConfig config;
     QString configError;
-    if (!loadAiConfig(baseUrl, apiKey, modelName, &configError))
+    if (!AiConfigHelper::loadRuntimeConfig(config, &configError))
     {
         if (errorMessage)
             *errorMessage = configError;
@@ -190,7 +162,7 @@ QString generateCommitMessageSync(const QString &diffText, int timeoutMs, QStrin
     }
 
     AiProvider provider;
-    setupProvider(provider, baseUrl, apiKey, modelName, systemPrompt());
+    setupProvider(provider, config, systemPrompt());
 
     QString generated;
     QEventLoop loop;
