@@ -316,7 +316,7 @@ void HomePage::openDiff(QString commitHash)
     ui->label_DiffRange->setText(QString("版本对比：%1 -> %2")
                                      .arg(shortCommit(m_DiffOldCommit), shortCommit(m_DiffNewCommit)));
     const QString displayName = QFileInfo(QUrl::fromPercentEncoding(m_NowFilePathWithCode.toUtf8())).baseName();
-    ui->widget_BreadcrumbBar->setBreadcrumbList(QStringList() << "备份中文件" << displayName << "版本对比");
+    ui->widget_BreadcrumbBar->setBreadcrumbList(QStringList() << "备份中文件" << displayName + " 历史版本" << "版本对比");
     ui->stackedWidget->setCurrentIndex(2);
 
     if (m_DiffFilePaths.isEmpty())
@@ -437,6 +437,6 @@ void HomePage::on_pushButton_DiffAi_clicked()
 void HomePage::on_pushButton_DiffBack_clicked()
 {
     const QString displayName = QFileInfo(QUrl::fromPercentEncoding(m_NowFilePathWithCode.toUtf8())).baseName();
-    ui->widget_BreadcrumbBar->setBreadcrumbList(QStringList() << "备份中文件" << displayName);
+    ui->widget_BreadcrumbBar->setBreadcrumbList(QStringList() << "备份中文件" << displayName + " 历史版本");
     ui->stackedWidget->setCurrentIndex(1);
 }

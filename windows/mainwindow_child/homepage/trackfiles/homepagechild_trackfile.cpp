@@ -6,58 +6,22 @@
 #include "../../../../utils/fileutils.h"
 #include "../homepage.h"
 
-#include <QCryptographicHash>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
-#include <QFileSystemWatcher>
+#include <QMap>
 #include <QProcess>
-#include <QRegularExpression>
-#include <QSettings>
-#include <QStandardPaths>
 #include <QTimer>
-#include <QVBoxLayout>
+#include <QUrl>
 
-#include <functional>
-
-#include "ElaContentDialog.h"
 #include "ElaMessageBar.h"
-#include "ElaText.h"
 #include "ElaToolTip.h"
 
 namespace
 {
-
-class SafeElaContentDialog : public ElaContentDialog
-{
-public:
-    using ElaContentDialog::ElaContentDialog;
-
-    void onLeftButtonClicked() override
-    {
-        if (leftClicked)
-            leftClicked();
-    }
-
-    void onMiddleButtonClicked() override
-    {
-        if (middleClicked)
-            middleClicked();
-    }
-
-    void onRightButtonClicked() override
-    {
-        if (rightClicked)
-            rightClicked();
-    }
-
-    std::function<void()> leftClicked;
-    std::function<void()> middleClicked;
-    std::function<void()> rightClicked;
-};
-
 QString buildAutoCommitMessageWithAi(const QString &repoPath)
 {
     // Auto AI commit message is optional and controlled by settings.
@@ -207,24 +171,6 @@ void HomePageChild_TrackFile::on_pushButton_OpenFile_clicked()
     }
 }
 
-/*移除追踪*/
-void HomePageChild_TrackFile::on_pushButton_RemoveTrack_clicked()
-{
-    //删除文件夹
-    QDir dir(BackupPath + "/" + m_FilePathWithCode);
-    qInfo() << "移除追踪：" << dir;
-    if (!dir.removeRecursively())
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "移除追踪失败",
-                             "删除备份目录失败，请检查权限或文件占用",
-                             3000,
-                             this);
-        return;
-    }
-    this->deleteLater();
-}
-
 /*同步文件到仓库*/
 void HomePageChild_TrackFile::BackupFile()
 {
@@ -368,233 +314,17 @@ void HomePageChild_TrackFile::BackupFile()
 /*查看备份*/
 void HomePageChild_TrackFile::on_pushButton_Backup_clicked()
 {
-    qInfo() << "打开备份：" << m_FilePathWithCode;
+    qInfo() << "打开历史版本：" << m_FilePathWithCode;
     //传递到父窗口
     HomePage *mw = qobject_cast<HomePage *>(this->parent()->parent()->parent());
     mw->openBackup(m_FilePathWithCode);
 }
 
-/*重建仓库*/
-void HomePageChild_TrackFile::on_pushButton_Rebuild_clicked()
+/*查看仪表盘*/
+void HomePageChild_TrackFile::on_pushButton_Dashboard_clicked()
 {
-    const QString repoPath = BackupPath + "/" + m_FilePathWithCode;
-    if (!QDir(repoPath).exists())
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "重建失败",
-                             "本地备份仓库不存在",
-                             3000,
-                             this);
-        return;
-    }
-
-    //确认对话框
-    SafeElaContentDialog *dlg = new SafeElaContentDialog(this->window());
-    QWidget *central = new QWidget(dlg);
-    QVBoxLayout *dlgLayout = new QVBoxLayout(central);
-    ElaText *warnText = new ElaText(
-        tr("确定要重建此仓库吗？\n\n"
-           "此操作将：\n"
-           "  - 删除所有历史版本记录\n"
-           "  - 仅保留当前文件的单一快照\n"
-           "  - 如已配置云端地址，将强制覆盖云端仓库\n\n"
-           "此操作不可撤销！"),
-        central);
-    warnText->setTextPixelSize(14);
-    dlgLayout->addWidget(warnText);
-    dlg->setCentralWidget(central);
-    dlg->setLeftButtonText(tr("确认重建"));
-    dlg->setMiddleButtonText(tr("了解更多"));
-    dlg->setRightButtonText(tr("取消"));
-
-    bool confirmed = false;
-    dlg->leftClicked = [&]() { confirmed = true; };
-    dlg->middleClicked = [&]() { confirmed = false; };
-    dlg->rightClicked = [&]() { confirmed = false; };
-    dlg->exec();
-    dlg->leftClicked = nullptr;
-    dlg->rightClicked = nullptr;
-    dlg->middleClicked = nullptr;
-    QTimer::singleShot(1000, dlg, &QObject::deleteLater);
-
-    if (!confirmed)
-        return;
-
-    //保存当前 remote URL
-    QString savedRemoteUrl;
-    {
-        QProcess proc;
-        proc.setWorkingDirectory(repoPath);
-        proc.start("git", QStringList() << "remote" << "get-url" << "origin");
-        if (proc.waitForStarted())
-        {
-            proc.waitForFinished();
-            if (proc.exitCode() == 0)
-                savedRemoteUrl = QString::fromUtf8(proc.readAllStandardOutput()).trimmed();
-        }
-    }
-
-    //删除 .git 目录
-    QDir gitDir(repoPath + "/.git");
-    if (gitDir.exists())
-    {
-        if (!gitDir.removeRecursively())
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "重建失败",
-                                 "无法删除旧的 .git 目录，请检查文件权限",
-                                 3000,
-                                 this);
-            return;
-        }
-    }
-
-    //git init
-    {
-        QProcess proc;
-        proc.setWorkingDirectory(repoPath);
-        proc.start("git", QStringList() << "init");
-        if (!proc.waitForStarted())
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "重建失败",
-                                 "无法启动 git，请确认 git 已安装",
-                                 3000,
-                                 this);
-            return;
-        }
-        proc.waitForFinished();
-        if (proc.exitCode() != 0)
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "重建失败",
-                                 "git init 执行失败",
-                                 3000,
-                                 this);
-            return;
-        }
-    }
-
-    //配置 git user
-    {
-        QProcess proc;
-        proc.setWorkingDirectory(repoPath);
-        proc.start("git", QStringList() << "config" << "user.name" << "ZcVersionBox");
-        proc.waitForFinished();
-        proc.start("git", QStringList() << "config" << "user.email" << "backup@zcversionbox.local");
-        proc.waitForFinished();
-    }
-
-    //git add .
-    {
-        QProcess proc;
-        proc.setWorkingDirectory(repoPath);
-        proc.start("git", QStringList() << "add" << ".");
-        if (!proc.waitForStarted())
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "重建失败",
-                                 "无法启动 git",
-                                 3000,
-                                 this);
-            return;
-        }
-        proc.waitForFinished();
-        if (proc.exitCode() != 0)
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "重建失败",
-                                 "git add 执行失败",
-                                 3000,
-                                 this);
-            return;
-        }
-    }
-
-    //git commit
-    {
-        QProcess proc;
-        proc.setWorkingDirectory(repoPath);
-        proc.start("git", QStringList() << "commit" << "-m" << "Initial backup");
-        if (!proc.waitForStarted())
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "重建失败",
-                                 "无法启动 git",
-                                 3000,
-                                 this);
-            return;
-        }
-        proc.waitForFinished();
-        if (proc.exitCode() != 0)
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "重建失败",
-                                 "git commit 执行失败",
-                                 3000,
-                                 this);
-            return;
-        }
-    }
-
-    //恢复 remote 并 force push
-    if (!savedRemoteUrl.isEmpty())
-    {
-        QProcess proc;
-        proc.setWorkingDirectory(repoPath);
-        proc.start("git", QStringList() << "remote" << "add" << "origin" << savedRemoteUrl);
-        if (!proc.waitForStarted())
-        {
-            ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                                   "重建完成（部分）",
-                                   "仓库已重建，但云端地址恢复失败，请手动重新配置",
-                                   4000,
-                                   this);
-            return;
-        }
-        proc.waitForFinished();
-        if (proc.exitCode() != 0)
-        {
-            ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                                   "重建完成（部分）",
-                                   "仓库已重建，但云端地址恢复失败：" +
-                                       QString::fromUtf8(proc.readAllStandardError()).trimmed(),
-                                   4000,
-                                   this);
-            return;
-        }
-
-        QProcess pushProc;
-        pushProc.setWorkingDirectory(repoPath);
-        pushProc.start("git", QStringList() << "push" << "--force" << "origin" << "master");
-        if (!pushProc.waitForStarted())
-        {
-            ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                                   "重建完成（部分）",
-                                   "仓库已重建，但强制推送到云端失败",
-                                   4000,
-                                   this);
-            return;
-        }
-        pushProc.waitForFinished();
-        if (pushProc.exitCode() != 0)
-        {
-            QString errMsg = QString::fromUtf8(pushProc.readAllStandardError()).trimmed();
-            ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                                   "重建完成（部分）",
-                                   "仓库已重建，但强制推送失败：" +
-                                       (errMsg.isEmpty() ? "请检查网络和云端地址" : errMsg),
-                                   4000,
-                                   this);
-            return;
-        }
-    }
-
-    ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                           "重建完成",
-                           savedRemoteUrl.isEmpty()
-                               ? "仓库已重建，历史已清除"
-                               : "仓库已重建，历史已清除，云端已同步",
-                           3000,
-                           this);
+    qInfo() << "打开备份仪表盘：" << m_FilePathWithCode;
+    //传递到父窗口
+    HomePage *mw = qobject_cast<HomePage *>(this->parent()->parent()->parent());
+    mw->openBackupDashboard(m_FilePathWithCode);
 }

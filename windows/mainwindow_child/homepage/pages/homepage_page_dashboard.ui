@@ -1,0 +1,467 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>HomePageDashboardPage</class>
+ <widget class="QWidget" name="HomePageDashboardPage">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>720</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Dashboard</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout_DashboardPage">
+   <property name="spacing">
+    <number>10</number>
+   </property>
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <item>
+    <widget class="ElaScrollPageArea" name="area_DashboardSummary" native="true">
+     <layout class="QVBoxLayout" name="verticalLayout_DashboardSummary">
+      <property name="spacing">
+       <number>10</number>
+      </property>
+      <property name="leftMargin">
+       <number>16</number>
+      </property>
+      <property name="topMargin">
+       <number>14</number>
+      </property>
+      <property name="rightMargin">
+       <number>16</number>
+      </property>
+      <property name="bottomMargin">
+       <number>14</number>
+      </property>
+      <item>
+       <widget class="ElaText" name="text_DashboardTitle">
+        <property name="text">
+         <string>备份仪表盘</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="ElaText" name="text_DashboardSourcePath">
+        <property name="text">
+         <string>源路径：-</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="ElaText" name="text_DashboardRepoPath">
+        <property name="text">
+         <string>仓库路径：-</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_DashboardMetrics" stretch="1,1,1,1,1">
+     <property name="spacing">
+      <number>10</number>
+     </property>
+     <item>
+      <widget class="ElaScrollPageArea" name="area_DashboardVersionMetric" native="true">
+       <layout class="QVBoxLayout" name="verticalLayout_DashboardVersionMetric">
+        <property name="spacing">
+         <number>6</number>
+        </property>
+        <property name="leftMargin">
+         <number>14</number>
+        </property>
+        <property name="topMargin">
+         <number>12</number>
+        </property>
+        <property name="rightMargin">
+         <number>14</number>
+        </property>
+        <property name="bottomMargin">
+         <number>12</number>
+        </property>
+        <item>
+         <widget class="ElaText" name="text_DashboardVersionTitle">
+          <property name="text">
+           <string>历史版本</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="ElaText" name="text_DashboardVersionCount">
+          <property name="text">
+           <string>-</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
+      <widget class="ElaScrollPageArea" name="area_DashboardFileCountMetric" native="true">
+       <layout class="QVBoxLayout" name="verticalLayout_DashboardFileCountMetric">
+        <property name="spacing">
+         <number>6</number>
+        </property>
+        <property name="leftMargin">
+         <number>14</number>
+        </property>
+        <property name="topMargin">
+         <number>12</number>
+        </property>
+        <property name="rightMargin">
+         <number>14</number>
+        </property>
+        <property name="bottomMargin">
+         <number>12</number>
+        </property>
+        <item>
+         <widget class="ElaText" name="text_DashboardFileCountTitle">
+          <property name="text">
+           <string>备份文件</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="ElaText" name="text_DashboardFileCount">
+          <property name="text">
+           <string>-</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
+      <widget class="ElaScrollPageArea" name="area_DashboardFileSizeMetric" native="true">
+       <layout class="QVBoxLayout" name="verticalLayout_DashboardFileSizeMetric">
+        <property name="spacing">
+         <number>6</number>
+        </property>
+        <property name="leftMargin">
+         <number>14</number>
+        </property>
+        <property name="topMargin">
+         <number>12</number>
+        </property>
+        <property name="rightMargin">
+         <number>14</number>
+        </property>
+        <property name="bottomMargin">
+         <number>12</number>
+        </property>
+        <item>
+         <widget class="ElaText" name="text_DashboardFileSizeTitle">
+          <property name="text">
+           <string>文件大小</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="ElaText" name="text_DashboardFileSize">
+          <property name="text">
+           <string>-</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
+      <widget class="ElaScrollPageArea" name="area_DashboardCacheMetric" native="true">
+       <layout class="QVBoxLayout" name="verticalLayout_DashboardCacheMetric">
+        <property name="spacing">
+         <number>6</number>
+        </property>
+        <property name="leftMargin">
+         <number>14</number>
+        </property>
+        <property name="topMargin">
+         <number>12</number>
+        </property>
+        <property name="rightMargin">
+         <number>14</number>
+        </property>
+        <property name="bottomMargin">
+         <number>12</number>
+        </property>
+        <item>
+         <widget class="ElaText" name="text_DashboardCacheTitle">
+          <property name="text">
+           <string>备份缓存</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="ElaText" name="text_DashboardCacheSize">
+          <property name="text">
+           <string>-</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
+      <widget class="ElaScrollPageArea" name="area_DashboardSourceStateMetric" native="true">
+       <layout class="QVBoxLayout" name="verticalLayout_DashboardSourceStateMetric">
+        <property name="spacing">
+         <number>6</number>
+        </property>
+        <property name="leftMargin">
+         <number>14</number>
+        </property>
+        <property name="topMargin">
+         <number>12</number>
+        </property>
+        <property name="rightMargin">
+         <number>14</number>
+        </property>
+        <property name="bottomMargin">
+         <number>12</number>
+        </property>
+        <item>
+         <widget class="ElaText" name="text_DashboardSourceStateTitle">
+          <property name="text">
+           <string>源文件状态</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="ElaText" name="text_DashboardSourceState">
+          <property name="text">
+           <string>-</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="ElaDrawerArea" name="drawer_DashboardRemote" native="true">
+     <widget class="QWidget" name="widget_DashboardRemoteHeader">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>0</y>
+        <width>680</width>
+        <height>44</height>
+       </rect>
+      </property>
+      <layout class="QHBoxLayout" name="horizontalLayout_DashboardRemoteHeader">
+       <property name="leftMargin">
+        <number>8</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>8</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <item>
+        <widget class="ElaText" name="text_DashboardRemoteIcon">
+         <property name="minimumSize">
+          <size>
+           <width>25</width>
+           <height>25</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>25</width>
+           <height>25</height>
+          </size>
+         </property>
+         <property name="text">
+          <string/>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="ElaText" name="text_DashboardRemoteTitle">
+         <property name="text">
+          <string>云端同步设置</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="horizontalSpacer_DashboardRemoteHeader">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="ElaToggleSwitch" name="toggleSwitch_DashboardRemote" native="true"/>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="widget_DashboardRemoteContent">
+      <property name="geometry">
+       <rect>
+        <x>0</x>
+        <y>44</y>
+        <width>680</width>
+        <height>52</height>
+       </rect>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_DashboardRemoteContent">
+       <property name="leftMargin">
+        <number>8</number>
+       </property>
+       <property name="topMargin">
+        <number>8</number>
+       </property>
+       <property name="rightMargin">
+        <number>8</number>
+       </property>
+       <property name="bottomMargin">
+        <number>8</number>
+       </property>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout_DashboardRemoteRow">
+         <item>
+          <widget class="ElaText" name="text_DashboardRemoteHint">
+           <property name="text">
+            <string>云端地址</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="ElaLineEdit" name="lineEdit_DashboardRemoteUrl">
+           <property name="placeholderText">
+            <string>请输入云端地址（例如 Git 仓库链接）</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_DashboardRemoteActions">
+           <property name="spacing">
+            <number>6</number>
+           </property>
+          </layout>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_DashboardActions">
+     <property name="spacing">
+      <number>8</number>
+     </property>
+     <item>
+      <widget class="ElaPushButton" name="pushButton_DashboardRefresh">
+       <property name="text">
+        <string>刷新数据</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer_DashboardActions">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="ElaPushButton" name="pushButton_DashboardRemoveTrack">
+       <property name="text">
+        <string>删除备份</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="ElaPushButton" name="pushButton_DashboardRebuild">
+       <property name="text">
+        <string>重建备份</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <spacer name="verticalSpacer_DashboardBottom">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>ElaText</class>
+   <extends>QLabel</extends>
+   <header location="global">ElaText.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ElaScrollPageArea</class>
+   <extends>QWidget</extends>
+   <header location="global">ElaScrollPageArea.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>ElaDrawerArea</class>
+   <extends>QWidget</extends>
+   <header location="global">ElaDrawerArea.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>ElaLineEdit</class>
+   <extends>QLineEdit</extends>
+   <header location="global">ElaLineEdit.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ElaToggleSwitch</class>
+   <extends>QWidget</extends>
+   <header location="global">ElaToggleSwitch.h</header>
+  </customwidget>
+  <customwidget>
+   <class>ElaPushButton</class>
+   <extends>QPushButton</extends>
+   <header location="global">ElaPushButton.h</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>
