@@ -31,7 +31,7 @@
    </property>
    <item>
     <widget class="ElaScrollPageArea" name="widget" native="true">
-     <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="2,1,1,1,1">
+     <layout class="QHBoxLayout" name="horizontalLayout_3" stretch="2,1,1,1">
       <property name="leftMargin">
        <number>12</number>
       </property>
@@ -72,21 +72,14 @@
       <item>
        <widget class="ElaPushButton" name="pushButton_Backup">
         <property name="text">
-         <string>查看备份</string>
+         <string>历史版本</string>
         </property>
        </widget>
       </item>
       <item>
-       <widget class="ElaPushButton" name="pushButton_RemoveTrack">
+       <widget class="ElaPushButton" name="pushButton_Dashboard">
         <property name="text">
-         <string>删除备份</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="ElaPushButton" name="pushButton_Rebuild">
-        <property name="text">
-         <string>重建备份</string>
+         <string>仪表盘</string>
         </property>
        </widget>
       </item>

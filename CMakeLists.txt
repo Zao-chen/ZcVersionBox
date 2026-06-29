@@ -72,6 +72,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         ${PROJECT_SOURCES}
         windows/mainwindow_child/homepage/homepage.h windows/mainwindow_child/homepage/homepage.cpp windows/mainwindow_child/homepage/homepage.ui
         windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.cpp
+        windows/mainwindow_child/homepage/pages/homepage_page_dashboard.cpp windows/mainwindow_child/homepage/pages/homepage_page_dashboard.ui
         windows/mainwindow_child/homepage/pages/homepage_page_backup.cpp
         windows/mainwindow_child/homepage/pages/homepage_page_diff.cpp
         windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.h windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.cpp windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.ui
