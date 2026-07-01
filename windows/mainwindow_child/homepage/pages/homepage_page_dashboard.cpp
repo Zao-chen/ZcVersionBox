@@ -299,7 +299,13 @@ void HomePage::SetupDashboardRemoteSection()
                 else
                     m_RemoteDrawer->collapse();
             });
-    // Review note: 开关表示是否配置 origin；抽屉展开只是 UI 状态，不能反向触发 remote remove。
+    connect(m_RemoteDrawer, &ElaDrawerArea::expandStateChanged, this,
+            [=](bool isExpand)
+            {
+                if (m_ToggleSwitch_Remote && m_ToggleSwitch_Remote->getIsToggled() != isExpand)
+                    m_ToggleSwitch_Remote->setIsToggled(isExpand);
+            });
+    // Review note: 开关开启时也承担“展开配置抽屉”的入口；只有关闭已配置的 origin 时才移除 remote。
     connect(m_ToggleSwitch_Remote, &ElaToggleSwitch::toggled, this, &HomePage::on_ToggleSwitch_Remote_toggled);
 
     ElaIconButton *btnOpen = new ElaIconButton(ElaIconType::Link, 16, m_DashboardUi->widget_DashboardRemoteContent);
@@ -603,7 +609,6 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
     const QString originUrl = runGit(repoPath, QStringList() << "remote" << "get-url" << "origin", &hasOrigin);
     if (!hasOrigin)
     {
-        ApplyRemoteControlsState(false, QString(), false);
         if (m_RemoteDrawer)
             m_RemoteDrawer->expand();
         ElaMessageBar::warning(ElaMessageBarType::BottomRight,
