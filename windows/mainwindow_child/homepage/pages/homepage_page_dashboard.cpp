@@ -21,6 +21,7 @@
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QProcess>
@@ -149,6 +150,9 @@ void configureText(ElaText *label, int pixelSize, bool clipSingleLine = false)
     QFont layoutFont = label->font();
     layoutFont.setPixelSize(pixelSize);
     label->setFont(layoutFont);
+    label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    const int lineHeight = QFontMetrics(layoutFont).lineSpacing() + (pixelSize >= 20 ? 12 : 4);
+    label->setMinimumHeight(lineHeight);
 
     label->setMinimumWidth(0);
     if (clipSingleLine)
@@ -159,7 +163,9 @@ void configureText(ElaText *label, int pixelSize, bool clipSingleLine = false)
         // 这里只忽略水平 sizeHint，垂直高度仍交给 ElaText 自身布局计算。
         QSizePolicy textPolicy = label->sizePolicy();
         textPolicy.setHorizontalPolicy(QSizePolicy::Ignored);
+        textPolicy.setVerticalPolicy(QSizePolicy::Fixed);
         label->setSizePolicy(textPolicy);
+        label->setMaximumHeight(lineHeight);
     }
     else
     {
@@ -228,9 +234,17 @@ void HomePage::SetupDashboardPage()
     m_DashboardCacheSize = m_DashboardUi->text_DashboardCacheSize;
     m_DashboardSourceState = m_DashboardUi->text_DashboardSourceState;
 
+    m_DashboardUi->verticalLayout_DashboardSummary->setSpacing(6);
     configureText(m_DashboardTitle, 24, true);
     configureText(m_DashboardSourcePath, 13, true);
     configureText(m_DashboardRepoPath, 13, true);
+    const QMargins summaryMargins = m_DashboardUi->verticalLayout_DashboardSummary->contentsMargins();
+    const int summaryHeight = summaryMargins.top() + summaryMargins.bottom() +
+                              m_DashboardUi->verticalLayout_DashboardSummary->spacing() * 2 +
+                              m_DashboardTitle->minimumHeight() +
+                              m_DashboardSourcePath->minimumHeight() +
+                              m_DashboardRepoPath->minimumHeight();
+    m_DashboardUi->area_DashboardSummary->setFixedHeight(summaryHeight);
     configureText(m_DashboardUi->text_DashboardVersionTitle, 12);
     configureText(m_DashboardUi->text_DashboardFileCountTitle, 12);
     configureText(m_DashboardUi->text_DashboardFileSizeTitle, 12);
@@ -285,7 +299,13 @@ void HomePage::SetupDashboardRemoteSection()
                 else
                     m_RemoteDrawer->collapse();
             });
-    // Review note: 开关表示是否配置 origin；抽屉展开只是 UI 状态，不能反向触发 remote remove。
+    connect(m_RemoteDrawer, &ElaDrawerArea::expandStateChanged, this,
+            [=](bool isExpand)
+            {
+                if (m_ToggleSwitch_Remote && m_ToggleSwitch_Remote->getIsToggled() != isExpand)
+                    m_ToggleSwitch_Remote->setIsToggled(isExpand);
+            });
+    // Review note: 开关开启时也承担“展开配置抽屉”的入口；只有关闭已配置的 origin 时才移除 remote。
     connect(m_ToggleSwitch_Remote, &ElaToggleSwitch::toggled, this, &HomePage::on_ToggleSwitch_Remote_toggled);
 
     ElaIconButton *btnOpen = new ElaIconButton(ElaIconType::Link, 16, m_DashboardUi->widget_DashboardRemoteContent);
@@ -589,7 +609,6 @@ void HomePage::on_ToggleSwitch_Remote_toggled(bool checked)
     const QString originUrl = runGit(repoPath, QStringList() << "remote" << "get-url" << "origin", &hasOrigin);
     if (!hasOrigin)
     {
-        ApplyRemoteControlsState(false, QString(), false);
         if (m_RemoteDrawer)
             m_RemoteDrawer->expand();
         ElaMessageBar::warning(ElaMessageBarType::BottomRight,

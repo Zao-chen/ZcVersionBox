@@ -11,6 +11,7 @@
 #include <QApplication>
 #include <QFile>
 #include <QFileInfo>
+#include <QIcon>
 #include <QMessageBox>
 #include <QProcess>
 #include <QSettings>
@@ -21,6 +22,7 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+    a.setWindowIcon(QIcon(":/img/ico/res/img/logo.png"));
     /*获取启动参数*/
     QStringList args = QCoreApplication::arguments();
     args.removeFirst(); //args[0]是程序自身路径，去掉

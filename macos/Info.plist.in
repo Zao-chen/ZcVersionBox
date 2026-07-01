@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+
+	<key>CFBundleName</key>
+	<string>@ZCVERSIONBOX_MACOS_BUNDLE_NAME@</string>
+	<key>CFBundleIdentifier</key>
+	<string>@ZCVERSIONBOX_MACOS_BUNDLE_IDENTIFIER@</string>
+	<key>CFBundleExecutable</key>
+	<string>@ZCVERSIONBOX_MACOS_BUNDLE_NAME@</string>
+
+	<key>CFBundleVersion</key>
+	<string>@ZCVERSIONBOX_MACOS_BUNDLE_VERSION@</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@ZCVERSIONBOX_MACOS_SHORT_VERSION@</string>
+
+	<key>LSMinimumSystemVersion</key>
+	<string>@ZCVERSIONBOX_MACOS_DEPLOYMENT_TARGET@</string>
+
+	<key>CFBundleIconFile</key>
+	<string>@ZCVERSIONBOX_MACOS_ICON_FILE@</string>
+
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleAllowMixedLocalizations</key>
+	<true/>
+
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+</dict>
+</plist>
