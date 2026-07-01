@@ -17,6 +17,19 @@ find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network)
 
 if(APPLE)
+    set(ZCVERSIONBOX_MACOS_BUNDLE_NAME ZcVersionBox)
+    set(ZCVERSIONBOX_MACOS_BUNDLE_IDENTIFIER com.zc.versionbox)
+    set(ZCVERSIONBOX_MACOS_ICON_FILE ZcVersionBox.icns)
+    set(ZCVERSIONBOX_MACOS_BUNDLE_VERSION ${PROJECT_VERSION})
+    set(ZCVERSIONBOX_MACOS_SHORT_VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
+    set(ZCVERSIONBOX_MACOS_DEPLOYMENT_TARGET ${CMAKE_OSX_DEPLOYMENT_TARGET})
+    if(NOT ZCVERSIONBOX_MACOS_DEPLOYMENT_TARGET)
+        set(ZCVERSIONBOX_MACOS_DEPLOYMENT_TARGET 11.0)
+    endif()
+    set(ZCVERSIONBOX_BUNDLE_OPTION MACOSX_BUNDLE)
+endif()
+
+if(APPLE)
     foreach(qt_target Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Core)
         if(TARGET ${qt_target})
             foreach(qt_prop INTERFACE_LINK_LIBRARIES INTERFACE_LINK_OPTIONS)
@@ -60,14 +73,23 @@ set(PROJECT_SOURCES
 )
 
 if(APPLE)
+    set(APP_ICON_MACOSX "${CMAKE_CURRENT_SOURCE_DIR}/res/img/ZcVersionBox.icns")
+    set(APP_INFO_PLIST_TEMPLATE_MACOSX "${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist.in")
+    set(APP_INFO_PLIST_MACOSX "${CMAKE_CURRENT_BINARY_DIR}/ZcVersionBoxInfo.plist")
+    configure_file("${APP_INFO_PLIST_TEMPLATE_MACOSX}" "${APP_INFO_PLIST_MACOSX}" @ONLY)
+    set_source_files_properties("${APP_ICON_MACOSX}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources"
+    )
     list(APPEND PROJECT_SOURCES
         macos/macos_services.h
         macos/macos_services.mm
+        "${APP_ICON_MACOSX}"
     )
 endif()
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(ZcVersionBox
+        ${ZCVERSIONBOX_BUNDLE_OPTION}
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
         windows/mainwindow_child/homepage/homepage.h windows/mainwindow_child/homepage/homepage.cpp windows/mainwindow_child/homepage/homepage.ui
@@ -104,6 +126,7 @@ else()
 #    set(ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
     else()
         add_executable(ZcVersionBox
+            ${ZCVERSIONBOX_BUNDLE_OPTION}
             ${PROJECT_SOURCES}
         )
     endif()
@@ -209,6 +232,14 @@ if(APPLE)
     copy_macos_runtime_library(ZcVersionBox "${ZCAI_LIB}" "libZcAiLib.1.dylib")
     copy_macos_runtime_library(ZcVersionBox "${ELA_WIDGETTOOLS_LIB}" "libElaWidgetTools.dylib")
     copy_macos_runtime_library(ZcVersionBox "${ZC_WIDGETTOOLS_LIB}" "libZcWidgetTools.1.dylib")
+
+    add_custom_command(TARGET ZcVersionBox POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ZcVersionBox>/.."
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${APP_INFO_PLIST_MACOSX}"
+                "$<TARGET_FILE_DIR:ZcVersionBox>/../Info.plist"
+        COMMENT "Copying macOS Info.plist into app bundle"
+    )
 endif()
 
 if(WIN32 AND QT_VERSION_MAJOR EQUAL 6)
@@ -257,9 +288,12 @@ if(WIN32 AND QT_VERSION_MAJOR EQUAL 6)
 endif()
 
 set_target_properties(ZcVersionBox PROPERTIES
-    MACOSX_BUNDLE_GUI_IDENTIFIER com.zc.versionbox
-    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
-    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+    MACOSX_BUNDLE_GUI_IDENTIFIER ${ZCVERSIONBOX_MACOS_BUNDLE_IDENTIFIER}
+    MACOSX_BUNDLE_INFO_PLIST "${APP_INFO_PLIST_MACOSX}"
+    MACOSX_BUNDLE_ICON_FILE ${ZCVERSIONBOX_MACOS_ICON_FILE}
+    MACOSX_BUNDLE_BUNDLE_NAME ${ZCVERSIONBOX_MACOS_BUNDLE_NAME}
+    MACOSX_BUNDLE_BUNDLE_VERSION ${ZCVERSIONBOX_MACOS_BUNDLE_VERSION}
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${ZCVERSIONBOX_MACOS_SHORT_VERSION}
     MACOSX_BUNDLE TRUE
     WIN32_EXECUTABLE FALSE
 )
