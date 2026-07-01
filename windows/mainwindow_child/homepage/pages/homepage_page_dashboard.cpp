@@ -21,6 +21,7 @@
 #include <QDirIterator>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLineEdit>
 #include <QProcess>
@@ -149,6 +150,9 @@ void configureText(ElaText *label, int pixelSize, bool clipSingleLine = false)
     QFont layoutFont = label->font();
     layoutFont.setPixelSize(pixelSize);
     label->setFont(layoutFont);
+    label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    const int lineHeight = QFontMetrics(layoutFont).lineSpacing() + (pixelSize >= 20 ? 12 : 4);
+    label->setMinimumHeight(lineHeight);
 
     label->setMinimumWidth(0);
     if (clipSingleLine)
@@ -159,7 +163,9 @@ void configureText(ElaText *label, int pixelSize, bool clipSingleLine = false)
         // 这里只忽略水平 sizeHint，垂直高度仍交给 ElaText 自身布局计算。
         QSizePolicy textPolicy = label->sizePolicy();
         textPolicy.setHorizontalPolicy(QSizePolicy::Ignored);
+        textPolicy.setVerticalPolicy(QSizePolicy::Fixed);
         label->setSizePolicy(textPolicy);
+        label->setMaximumHeight(lineHeight);
     }
     else
     {
@@ -228,9 +234,17 @@ void HomePage::SetupDashboardPage()
     m_DashboardCacheSize = m_DashboardUi->text_DashboardCacheSize;
     m_DashboardSourceState = m_DashboardUi->text_DashboardSourceState;
 
+    m_DashboardUi->verticalLayout_DashboardSummary->setSpacing(6);
     configureText(m_DashboardTitle, 24, true);
     configureText(m_DashboardSourcePath, 13, true);
     configureText(m_DashboardRepoPath, 13, true);
+    const QMargins summaryMargins = m_DashboardUi->verticalLayout_DashboardSummary->contentsMargins();
+    const int summaryHeight = summaryMargins.top() + summaryMargins.bottom() +
+                              m_DashboardUi->verticalLayout_DashboardSummary->spacing() * 2 +
+                              m_DashboardTitle->minimumHeight() +
+                              m_DashboardSourcePath->minimumHeight() +
+                              m_DashboardRepoPath->minimumHeight();
+    m_DashboardUi->area_DashboardSummary->setFixedHeight(summaryHeight);
     configureText(m_DashboardUi->text_DashboardVersionTitle, 12);
     configureText(m_DashboardUi->text_DashboardFileCountTitle, 12);
     configureText(m_DashboardUi->text_DashboardFileSizeTitle, 12);
