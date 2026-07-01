@@ -354,42 +354,11 @@ jobs:
         with:
           path: release_assets
 
-      - name: Generate release notes from commits
-        shell: bash
-        run: |
-          current_tag="${{ inputs.tag_name }}"
-          prev_tag="$(git tag --sort=-v:refname | grep -Fxv "$current_tag" | head -n 1)"
-
-          if [ -n "$prev_tag" ]; then
-            if git rev-parse "$current_tag" >/dev/null 2>&1; then
-              commit_range="$prev_tag..$current_tag"
-            else
-              commit_range="$prev_tag..HEAD"
-            fi
-          else
-            commit_range="HEAD"
-          fi
-
-          {
-            echo "ZcVersionBox ${{ inputs.tag_name }}"
-            echo
-            echo "Built from commit: ${GITHUB_SHA}"
-            echo
-            echo "Recent commits:"
-            if [ -n "$prev_tag" ]; then
-              echo "(from $prev_tag to $current_tag)"
-            else
-              echo "(no previous tag found; showing current history)"
-            fi
-            git log $commit_range --pretty=format:'- %h %s (%an)'
-          } > RELEASE_NOTES.md
-
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.tag_name }}
           name: ZcVersionBox ${{ inputs.tag_name }}
-          generate_release_notes: false
-          body_path: RELEASE_NOTES.md
+          generate_release_notes: true
           files: release_assets/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

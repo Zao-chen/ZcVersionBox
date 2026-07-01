@@ -2,6 +2,8 @@ ZcVersionBox
 ============
 
 <img width="2049" height="704" alt="SnowShot_2026-04-29_18-05-27" src="https://github.com/user-attachments/assets/854bb786-c30f-4eb8-83b2-0359d6eb8846" />
+<img width="2899" height="907" alt="Screenshot 2026-07-01 at 15-13-53" src="https://github.com/user-attachments/assets/872d1b90-636a-476e-95d3-f16a48d67610" />
+
 
 一个基于 Qt 开发的本地文件版本管理工具。
 轻量、简单、专注于文件级版本回退。
