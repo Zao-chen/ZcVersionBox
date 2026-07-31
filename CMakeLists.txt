@@ -299,9 +299,11 @@ if(APPLE)
     )
 endif()
 
-set_target_properties(ZcVersionBox PROPERTIES
-    WIN32_EXECUTABLE FALSE
-)
+if(WIN32)
+    set_target_properties(ZcVersionBox PROPERTIES
+        WIN32_EXECUTABLE TRUE
+    )
+endif()
 
 include(GNUInstallDirs)
 install(TARGETS ZcVersionBox
