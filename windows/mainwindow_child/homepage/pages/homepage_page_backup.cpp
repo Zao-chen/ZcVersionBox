@@ -4,6 +4,7 @@
 #undef HOMEPAGE_UI_HEADER
 
 #include "../../../../GlobalConstants.h"
+#include "../../../../utils/backuprestorehelper.h"
 #include "../../../../utils/fileutils.h"
 
 #include "ElaMessageBar.h"
@@ -237,76 +238,34 @@ void HomePage::openBackup(QString FilePathWithCode)
         //恢复
         connect(button2, &QPushButton::clicked, this, [=]()
                 {
-                    //回滚仓库
-                    QProcess git;
-                    git.setWorkingDirectory(BackupPath + "/" + m_NowFilePathWithCode);
-                    QString shortId = currentHash;
-                    git.start("git", QStringList() << "reset" << "--hard" << shortId);
-                    if (!git.waitForStarted())
+                    const QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
+                    const QString sourcePath = QUrl::fromPercentEncoding(m_NowFilePathWithCode.toUtf8());
+                    const BackupRestoreResult result = BackupRestoreHelper::restoreFromGitRevision(repoPath, currentHash, sourcePath);
+                    if (!result.success)
                     {
                         ElaMessageBar::error(ElaMessageBarType::BottomRight,
                                              "还原失败",
-                                             "无法启动 git，请确认 git 已安装",
-                                             3000,
-                                             parentWidget());
-                        return;
-                    }
-                    git.waitForFinished();
-                    if (git.exitCode() != 0)
-                    {
-                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                             "还原失败",
-                                             QString::fromUtf8(git.readAllStandardError()).trimmed(),
+                                             result.errorMessage,
                                              3000,
                                              parentWidget());
                         return;
                     }
 
-                    //替换源文件
-                    QString sourceFilePath = QUrl::fromPercentEncoding(m_NowFilePathWithCode.toUtf8());
-                    QString backupFilePath = BackupPath + "/" + m_NowFilePathWithCode + "/" + QFileInfo(sourceFilePath).fileName();
-                    if (QFile::exists(sourceFilePath))
+                    if (!result.warningMessage.isEmpty())
                     {
-                        if (!QFile::remove(sourceFilePath))
-                        {
-                            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                                 "还原失败",
-                                                 "无法删除原文件，请检查占用状态",
-                                                 3000,
-                                                 parentWidget());
-                            return;
-                        }
+                        ElaMessageBar::warning(ElaMessageBarType::BottomRight,
+                                               "还原完成，但需处理",
+                                               result.warningMessage,
+                                               6000,
+                                               parentWidget());
                     }
-                    if (!QFile::copy(backupFilePath, sourceFilePath))
+                    else
                     {
-                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                             "还原失败",
-                                             "复制备份文件失败，请检查权限",
-                                             3000,
-                                             parentWidget());
-                        return;
-                    }
-
-                    //提示
-                    ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                                           "还原成功",
-                                           "已恢复到版本 " + currentHash,
-                                           3000,
-                                           parentWidget());
-
-                    //删除当前行及以上
-                    QStandardItemModel *currentModel = qobject_cast<QStandardItemModel *>(ui->tableView_BackupFiles->model());
-                    if (currentModel)
-                    {
-                        //找到当前行索引
-                        QModelIndexList matches = currentModel->match(currentModel->index(0, 0), Qt::DisplayRole, currentHash, 1, Qt::MatchExactly);
-                        if (!matches.isEmpty())
-                        {
-                            int currentRow = matches.first().row();
-                            //删除从0到row行
-                            for (int r = currentRow - 1; r >= 0; --r)
-                                currentModel->removeRow(r);
-                        }
+                        ElaMessageBar::success(ElaMessageBarType::BottomRight,
+                                               "还原成功",
+                                               "已恢复到版本 " + currentHash,
+                                               3000,
+                                               parentWidget());
                     } });
 
         //对比上一版本
