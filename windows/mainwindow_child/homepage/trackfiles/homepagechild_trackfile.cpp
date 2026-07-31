@@ -107,7 +107,7 @@ HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidg
         }
 
         QDirIterator it(rootPath,
-                        QDir::Files | QDir::Readable | QDir::NoSymLinks,
+                        QDir::Files | QDir::Hidden | QDir::Readable | QDir::NoSymLinks,
                         QDirIterator::Subdirectories);
         while (it.hasNext())
         {

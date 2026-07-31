@@ -19,7 +19,7 @@ bool FileUtils::copyDirectory(const QString &srcPath, const QString &dstPath)
     }
 
     // 1. 复制所有文件
-    QStringList files = srcDir.entryList(QDir::Files);
+    QStringList files = srcDir.entryList(QDir::Files | QDir::Hidden);
     for (const QString &file : files)
     {
         QString srcFile = srcPath + "/" + file;
@@ -34,9 +34,13 @@ bool FileUtils::copyDirectory(const QString &srcPath, const QString &dstPath)
     }
 
     // 2. 递归复制子文件夹
-    QStringList dirs = srcDir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    QStringList dirs = srcDir.entryList(QDir::Dirs | QDir::Hidden | QDir::NoDotAndDotDot);
     for (const QString &dir : dirs)
     {
+        // Git 元数据不是用户快照内容，显式排除，避免预览仓库时复制整个对象库。
+        if (dir == QStringLiteral(".git"))
+            continue;
+
         QString srcSub = srcPath + "/" + dir;
         QString dstSub = dstPath + "/" + dir;
         if (!copyDirectory(srcSub, dstSub))
@@ -63,7 +67,7 @@ void FileUtils::setReadOnlyRecursive(const QString &path)
 {
     QDir dir(path);
     // 处理文件
-    QStringList files = dir.entryList(QDir::Files);
+    QStringList files = dir.entryList(QDir::Files | QDir::Hidden);
     for (const QString &file : files)
     {
         QString filePath = path + "/" + file;
@@ -71,7 +75,7 @@ void FileUtils::setReadOnlyRecursive(const QString &path)
         QFile::setPermissions(filePath, QFileDevice::ReadOwner | QFileDevice::ReadGroup | QFileDevice::ReadOther);
     }
     // 递归处理子文件夹
-    QStringList dirs = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    QStringList dirs = dir.entryList(QDir::Dirs | QDir::Hidden | QDir::NoDotAndDotDot);
     for (const QString &subDir : dirs)
     {
         setReadOnlyRecursive(path + "/" + subDir);
