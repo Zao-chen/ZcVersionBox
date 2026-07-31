@@ -104,6 +104,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         res.qrc
 
         utils/fileutils.h utils/fileutils.cpp
+        utils/backuprestorehelper.h utils/backuprestorehelper.cpp
         utils/aiconfighelper.h utils/aiconfighelper.cpp
         utils/aicommitmessagehelper.h utils/aicommitmessagehelper.cpp
     )
