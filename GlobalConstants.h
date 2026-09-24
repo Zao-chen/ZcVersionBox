@@ -1,11 +1,14 @@
 #pragma once
+#include <QCoreApplication>
 #include <QDir>
 #include <QStandardPaths>
-#include <QString>
+#include <QVariant>
 
-
-inline const QString BackupPath = QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
-                                      .filePath("ZcVersionBox/Backup");
-
-inline const QString Settingpath = QDir(QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation))
-                                       .filePath("ZcVersionBox/config.ini");
+inline QString settingsPath()
+{
+    const auto root = QCoreApplication::instance()->property("backupDataRoot").toString();
+    const auto directory = root.isEmpty()
+                               ? QDir(QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation)).filePath("backup-engine")
+                               : root;
+    return QDir(directory).filePath("settings.ini");
+}

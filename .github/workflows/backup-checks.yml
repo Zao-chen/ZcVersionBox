@@ -1,0 +1,38 @@
+name: Backup engine checks
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - uses: jurplel/install-qt-action@v3
+        with:
+          version: '6.6.3'
+          cache: true
+          arch: ${{ runner.os == 'Windows' && 'win64_msvc2019_64' || 'clang_64' }}
+      - uses: seanmiddleditch/gha-setup-ninja@v5
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build --parallel 2
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-log-${{ runner.os }}
+          path: build/Testing/Temporary/LastTest.log

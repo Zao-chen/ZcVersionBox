@@ -6,11 +6,17 @@
 
 #include <QCloseEvent>
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QMessageBox>
+#include <QMimeData>
+#include <QUrl>
 
-MainWindow::MainWindow(QWidget *parent)
-    : ElaWindow(parent), ui(new Ui::MainWindow)
+MainWindow::MainWindow(Backup::BackupService *service, QWidget *parent)
+    : ElaWindow(parent), m_service(service), ui(new Ui::MainWindow)
 {
+    setAcceptDrops(true);
+    resize(1180, 780);
     /*初始化设定*/
     setUserInfoCardVisible(false);
     setWindowTitle("ZcVersionBox");
@@ -53,7 +59,7 @@ MainWindow::MainWindow(QWidget *parent)
 
     /*页面创建*/
     //正常页面
-    HomePage *homepage_ui = new HomePage(this);
+    HomePage *homepage_ui = new HomePage(service, this);
     addPageNode(tr("主页"), homepage_ui, ElaIconType::House);
     //底部页面
     SettingPage *settingpage_ui = new SettingPage(this);
@@ -79,7 +85,8 @@ void MainWindow::on_showMainAction()
 //托盘推出
 void MainWindow::on_exitAppAction()
 {
-    qApp->exit();
+    m_exitAppAction->setEnabled(false);
+    m_service->shutdown();
 }
 
 /*重写事件*/
@@ -87,4 +94,27 @@ void MainWindow::closeEvent(QCloseEvent *e)
 {
     this->hide();
     e->ignore(); //阻止真正close
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (event->mimeData()->hasUrls())
+        event->acceptProposedAction();
+}
+void MainWindow::dropEvent(QDropEvent *event)
+{
+    for (const auto &url : event->mimeData()->urls())
+    {
+        if (!url.isLocalFile())
+            continue;
+        try
+        {
+            m_service->track(url.toLocalFile());
+        }
+        catch (const Backup::Error &error)
+        {
+            QMessageBox::warning(this, tr("添加失败"), error.message);
+        }
+    }
+    event->acceptProposedAction();
 }

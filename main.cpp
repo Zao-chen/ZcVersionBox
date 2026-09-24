@@ -1,147 +1,104 @@
 #include "ElaApplication.h"
-#include "windows/mainwindow.h"
-
+#include "ElaTheme.h"
 #include "GlobalConstants.h"
-#include "utils/fileutils.h"
-
-#ifdef Q_OS_MACOS
-#include "macos/macos_services.h"
-#endif
-
+#include "application/aiannotationcontroller.h"
+#include "application/instancecontroller.h"
+#include "backup/backupservice.h"
+#include "windows/mainwindow.h"
 #include <QApplication>
-#include <QFile>
-#include <QFileInfo>
+#include <QCommandLineParser>
 #include <QIcon>
 #include <QMessageBox>
-#include <QProcess>
-#include <QSettings>
-#include <QSystemTrayIcon>
-#include <QUrl>
-#include <qlogging.h>
+#include <QPalette>
+#include <QTimer>
 
 int main(int argc, char *argv[])
 {
-    QApplication a(argc, argv);
-    a.setWindowIcon(QIcon(":/img/ico/res/img/logo.png"));
-    /*获取启动参数*/
-    QStringList args = QCoreApplication::arguments();
-    args.removeFirst(); //args[0]是程序自身路径，去掉
-    /*启动*/
-    if (args.isEmpty()) //程序正常启动
+    QApplication app(argc, argv);
+    app.setApplicationName("ZcVersionBox");
+    app.setOrganizationName("ZcVersionBox");
+    app.setQuitOnLastWindowClosed(false);
+    app.setWindowIcon(QIcon(":/img/ico/res/img/logo.png"));
+    QCommandLineParser parser;
+    parser.setApplicationDescription("ZcVersionBox 文件版本备份");
+    parser.addHelpOption();
+    parser.addOption({"data-dir", "使用独立备份数据目录", "directory"});
+    parser.addPositionalArgument("paths", "添加到备份的文件或文件夹", "[paths...] ");
+    parser.process(app);
+    QStringList paths;
+    for (const auto &path : parser.positionalArguments())
+        paths.append(Backup::normalizedPath(path));
+    const auto root = parser.isSet("data-dir") ? Backup::normalizedPath(parser.value("data-dir")) : Backup::storageRoot();
+    app.setProperty("backupDataRoot", root);
+    try
     {
+        InstanceController instance(root);
+        if (!instance.acquire())
+        {
+            QString error;
+            if (!instance.forward(paths, &error))
+            {
+                QMessageBox::critical(nullptr, "ZcVersionBox", error);
+                return 1;
+            }
+            return 0;
+        }
         eApp->init();
-#ifdef Q_OS_MACOS
-        QSettings ini(Settingpath, QSettings::IniFormat);
-        setMacServicesProviderEnabled(ini.value("RightClickMenu", false).toBool());
-#endif
-        MainWindow w;
-        w.show();
-        return a.exec();
+        auto applyPalette = [&app](ElaThemeType::ThemeMode mode)
+        {
+            auto palette = app.palette();
+            palette.setColor(QPalette::Window, ElaThemeColor(mode, WindowBase));
+            palette.setColor(QPalette::WindowText, ElaThemeColor(mode, BasicText));
+            palette.setColor(QPalette::Base, ElaThemeColor(mode, BasicBase));
+            palette.setColor(QPalette::AlternateBase, ElaThemeColor(mode, BasicAlternating));
+            palette.setColor(QPalette::Text, ElaThemeColor(mode, BasicText));
+            palette.setColor(QPalette::Button, ElaThemeColor(mode, BasicBase));
+            palette.setColor(QPalette::ButtonText, ElaThemeColor(mode, BasicText));
+            palette.setColor(QPalette::Highlight, ElaThemeColor(mode, PrimaryNormal));
+            palette.setColor(QPalette::HighlightedText, ElaThemeColor(mode, BasicTextInvert));
+            palette.setColor(QPalette::Disabled, QPalette::Text, ElaThemeColor(mode, BasicTextDisable));
+            app.setPalette(palette);
+        };
+        applyPalette(eTheme->getThemeMode());
+        QObject::connect(eTheme, &ElaTheme::themeModeChanged, &app, applyPalette);
+        Backup::BackupService service(root);
+        QObject::connect(&service, &Backup::BackupService::stopping, &instance, &InstanceController::stopAccepting);
+        AiAnnotationController annotations(&service);
+        MainWindow window(&service);
+        QObject::connect(&service, &Backup::BackupService::stopped, &app, &QCoreApplication::quit, Qt::QueuedConnection);
+        QObject::connect(&app, &QCoreApplication::aboutToQuit, &service, &Backup::BackupService::shutdown);
+        auto addPaths = [&service, &window](const QStringList &sources)
+        {
+            for (const auto &source : sources)
+            {
+                try
+                {
+                    service.track(source);
+                }
+                catch (const Backup::Error &error)
+                {
+                    QMessageBox::warning(&window, "添加备份失败", error.message);
+                }
+            }
+        };
+        QObject::connect(&instance, &InstanceController::pathsReceived, &window, addPaths);
+        QObject::connect(&instance, &InstanceController::activateRequested, &window, [&window]
+                         {
+                             window.show();
+                             window.raise();
+                             window.activateWindow();
+                         });
+        QTimer::singleShot(0, &service, [&service, addPaths, paths]
+                           {
+                               service.start();
+                               addPaths(paths);
+                           });
+        window.show();
+        return app.exec();
     }
-    else //使用右键菜单或拖拽启动
+    catch (const Backup::Error &error)
     {
-        /*同步文件到仓库*/
-        QDir dir(BackupPath);
-        const QString sourcePath = args.first();
-        const QString repoPath = BackupPath + "/" + QUrl::toPercentEncoding(sourcePath);
-        const QString backupPath = repoPath + "/" + QFileInfo(sourcePath).fileName();
-        dir.mkpath(repoPath);
-        /*添加文件到备份目录*/
-        if (QFileInfo(sourcePath).isFile())
-        {
-            QFile::remove(backupPath);
-            QFile::copy(sourcePath, backupPath);
-        }
-        else
-        {
-            FileUtils::copyDirectory(sourcePath, backupPath);
-        }
-        /*创建初始化Git仓库*/
-        QProcess git;
-        git.setWorkingDirectory(repoPath);
-
-        //初始化仓库
-        git.start("git", QStringList() << "init");
-        if (!git.waitForStarted())
-        {
-            static QSystemTrayIcon trayIcon;
-            trayIcon.setIcon(QIcon(":/img/ico/res/img/logo.png"));
-            trayIcon.show();
-            trayIcon.showMessage("ZcVersionBox提示", "初始化失败：无法启动 Git（请确认已安装 Git）",
-                                 QSystemTrayIcon::Warning, 5000);
-            return 0;
-        }
-        git.waitForFinished();
-        if (git.exitCode() != 0)
-        {
-            static QSystemTrayIcon trayIcon;
-            trayIcon.setIcon(QIcon(":/img/ico/res/img/logo.png"));
-            trayIcon.show();
-            trayIcon.showMessage("ZcVersionBox提示", "初始化失败：git init 命令执行失败",
-                                 QSystemTrayIcon::Warning, 5000);
-            return 0;
-        }
-
-        //配置本地 git user（如果全局未配置）
-        git.start("git", QStringList() << "config" << "user.name" << "ZcVersionBox");
-        git.waitForFinished();
-        git.start("git", QStringList() << "config" << "user.email" << "backup@zcversionbox.local");
-        git.waitForFinished();
-
-        //添加文件
-        git.start("git", QStringList() << "add" << ".");
-        if (!git.waitForStarted())
-        {
-            static QSystemTrayIcon trayIcon;
-            trayIcon.setIcon(QIcon(":/img/ico/res/img/logo.png"));
-            trayIcon.show();
-            trayIcon.showMessage("ZcVersionBox提示", "添加失败：无法启动 Git",
-                                 QSystemTrayIcon::Warning, 5000);
-            return 0;
-        }
-        git.waitForFinished();
-        if (git.exitCode() != 0)
-        {
-            static QSystemTrayIcon trayIcon;
-            trayIcon.setIcon(QIcon(":/img/ico/res/img/logo.png"));
-            trayIcon.show();
-            QString errorMsg = QString::fromUtf8(git.readAllStandardError()).trimmed();
-            trayIcon.showMessage("ZcVersionBox提示",
-                                 errorMsg.isEmpty() ? "添加失败：git add 命令执行失败" : errorMsg,
-                                 QSystemTrayIcon::Warning, 5000);
-            return 0;
-        }
-
-        //创建初始提交
-        git.start("git", QStringList() << "commit" << "-m" << "Initial backup");
-        if (!git.waitForStarted())
-        {
-            static QSystemTrayIcon trayIcon;
-            trayIcon.setIcon(QIcon(":/img/ico/res/img/logo.png"));
-            trayIcon.show();
-            trayIcon.showMessage("ZcVersionBox提示", "提交失败：无法启动 Git",
-                                 QSystemTrayIcon::Warning, 5000);
-            return 0;
-        }
-        git.waitForFinished();
-        if (git.exitCode() != 0)
-        {
-            static QSystemTrayIcon trayIcon;
-            trayIcon.setIcon(QIcon(":/img/ico/res/img/logo.png"));
-            trayIcon.show();
-            QString errorMsg = QString::fromUtf8(git.readAllStandardError()).trimmed();
-            trayIcon.showMessage("ZcVersionBox提示",
-                                 errorMsg.isEmpty() ? "提交失败：git commit 命令执行失败" : errorMsg,
-                                 QSystemTrayIcon::Warning, 5000);
-            return 0;
-        }
-
-        //完成提示
-        static QSystemTrayIcon trayIcon;
-        trayIcon.setIcon(QIcon(":/img/ico/res/img/logo.png"));
-        trayIcon.show();
-        trayIcon.showMessage("ZcVersionBox提示", "已将文件添加至版本控制",
-                             QSystemTrayIcon::Information, 3000);
-        return 0;
+        QMessageBox::critical(nullptr, "ZcVersionBox", error.message);
+        return 1;
     }
 }
