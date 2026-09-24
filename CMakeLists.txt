@@ -13,40 +13,8 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 6.6 REQUIRED COMPONENTS Core Network)
-include(CTest)
-option(ZCVERSIONBOX_BUILD_APP "Build the desktop application" ON)
-add_library(zcbackup STATIC
-    backup/types.cpp backup/types.h
-    backup/gitprocess.cpp backup/gitprocess.h
-    backup/sourceindex.cpp backup/sourceindex.h
-    backup/snapshotstore.cpp backup/snapshotstore.h
-    backup/engine.cpp backup/engine.h
-    backup/sourcemonitor.cpp backup/sourcemonitor.h
-    backup/backupservice.cpp backup/backupservice.h
-)
-target_include_directories(zcbackup PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_compile_options(zcbackup PUBLIC "$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
-target_link_libraries(zcbackup PUBLIC Qt6::Core Qt6::Network)
-if(WIN32)
-    target_compile_definitions(zcbackup PRIVATE _WIN32_WINNT=0x0A00 WINVER=0x0A00)
-endif()
-if(APPLE)
-    target_link_libraries(zcbackup PRIVATE "-framework CoreServices")
-endif()
-if(BUILD_TESTING)
-    find_package(Qt6 REQUIRED COMPONENTS Test)
-    add_executable(backup_tests tests/backup_tests.cpp)
-    target_link_libraries(backup_tests PRIVATE zcbackup Qt6::Test)
-    add_test(NAME backup_core COMMAND backup_tests)
-    set_tests_properties(backup_core PROPERTIES TIMEOUT 180)
-    add_executable(instance_tests tests/instance_tests.cpp application/instancecontroller.cpp application/instancecontroller.h)
-    target_link_libraries(instance_tests PRIVATE zcbackup Qt6::Test)
-    add_test(NAME backup_instance COMMAND instance_tests)
-    set_tests_properties(backup_instance PROPERTIES TIMEOUT 30)
-endif()
-if(ZCVERSIONBOX_BUILD_APP)
-find_package(Qt6 REQUIRED COMPONENTS Widgets)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network)
 
 if(APPLE)
     set(ZCVERSIONBOX_MACOS_BUNDLE_NAME ZcVersionBox)
@@ -62,7 +30,7 @@ if(APPLE)
 endif()
 
 if(APPLE)
-    foreach(qt_target Qt6::Widgets Qt6::Gui Qt6::Core)
+    foreach(qt_target Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Core)
         if(TARGET ${qt_target})
             foreach(qt_prop INTERFACE_LINK_LIBRARIES INTERFACE_LINK_OPTIONS)
                 get_target_property(qt_values ${qt_target} ${qt_prop})
@@ -99,8 +67,6 @@ endif()
 
 set(PROJECT_SOURCES
         main.cpp
-        application/instancecontroller.cpp application/instancecontroller.h
-        application/aiannotationcontroller.cpp application/aiannotationcontroller.h
         windows/mainwindow.cpp
         windows/mainwindow.h
         windows/mainwindow.ui
@@ -121,18 +87,51 @@ if(APPLE)
     )
 endif()
 
+if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(ZcVersionBox
         ${ZCVERSIONBOX_BUNDLE_OPTION}
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
+        windows/mainwindow_child/homepage/homepage.h windows/mainwindow_child/homepage/homepage.cpp windows/mainwindow_child/homepage/homepage.ui
+        windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.cpp
+        windows/mainwindow_child/homepage/pages/homepage_page_dashboard.cpp windows/mainwindow_child/homepage/pages/homepage_page_dashboard.ui
+        windows/mainwindow_child/homepage/pages/homepage_page_backup.cpp
+        windows/mainwindow_child/homepage/pages/homepage_page_diff.cpp
+        windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.h windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.cpp windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.ui
         windows/mainwindow_child/aboutpage/aboutpage.h windows/mainwindow_child/aboutpage/aboutpage.cpp windows/mainwindow_child/aboutpage/aboutpage.ui
         windows/mainwindow_child/settingpage/settingpage.h windows/mainwindow_child/settingpage/settingpage.cpp windows/mainwindow_child/settingpage/settingpage.ui
         GlobalConstants.h
         res.qrc
 
+        utils/fileutils.h utils/fileutils.cpp
+        utils/backuprestorehelper.h utils/backuprestorehelper.cpp
         utils/aiconfighelper.h utils/aiconfighelper.cpp
+        utils/aicommitmessagehelper.h utils/aicommitmessagehelper.cpp
     )
-
+    set_source_files_properties(
+        windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.cpp
+        windows/mainwindow_child/homepage/pages/homepage_page_backup.cpp
+        windows/mainwindow_child/homepage/pages/homepage_page_diff.cpp
+        PROPERTIES SKIP_AUTOUIC ON
+    )
+# Define target properties for Android with Qt 6 as:
+#    set_property(TARGET ZcVersionBox APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
+#                 ${CMAKE_CURRENT_SOURCE_DIR}/android)
+# For more information, see https://doc.qt.io/qt-6/qt-add-executable.html#target-creation
+else()
+    if(ANDROID)
+        add_library(ZcVersionBox SHARED
+            ${PROJECT_SOURCES}
+        )
+# Define properties for Android with Qt 5 after find_package() calls as:
+#    set(ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
+    else()
+        add_executable(ZcVersionBox
+            ${ZCVERSIONBOX_BUNDLE_OPTION}
+            ${PROJECT_SOURCES}
+        )
+    endif()
+endif()
 
 include_directories(
     include
@@ -205,18 +204,9 @@ if(NOT ZCAI_LIB)
     message(FATAL_ERROR "Missing ZcAiLib library. Put libZcAiLib.a/.dylib or ZcAiLib.lib in 3rdparty/ZcAILib/lib")
 endif()
 
-add_library(zcbackup_widgets STATIC
-    windows/mainwindow_child/homepage/homepage.cpp
-    windows/mainwindow_child/homepage/homepage.h
-)
-target_include_directories(zcbackup_widgets PRIVATE ${LOCAL_THIRDPARTY_DIR}/ElaWidgetTools/include)
-target_link_libraries(zcbackup_widgets PUBLIC zcbackup Qt6::Widgets PRIVATE ${ELA_WIDGETTOOLS_LIB})
-
 target_link_libraries(ZcVersionBox PRIVATE
-    zcbackup_widgets
-    Qt6::Widgets
-    Qt6::Network
-    zcbackup
+    Qt${QT_VERSION_MAJOR}::Widgets
+    Qt${QT_VERSION_MAJOR}::Network
     ${ZCAI_LIB}
     ${ELA_WIDGETTOOLS_LIB}
     ${ZC_WIDGETTOOLS_LIB}
@@ -253,7 +243,7 @@ if(APPLE)
     )
 endif()
 
-if(WIN32)
+if(WIN32 AND QT_VERSION_MAJOR EQUAL 6)
     get_target_property(QT_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
     if(QT_QMAKE_EXECUTABLE)
         get_filename_component(QT_BIN_DIR "${QT_QMAKE_EXECUTABLE}" DIRECTORY)
@@ -323,6 +313,6 @@ install(TARGETS ZcVersionBox
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-qt_finalize_executable(ZcVersionBox)
-
-endif() # ZCVERSIONBOX_BUILD_APP
+if(QT_VERSION_MAJOR EQUAL 6)
+    qt_finalize_executable(ZcVersionBox)
+endif()

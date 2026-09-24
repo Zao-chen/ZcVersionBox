@@ -58,14 +58,9 @@ SettingPage::SettingPage(QWidget *parent)
     m_stackedWidget->setCurrentIndex(0);
     qInfo() << "[Setting] initialized with stacked settings pages";
 
-    QSettings ini(settingsPath(), QSettings::IniFormat);
-    // 启动时仅恢复界面状态，避免把配置回填误判为用户切换并重复执行系统操作或弹出提示。
-    {
-        QSignalBlocker rightClickMenuBlocker(ui->ToggleSwitch_RightClickMenu);
-        QSignalBlocker autoStartBlocker(ui->ToggleSwitch_AutoStart);
-        ui->ToggleSwitch_RightClickMenu->setIsToggled(ini.value("RightClickMenu", false).toBool());
-        ui->ToggleSwitch_AutoStart->setIsToggled(ini.value("AutoStart", false).toBool());
-    }
+    QSettings ini(Settingpath, QSettings::IniFormat);
+    ui->ToggleSwitch_RightClickMenu->setIsToggled(ini.value("RightClickMenu", false).toBool());
+    ui->ToggleSwitch_AutoStart->setIsToggled(ini.value("AutoStart", false).toBool());
 }
 
 SettingPage::~SettingPage()
@@ -79,9 +74,10 @@ void SettingPage::loadAiSettings()
     if (!ui->lineEdit_AiBaseUrl || !ui->lineEdit_AiApiKey || !m_aiModelComboBox || !m_aiFeatureSwitch)
         return;
 
-    QSettings ini(settingsPath(), QSettings::IniFormat);
+    QSettings ini(Settingpath, QSettings::IniFormat);
+    AiConfig::migrateLegacySettings(ini);
     m_currentAiProvider = AiConfig::normalizeProviderName(ini.value("AI/Provider", AiConfig::openAIProviderName()).toString());
-    const bool aiEnabled = ini.value("AI/Enabled", false).toBool();
+    const bool aiEnabled = ini.value("AI/Enabled", ini.value("AI/AutoCommitMessage", false)).toBool();
     qInfo() << "[AI Setting] loaded provider=" << m_currentAiProvider << "aiEnabled=" << aiEnabled;
 
     loadCurrentProviderSettings();
@@ -169,7 +165,7 @@ void SettingPage::selectAiProvider(const QString &providerName)
         return;
 
     m_currentAiProvider = AiConfig::normalizeProviderName(providerName);
-    QSettings ini(settingsPath(), QSettings::IniFormat);
+    QSettings ini(Settingpath, QSettings::IniFormat);
     ini.setValue("AI/Provider", m_currentAiProvider);
 
     loadCurrentProviderSettings();
@@ -188,7 +184,7 @@ void SettingPage::loadCurrentProviderSettings()
     if (m_currentAiProvider.isEmpty())
         m_currentAiProvider = AiConfig::openAIProviderName();
 
-    QSettings ini(settingsPath(), QSettings::IniFormat);
+    QSettings ini(Settingpath, QSettings::IniFormat);
     const AiConfig::RuntimeConfig config = AiConfig::loadProviderConfig(ini, m_currentAiProvider);
 
     // 回填 UI 时屏蔽保存信号。
@@ -227,7 +223,7 @@ void SettingPage::loadCurrentProviderSettings()
 /*更新打勾状态*/
 void SettingPage::updateAiProviderStatuses()
 {
-    QSettings ini(settingsPath(), QSettings::IniFormat);
+    QSettings ini(Settingpath, QSettings::IniFormat);
     ui->label_OpenAiProvider_Status->setVisible(AiConfig::isProviderConfigured(ini, AiConfig::openAIProviderName()));
     ui->label_DeepSeekProvider_Status->setVisible(AiConfig::isProviderConfigured(ini, AiConfig::deepSeekProviderName()));
     ui->label_CustomProvider_Status->setVisible(AiConfig::isProviderConfigured(ini, AiConfig::customProviderName()));
@@ -239,7 +235,7 @@ void SettingPage::syncActiveAiConfig()
     if (m_currentAiProvider.isEmpty())
         m_currentAiProvider = AiConfig::openAIProviderName();
 
-    QSettings ini(settingsPath(), QSettings::IniFormat);
+    QSettings ini(Settingpath, QSettings::IniFormat);
     // 同步给现有 AI 调用入口。
     AiConfig::syncActiveConfig(ini, m_currentAiProvider);
     updateAiProviderStatuses();
@@ -251,7 +247,7 @@ void SettingPage::on_lineEdit_AiBaseUrl_textChanged(const QString &text)
     if (m_isLoadingAiSettings || !AiConfig::isCustomProvider(m_currentAiProvider))
         return;
 
-    QSettings ini(settingsPath(), QSettings::IniFormat);
+    QSettings ini(Settingpath, QSettings::IniFormat);
     const QString prefix = AiConfig::providerPrefix(m_currentAiProvider);
     ini.setValue(prefix + "BaseUrl", AiConfig::deriveBaseUrl(text));
     AiConfig::clearProviderModels(ini, m_currentAiProvider);
@@ -272,7 +268,7 @@ void SettingPage::on_lineEdit_AiApiKey_textChanged(const QString &text)
     if (m_isLoadingAiSettings || m_currentAiProvider.isEmpty())
         return;
 
-    QSettings ini(settingsPath(), QSettings::IniFormat);
+    QSettings ini(Settingpath, QSettings::IniFormat);
     const QString prefix = AiConfig::providerPrefix(m_currentAiProvider);
     ini.setValue(prefix + "ApiKey", text.trimmed());
     AiConfig::clearProviderModels(ini, m_currentAiProvider);
@@ -293,7 +289,7 @@ void SettingPage::on_comboBox_AiModel_currentTextChanged(const QString &text)
     if (m_isLoadingAiSettings || m_currentAiProvider.isEmpty())
         return;
 
-    QSettings ini(settingsPath(), QSettings::IniFormat);
+    QSettings ini(Settingpath, QSettings::IniFormat);
     const QString value = text.trimmed();
     ini.setValue(AiConfig::providerPrefix(m_currentAiProvider) + "Model", value);
     if (m_aiProviderModelListModel)
@@ -310,8 +306,9 @@ void SettingPage::on_comboBox_AiModel_currentTextChanged(const QString &text)
 /*自动ai生成提交开关*/
 void SettingPage::on_toggleSwitch_AiAutoCommit_toggled(bool checked)
 {
-    QSettings ini(settingsPath(), QSettings::IniFormat);
+    QSettings ini(Settingpath, QSettings::IniFormat);
     ini.setValue("AI/Enabled", checked);
+    ini.setValue("AI/AutoCommitMessage", checked);
     qInfo() << "[AI Setting] AI feature enabled:" << checked;
 }
 
@@ -395,7 +392,7 @@ void SettingPage::on_pushButton_FetchAiModels_clicked()
                     m_aiModelComboBox->setCurrentIndex(0);
                 }
 
-                QSettings ini(settingsPath(), QSettings::IniFormat);
+                QSettings ini(Settingpath, QSettings::IniFormat);
                 const QString prefix = AiConfig::providerPrefix(providerName);
                 ini.setValue(prefix + "ModelList", modelIds);
                 ini.setValue(prefix + "Model", m_aiModelComboBox->currentText().trimmed());
@@ -548,7 +545,7 @@ void SettingPage::on_ToggleSwitch_RightClickMenu_toggled(bool checked)
                                3000,
                                this);
 #endif
-    QSettings ini(settingsPath(), QSettings::IniFormat);
+    QSettings ini(Settingpath, QSettings::IniFormat);
     ini.setValue("RightClickMenu", checked);
 }
 
@@ -590,6 +587,6 @@ void SettingPage::on_ToggleSwitch_AutoStart_toggled(bool checked)
                                this);
 #endif
 
-    QSettings ini(settingsPath(), QSettings::IniFormat);
+    QSettings ini(Settingpath, QSettings::IniFormat);
     ini.setValue("AutoStart", checked);
 }

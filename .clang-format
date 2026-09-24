@@ -3,4 +3,3 @@ IndentWidth: 4
 BreakBeforeBraces: Allman
 ReflowComments: false
 ColumnLimit: 0
-AllowShortLambdasOnASingleLine: None

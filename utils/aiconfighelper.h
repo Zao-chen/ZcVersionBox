@@ -38,13 +38,19 @@ bool isCustomProvider(const QString &providerName);
 // Custom 服务的 URL 归一化。
 QString deriveBaseUrl(const QString &apiUrl);
 
+// 把旧 AI/* 配置迁移到分服务商配置。
+void migrateLegacySettings(QSettings &ini);
+
 // 读取某个服务商的保存配置。
-RuntimeConfig loadProviderConfig(QSettings &ini, const QString &providerName);
+RuntimeConfig loadProviderConfig(QSettings &ini, const QString &providerName, bool fallbackLegacy = false);
+
+// 读取实际请求 AI 时需要的配置。
+bool loadRuntimeConfig(RuntimeConfig &config, QString *errorMessage = nullptr);
 
 // 判断服务商是否已填好 Key 和模型。
 bool isProviderConfigured(QSettings &ini, const QString &providerName);
 
-// 保存当前选择的服务商。
+// 把当前服务商配置写回旧 AI/* 运行时入口。
 void syncActiveConfig(QSettings &ini, const QString &providerName);
 
 // Key 或 URL 变化后清空模型缓存。
