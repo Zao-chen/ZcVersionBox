@@ -290,6 +290,43 @@ static void swizzledSetStyleMask(id self, SEL _cmd, NSWindowStyleMask mask)
     w.titleVisibility = NSWindowTitleHidden;
 }
 
+// The system traffic light buttons are 14pt circles laid out by AppKit inside
+// NSTitlebarView. Their resting spot (center y=16 from the window top, group
+// starting at x=9) sits above the nav row center line (y=21) and hugs the
+// window corner, so nudge the whole group onto that line with a little more
+// air to the left and above, and reapply whenever AppKit relayouts the title
+// bar (resize, activation) because it resets the buttons' frames.
+static void repositionMacTrafficLights(NSWindow *nswindow)
+{
+    static const CGFloat kTargetLeft = 12.0;
+    static const CGFloat kTargetCenterY = 21.0;
+    NSArray<NSView *> *buttons = @[
+        [nswindow standardWindowButton:NSWindowCloseButton],
+        [nswindow standardWindowButton:NSWindowMiniaturizeButton],
+        [nswindow standardWindowButton:NSWindowZoomButton]
+    ];
+    NSView *close = buttons.firstObject;
+    if (!close || !close.superview) {
+        return;
+    }
+    NSRect closeInWindow = [close convertRect:close.bounds toView:nil];
+    CGFloat dyTop = kTargetCenterY - (nswindow.frame.size.height - (closeInWindow.origin.y + closeInWindow.size.height / 2));
+    CGFloat dx = kTargetLeft - closeInWindow.origin.x;
+    if (dx == 0 && dyTop == 0) {
+        return;
+    }
+    BOOL flipped = close.superview.isFlipped;
+    for (NSView *button in buttons) {
+        if (!button) {
+            continue;
+        }
+        NSRect frame = button.frame;
+        frame.origin.x += dx;
+        frame.origin.y += flipped ? dyTop : -dyTop;
+        button.frame = frame;
+    }
+}
+
 void setupMacTitleBar(quintptr winId)
 {
     if (!winId) {
@@ -323,4 +360,22 @@ void setupMacTitleBar(quintptr winId)
     [nswindow standardWindowButton:NSWindowCloseButton].hidden = NO;
     [nswindow standardWindowButton:NSWindowMiniaturizeButton].hidden = NO;
     [nswindow standardWindowButton:NSWindowZoomButton].hidden = NO;
+
+    static dispatch_once_t onceRelayoutToken;
+    dispatch_once(&onceRelayoutToken, ^{
+        NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+        for (NSString *name in @[
+                 NSWindowDidResizeNotification,
+                 NSWindowDidBecomeKeyNotification,
+                 NSWindowDidBecomeMainNotification,
+                 NSWindowDidExitFullScreenNotification
+             ]) {
+            [center addObserverForName:name object:nswindow queue:NSOperationQueue.mainQueue usingBlock:^(
+                                           NSNotification *note) {
+                NSWindow *window = note.object;
+                dispatch_async(dispatch_get_main_queue(), ^{ repositionMacTrafficLights(window); });
+            }];
+        }
+    });
+    repositionMacTrafficLights(nswindow);
 }
