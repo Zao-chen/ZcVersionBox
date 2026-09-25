@@ -72,7 +72,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     qApp->installEventFilter(this);
     for (auto *button : {ui->backupsButton, ui->settingsButton, ui->returnApplicationButton, ui->generalTab, ui->aiTab, ui->aboutTab})
         UiStyle::text(button, UiStyle::FontRole::Sidebar);
-    for (auto *button : {ui->returnApplicationButton, ui->generalTab, ui->aiTab, ui->aboutTab})
+    for (auto *button : {ui->backupsButton, ui->settingsButton, ui->returnApplicationButton, ui->generalTab, ui->aiTab, ui->aboutTab})
         button->setProperty("navigationItem", true);
     auto *searchIcon = UiStyle::action(ui->settingsSearch, "settingsSearchIcon", "搜索设置", "search");
     ui->settingsSearch->addAction(searchIcon, QLineEdit::LeadingPosition);
