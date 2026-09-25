@@ -40,6 +40,7 @@ class MainWindow : public QMainWindow
     void closeEvent(QCloseEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
     void changeEvent(QEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
   private:
     std::unique_ptr<Ui::MainWindow> ui;

@@ -21,11 +21,15 @@
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QTextEdit>
+#include <QShowEvent>
 #include <QSystemTrayIcon>
 #include <QTimer>
 #include <algorithm>
 #include <type_traits>
 #include <QWKWidgets/widgetwindowagent.h>
+#ifdef Q_OS_MACOS
+#include "macos/macos_services.h"
+#endif
 
 namespace
 {
@@ -55,6 +59,7 @@ bool matchesSettings(PageId page, const QString &query)
 MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGateway *gateway, ThemeController *theme, bool trayEnabled, QWidget *parent)
     : QMainWindow(parent), ui(new Ui::MainWindow), m_backups(backups), m_settings(settings), m_theme(theme)
 {
+    setAttribute(Qt::WA_DontCreateNativeAncestors);
     ui->setupUi(this);
     setWindowTitle("ZcVersionBox");
     resize(1080, 740);
@@ -81,11 +86,12 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     ui->minimizeButton->hide();
     ui->maximizeButton->hide();
     ui->closeButton->hide();
-    m_windowAgent->setSystemButtonAreaCallback([](const QSize &size) {
-        static constexpr const int width = 75;
-        return QRect(QPoint(0, 0), QSize(width, size.height()));
-    });
-    ui->titleBarLayout->setContentsMargins(76, 0, 8, 0);
+    auto *macButtonsArea = new QWidget(ui->titleBar);
+    macButtonsArea->setObjectName("macButtonsArea");
+    macButtonsArea->setFixedSize(72, 36);
+    ui->titleBarLayout->insertWidget(0, macButtonsArea);
+    ui->titleBarLayout->setContentsMargins(0, 4, 4, 4);
+    m_windowAgent->setSystemButtonArea(macButtonsArea);
 #endif
     m_windowAgent->setHitTestVisible(ui->collapseButton, true);
     m_windowAgent->setHitTestVisible(ui->backButton, true);
@@ -619,4 +625,11 @@ void MainWindow::changeEvent(QEvent *event)
         }
     }
     QMainWindow::changeEvent(event);
+}
+void MainWindow::showEvent(QShowEvent *event)
+{
+    QMainWindow::showEvent(event);
+#ifdef Q_OS_MACOS
+    setupMacTitleBar(winId());
+#endif
 }

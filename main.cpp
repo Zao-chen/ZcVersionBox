@@ -8,6 +8,7 @@
 
 int main(int argc, char *argv[])
 {
+    QCoreApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
     QApplication app(argc, argv);
     app.setApplicationName("ZcVersionBox");
     app.setApplicationVersion(ZCVERSIONBOX_VERSION);
@@ -40,5 +41,8 @@ int main(int argc, char *argv[])
     QObject::connect(&monitor, &BackupMonitor::notification, &window, &MainWindow::notify);
     monitor.start();
     window.show();
+#ifdef Q_OS_MACOS
+    setupMacTitleBar(window.winId());
+#endif
     return app.exec();
 }

@@ -8,6 +8,7 @@
 #include <QTextStream>
 
 #import <AppKit/AppKit.h>
+#import <objc/runtime.h>
 
 namespace
 {
@@ -274,4 +275,52 @@ void setMacServicesProviderEnabled(bool enabled)
     }
 
     NSUpdateDynamicServices();
+}
+
+static void (*s_originalSetStyleMask)(id, SEL, NSWindowStyleMask) = nullptr;
+
+static void swizzledSetStyleMask(id self, SEL _cmd, NSWindowStyleMask mask)
+{
+    mask |= NSWindowStyleMaskFullSizeContentView;
+    if (s_originalSetStyleMask) {
+        s_originalSetStyleMask(self, _cmd, mask);
+    }
+    NSWindow *w = (NSWindow *)self;
+    w.titlebarAppearsTransparent = YES;
+    w.titleVisibility = NSWindowTitleHidden;
+}
+
+void setupMacTitleBar(WId winId)
+{
+    if (!winId) {
+        return;
+    }
+    NSView *view = reinterpret_cast<NSView *>(winId);
+    if (!view) {
+        return;
+    }
+    NSWindow *nswindow = [view window];
+    if (!nswindow) {
+        return;
+    }
+
+    Class cls = [nswindow class];
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        Method method = class_getInstanceMethod(cls, @selector(setStyleMask:));
+        if (method) {
+            s_originalSetStyleMask = (void (*)(id, SEL, NSWindowStyleMask))method_getImplementation(method);
+            method_setImplementation(method, (IMP)swizzledSetStyleMask);
+        }
+    });
+
+    view.wantsLayer = YES;
+    nswindow.styleMask |= NSWindowStyleMaskResizable;
+    nswindow.styleMask |= NSWindowStyleMaskFullSizeContentView;
+    nswindow.titlebarAppearsTransparent = YES;
+    nswindow.titleVisibility = NSWindowTitleHidden;
+    nswindow.hasShadow = YES;
+    [nswindow standardWindowButton:NSWindowCloseButton].hidden = NO;
+    [nswindow standardWindowButton:NSWindowMiniaturizeButton].hidden = NO;
+    [nswindow standardWindowButton:NSWindowZoomButton].hidden = NO;
 }
