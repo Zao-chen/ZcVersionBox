@@ -19,6 +19,20 @@ QVariant SettingsService::value(const QString &key, const QVariant &fallback) co
     QSettings settings(m_paths.settingsFile, QSettings::IniFormat);
     return settings.value(key, fallback);
 }
+QString SettingsService::themeMode() const
+{
+    const auto mode = value("Theme", "system").toString();
+    return mode == QStringLiteral("light") || mode == QStringLiteral("dark") ? mode : QStringLiteral("system");
+}
+void SettingsService::setThemeMode(const QString &mode)
+{
+    const auto normalized = mode == QStringLiteral("light") || mode == QStringLiteral("dark") ? mode : QStringLiteral("system");
+    if (themeMode() == normalized)
+        return;
+    QSettings settings(m_paths.settingsFile, QSettings::IniFormat);
+    settings.setValue("Theme", normalized);
+    emit changed();
+}
 QString SettingsService::provider() const { return Config::normalizeProviderName(value("AI/Provider", "OpenAI").toString()); }
 AiConfigHelper::RuntimeConfig SettingsService::config(const QString &name) const
 {

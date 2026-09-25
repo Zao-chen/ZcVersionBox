@@ -20,6 +20,8 @@ class SettingsService : public QObject
     bool isFetching() const { return m_fetching; }
     bool runtimeConfig(AiConfigHelper::RuntimeConfig &config, QString &error) const;
     OperationResult setSystemOption(const QString &key, bool enabled);
+    QString themeMode() const;
+    void setThemeMode(const QString &mode);
   signals:
     void changed();
     void fetchingChanged(bool fetching);

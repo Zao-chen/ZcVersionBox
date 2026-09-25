@@ -1,4 +1,5 @@
 #include "windows/mainwindow_presentation.h"
+#include "utils/settingsservice.h"
 #include <QAbstractItemView>
 #include <QAction>
 #include <QApplication>
@@ -22,6 +23,7 @@
 #include <QScreen>
 #include <QShortcut>
 #include <QStyleOptionToolButton>
+#include <QStyleHints>
 #include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -351,7 +353,35 @@ void setKeyboardNavigationActive(bool active)
 }
 } // namespace UiStyle
 
-ThemeController::ThemeController(QObject *parent) : QObject(parent)
+namespace
+{
+bool systemPrefersDarkColor()
+{
+    return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+}
+ThemeMode themeModeFromString(const QString &value)
+{
+    return value == QStringLiteral("light")   ? ThemeMode::Light
+           : value == QStringLiteral("dark") ? ThemeMode::Dark
+                                             : ThemeMode::System;
+}
+QString themeModeToString(ThemeMode mode)
+{
+    switch (mode)
+    {
+    case ThemeMode::Light:
+        return QStringLiteral("light");
+    case ThemeMode::Dark:
+        return QStringLiteral("dark");
+    case ThemeMode::System:
+        break;
+    }
+    return QStringLiteral("system");
+}
+} // namespace
+
+ThemeController::ThemeController(SettingsService *settings, QObject *parent)
+    : QObject(parent), m_settings(settings)
 {
     m_style = new AppStyle(qApp);
     m_style->setAutoIconColor(oclero::qlementine::AutoIconColor::TextColor);
@@ -365,6 +395,19 @@ ThemeController::ThemeController(QObject *parent) : QObject(parent)
         }
     }
     QApplication::setStyle(m_style);
+    if (m_settings)
+        m_mode = themeModeFromString(m_settings->themeMode());
+    m_dark = m_mode == ThemeMode::Light ? false : m_mode == ThemeMode::Dark || systemPrefersDarkColor();
+    connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme)
+    {
+        if (m_mode != ThemeMode::System)
+            return;
+        const bool dark = systemPrefersDarkColor();
+        if (dark == m_dark)
+            return;
+        m_dark = dark;
+        apply();
+    });
     apply();
 }
 void ThemeController::apply()
@@ -439,10 +482,19 @@ void ThemeController::apply()
         updateWidgetPresentation(widget);
     emit changed();
 }
+void ThemeController::setMode(ThemeMode mode)
+{
+    if (mode == m_mode)
+        return;
+    m_mode = mode;
+    if (m_settings)
+        m_settings->setThemeMode(themeModeToString(mode));
+    m_dark = mode == ThemeMode::Light ? false : mode == ThemeMode::Dark || systemPrefersDarkColor();
+    apply();
+}
 void ThemeController::toggle()
 {
-    m_dark = !m_dark;
-    apply();
+    setMode(m_dark ? ThemeMode::Light : ThemeMode::Dark);
 }
 
 NotificationBar::NotificationBar(QWidget *parent) : QWidget(parent)

@@ -13,11 +13,12 @@ namespace oclero::qlementine
 class Switch;
 class LoadingSpinner;
 } // namespace oclero::qlementine
+class ThemeController;
 class SettingPage : public QWidget
 {
     Q_OBJECT
   public:
-    SettingPage(SettingsService *settings, QWidget *parent = nullptr);
+    SettingPage(SettingsService *settings, ThemeController *theme, QWidget *parent = nullptr);
     ~SettingPage();
   signals:
     void navigate(const Route &route);
@@ -28,6 +29,7 @@ class SettingPage : public QWidget
 
   private:
     std::unique_ptr<Ui::SettingPage> ui;
+    ThemeController *m_theme;
 };
 class SettingPageAiPage : public QWidget
 {

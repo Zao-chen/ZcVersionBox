@@ -54,11 +54,24 @@ bool isKeyboardNavigationActive();
 void setKeyboardNavigationActive(bool active);
 } // namespace UiStyle
 
+class SettingsService;
+
+// Where the application theme comes from. System follows the platform
+// color scheme and tracks changes while the app runs.
+enum class ThemeMode
+{
+    System,
+    Light,
+    Dark
+};
+
 class ThemeController : public QObject
 {
     Q_OBJECT
   public:
-    explicit ThemeController(QObject *parent = nullptr);
+    explicit ThemeController(SettingsService *settings = nullptr, QObject *parent = nullptr);
+    ThemeMode mode() const { return m_mode; }
+    void setMode(ThemeMode mode);
     void toggle();
     bool isDark() const { return m_dark; }
     QIcon icon(const QString &name) const { return UiStyle::icon(name); }
@@ -66,7 +79,9 @@ class ThemeController : public QObject
     void changed();
 
   private:
+    ThemeMode m_mode{ThemeMode::System};
     bool m_dark{false};
+    SettingsService *m_settings;
     oclero::qlementine::QlementineStyle *m_style;
     void apply();
 };
