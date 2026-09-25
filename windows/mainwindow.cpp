@@ -108,7 +108,10 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     macButtonsArea->setObjectName("macButtonsArea");
     macButtonsArea->setFixedSize(72, 36);
     ui->titleBarLayout->insertWidget(0, macButtonsArea);
-    ui->titleBarLayout->setContentsMargins(0, 4, 4, 4);
+    // Traffic light buttons measure 14pt tall starting 14pt from the window
+    // top, so their center line sits at y=21; center the 28pt nav buttons on
+    // the same line (7pt top + 14pt half-height + 1pt bottom).
+    ui->titleBarLayout->setContentsMargins(0, 7, 4, 1);
     m_windowAgent->setSystemButtonArea(macButtonsArea);
 #endif
     m_windowAgent->setHitTestVisible(ui->collapseButton, true);
