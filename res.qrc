@@ -1,5 +1,1 @@
-<RCC>
-    <qresource prefix="/img/ico">
-        <file>res/img/logo.png</file>
-    </qresource>
-</RCC>
+<RCC><qresource prefix="/img/ico"><file>res/img/logo.png</file></qresource><qresource prefix="/icons"><file alias="back.svg">res/icons/back.svg</file><file alias="forward.svg">res/icons/forward.svg</file><file alias="menu.svg">res/icons/menu.svg</file><file alias="theme.svg">res/icons/theme.svg</file><file alias="pin.svg">res/icons/pin.svg</file><file alias="folder.svg">res/icons/folder.svg</file><file alias="settings.svg">res/icons/settings.svg</file><file alias="info.svg">res/icons/info.svg</file></qresource><qresource prefix="/themes"><file alias="light.json">3rdparty/qlementine/showcase/resources/themes/light.json</file><file alias="dark.json">3rdparty/qlementine/showcase/resources/themes/dark.json</file></qresource></RCC>

@@ -3,16 +3,8 @@
 
 #include <QString>
 
-#include <functional>
-
-class QObject;
-
 namespace AiCommitMessageHelper
 {
-
-bool isAutoCommitEnabled();
-
-bool loadAiConfig(QString &baseUrl, QString &apiKey, QString &modelName, QString *errorMessage = nullptr);
 
 QString buildPromptFromDiff(const QString &diffText);
 
@@ -22,19 +14,10 @@ QString buildDiffSummaryPrompt(const QString &diffText);
 
 QString diffSummarySystemPrompt();
 
-void generateCommitMessageAsync(const QString &diffText,
-                                QObject *context,
-                                const std::function<void(const QString &)> &onSuccess,
-                                const std::function<void(const QString &)> &onError);
-
-void generateDiffSummaryAsync(const QString &diffText,
-                              QObject *context,
-                              const std::function<void(const QString &)> &onSuccess,
-                              const std::function<void(const QString &)> &onError);
-
 QString generateCommitMessageSync(const QString &diffText,
                                   int timeoutMs = 15000,
-                                  QString *errorMessage = nullptr);
+                                  QString *errorMessage = nullptr,
+                                  const QString &settingsFile = {});
 
 } // namespace AiCommitMessageHelper
 

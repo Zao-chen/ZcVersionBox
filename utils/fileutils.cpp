@@ -1,5 +1,4 @@
 #include "fileutils.h"
-#include <QUrl>
 
 bool FileUtils::copyDirectory(const QString &srcPath, const QString &dstPath)
 {
@@ -50,19 +49,6 @@ bool FileUtils::copyDirectory(const QString &srcPath, const QString &dstPath)
     return true;
 }
 
-QString FileUtils::safeFileName(const QString &rawPath)
-{
-    // 如果 rawPath 包含 %3A 等编码，先解码
-    // 然后将原本可能引起歧义的字符替换掉，或者只取最后一段
-    QString decoded = QUrl::fromPercentEncoding(rawPath.toUtf8());
-
-    // 替换掉 Windows 不允许的文件名字符
-    QString safe = decoded;
-    safe.replace(":", "_").replace("\\", "_").replace("/", "_");
-    return safe;
-}
-
-// FileUtils.cpp 增加设置只读的逻辑
 void FileUtils::setReadOnlyRecursive(const QString &path)
 {
     QDir dir(path);

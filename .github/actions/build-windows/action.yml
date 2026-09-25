@@ -1,0 +1,55 @@
+name: Build and package Windows
+description: Qt 6.8.3 / MSVC 2022 release with isolated regression tests
+inputs:
+  tag:
+    description: Release tag
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: seanmiddleditch/gha-setup-ninja@v5
+    - uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+    - uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.8.3'
+        target: desktop
+        arch: win64_msvc2022_64
+        modules: qtsvg
+        cache: true
+    - name: Configure a clean Release build
+      shell: pwsh
+      run: |
+        if (Test-Path -LiteralPath build/release) { throw 'Use a clean build/release directory' }
+        cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR"
+        if ($LASTEXITCODE) { throw 'CMake configure failed' }
+    - name: Build and test
+      shell: pwsh
+      run: |
+        cmake --build build/release --parallel 4
+        if ($LASTEXITCODE) { throw 'Build failed' }
+        ctest --test-dir build/release --output-on-failure
+        if ($LASTEXITCODE) { throw 'Regression tests failed' }
+    - name: Package
+      shell: pwsh
+      env:
+        PACKAGE_TAG: ${{ inputs.tag }}
+      run: |
+        if (!(Get-Command ISCC.exe -ErrorAction SilentlyContinue) -and !(Test-Path 'C:/Program Files (x86)/Inno Setup 6/ISCC.exe')) {
+          choco install innosetup -y --no-progress
+          if ($LASTEXITCODE) { throw 'Inno Setup installation failed' }
+        }
+        ./scripts/package-windows.ps1 -BuildDirectory build/release -OutputDirectory dist/windows -Tag $env:PACKAGE_TAG
+    - uses: actions/upload-artifact@v4
+      with:
+        name: pkg-windows-setup
+        path: dist/ZcVersionBox-*-setup.exe
+        if-no-files-found: error
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: tests-windows
+        path: |
+          build/release/Testing/Temporary/LastTest.log
+          build/release/tests/regression.txt

@@ -1,21 +1,106 @@
-cmake_minimum_required(VERSION 3.16)
-
-project(ZcVersionBox VERSION 0.1 LANGUAGES CXX)
-
+cmake_minimum_required(VERSION 3.21)
+# Set this before project() initializes the Apple toolchain.
+if(CMAKE_HOST_APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum supported macOS")
+endif()
+project(ZcVersionBox VERSION 0.1.0 LANGUAGES CXX)
+if(APPLE)
+    enable_language(OBJCXX)
+    set(CMAKE_OBJCXX_STANDARD 17)
+    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+    set(CMAKE_OBJCXX_EXTENSIONS OFF)
+    if(CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS 12.0)
+        message(FATAL_ERROR "Qt 6.8 requires macOS 12.0 or newer")
+    endif()
+endif()
 if(NOT CMAKE_CONFIGURATION_TYPES AND NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type")
 endif()
-
-set(CMAKE_AUTOUIC ON)
-set(CMAKE_AUTOMOC ON)
-set(CMAKE_AUTORCC ON)
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTOUIC ON)
+set(CMAKE_AUTORCC ON)
+find_package(Qt6 6.8.3 REQUIRED COMPONENTS Widgets Network Svg)
+qt_standard_project_setup()
+set(QLEMENTINE_SANDBOX OFF CACHE BOOL "" FORCE)
+set(QLEMENTINE_SHOWCASE OFF CACHE BOOL "" FORCE)
+add_subdirectory(3rdparty/qlementine EXCLUDE_FROM_ALL)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network)
+add_library(ZcAiLib SHARED IMPORTED GLOBAL)
+set_target_properties(ZcAiLib PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/include"
+    INTERFACE_LINK_LIBRARIES "Qt6::Core;Qt6::Network")
+if(WIN32)
+    set_target_properties(ZcAiLib PROPERTIES
+        IMPORTED_IMPLIB "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/lib/ZcAiLib.lib"
+        IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/bin/ZcAiLib.dll")
+elseif(APPLE)
+    set(ZCAI_RUNTIME "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/lib/libZcAiLib.dylib")
+    set_target_properties(ZcAiLib PROPERTIES IMPORTED_LOCATION "${ZCAI_RUNTIME}")
+    execute_process(COMMAND lipo -archs "${ZCAI_RUNTIME}" OUTPUT_VARIABLE ZCAI_ARCHS OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+    if(CMAKE_OSX_ARCHITECTURES)
+        set(REQUIRED_ARCHS ${CMAKE_OSX_ARCHITECTURES})
+    else()
+        set(REQUIRED_ARCHS ${CMAKE_SYSTEM_PROCESSOR})
+    endif()
+    foreach(arch IN LISTS REQUIRED_ARCHS)
+        if(NOT " ${ZCAI_ARCHS} " MATCHES " ${arch} ")
+            message(FATAL_ERROR "ZcAiLib lacks ${arch}; available: ${ZCAI_ARCHS}. Supply a matching SDK before packaging.")
+        endif()
+    endforeach()
+else()
+    message(FATAL_ERROR "This repository ships the AI SDK for Windows and macOS only")
+endif()
 
+add_library(zc_services STATIC
+    services/apppaths.h services/operationresult.h
+    services/gitcommand.h services/gitcommand.cpp
+    services/backupservice.h services/backupservice.cpp
+    services/backupmonitor.h services/backupmonitor.cpp
+    services/aigateway.h services/aigateway.cpp
+    services/settingsservice.h services/settingsservice.cpp
+    utils/fileutils.h utils/fileutils.cpp
+    utils/backuprestorehelper.h utils/backuprestorehelper.cpp
+    utils/aiconfighelper.h utils/aiconfighelper.cpp
+    utils/aicommitmessagehelper.h utils/aicommitmessagehelper.cpp)
+target_include_directories(zc_services PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(zc_services PUBLIC Qt6::Core Qt6::Network ZcAiLib)
+if(APPLE)
+    target_sources(zc_services PRIVATE macos/macos_services.h macos/macos_services.mm)
+    target_link_libraries(zc_services PUBLIC "-framework AppKit")
+endif()
+add_library(zc_ui STATIC
+    ui/mainwindow.h ui/mainwindow.cpp ui/mainwindow.ui
+    ui/navigation.h ui/navigation.cpp
+    ui/components/presentation.h ui/components/presentation.cpp
+    ui/pages/backupsPage.h ui/pages/backupsPage.cpp ui/pages/backupsPage.ui
+    ui/pages/dashboardPage.h ui/pages/dashboardPage.cpp ui/pages/dashboardPage.ui
+    ui/pages/historyPage.h ui/pages/historyPage.cpp ui/pages/historyPage.ui
+    ui/pages/diffPage.h ui/pages/diffPage.cpp ui/pages/diffPage.ui
+    ui/pages/settingsPage.h ui/pages/settingsPage.cpp ui/pages/generalSettingsPage.ui ui/pages/aiSettingsPage.ui
+    ui/pages/aboutPage.h ui/pages/aboutPage.cpp ui/pages/aboutPage.ui)
+target_link_libraries(zc_ui PUBLIC zc_services qlementine Qt6::Widgets)
+if(MSVC)
+    target_compile_options(zc_services PRIVATE /utf-8)
+    target_compile_options(zc_ui PRIVATE /utf-8)
+endif()
+qt_add_executable(ZcVersionBox WIN32 MACOSX_BUNDLE main.cpp res.qrc)
+target_link_libraries(ZcVersionBox PRIVATE zc_ui)
+target_compile_definitions(ZcVersionBox PRIVATE ZCVERSIONBOX_VERSION="${PROJECT_VERSION}")
+if(MSVC)
+    target_compile_options(ZcVersionBox PRIVATE /utf-8)
+endif()
+if(WIN32)
+    add_custom_command(TARGET ZcVersionBox POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:ZcAiLib>" "$<TARGET_FILE_DIR:ZcVersionBox>")
+    get_target_property(QT_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
+    get_filename_component(QT_BIN_DIR "${QT_QMAKE_EXECUTABLE}" DIRECTORY)
+    find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${QT_BIN_DIR}" REQUIRED)
+    add_custom_command(TARGET ZcVersionBox POST_BUILD
+        COMMAND "${WINDEPLOYQT_EXECUTABLE}" --no-translations "$<TARGET_FILE:ZcVersionBox>")
+endif()
 if(APPLE)
     set(ZCVERSIONBOX_MACOS_BUNDLE_NAME ZcVersionBox)
     set(ZCVERSIONBOX_MACOS_BUNDLE_IDENTIFIER com.zc.versionbox)
@@ -23,296 +108,21 @@ if(APPLE)
     set(ZCVERSIONBOX_MACOS_BUNDLE_VERSION ${PROJECT_VERSION})
     set(ZCVERSIONBOX_MACOS_SHORT_VERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
     set(ZCVERSIONBOX_MACOS_DEPLOYMENT_TARGET ${CMAKE_OSX_DEPLOYMENT_TARGET})
-    if(NOT ZCVERSIONBOX_MACOS_DEPLOYMENT_TARGET)
-        set(ZCVERSIONBOX_MACOS_DEPLOYMENT_TARGET 11.0)
-    endif()
-    set(ZCVERSIONBOX_BUNDLE_OPTION MACOSX_BUNDLE)
-endif()
-
-if(APPLE)
-    foreach(qt_target Qt${QT_VERSION_MAJOR}::Widgets Qt${QT_VERSION_MAJOR}::Gui Qt${QT_VERSION_MAJOR}::Core)
-        if(TARGET ${qt_target})
-            foreach(qt_prop INTERFACE_LINK_LIBRARIES INTERFACE_LINK_OPTIONS)
-                get_target_property(qt_values ${qt_target} ${qt_prop})
-                if(qt_values)
-                    list(FILTER qt_values EXCLUDE REGEX "AGL")
-                    set_property(TARGET ${qt_target} PROPERTY ${qt_prop} "${qt_values}")
-                endif()
-            endforeach()
-        endif()
-    endforeach()
-
-    foreach(gl_target OpenGL::OpenGL OpenGL::GL OpenGL::GLU)
-        if(TARGET ${gl_target})
-            foreach(gl_prop INTERFACE_LINK_LIBRARIES INTERFACE_LINK_OPTIONS)
-                get_target_property(gl_values ${gl_target} ${gl_prop})
-                if(gl_values)
-                    list(FILTER gl_values EXCLUDE REGEX "AGL")
-                    set_property(TARGET ${gl_target} PROPERTY ${gl_prop} "${gl_values}")
-                endif()
-            endforeach()
-        endif()
-    endforeach()
-
-    if(TARGET WrapOpenGL::WrapOpenGL)
-        foreach(wrap_prop INTERFACE_LINK_LIBRARIES INTERFACE_LINK_OPTIONS)
-            get_target_property(wrap_values WrapOpenGL::WrapOpenGL ${wrap_prop})
-            if(wrap_values)
-                list(FILTER wrap_values EXCLUDE REGEX "AGL")
-                set_property(TARGET WrapOpenGL::WrapOpenGL PROPERTY ${wrap_prop} "${wrap_values}")
-            endif()
-        endforeach()
-    endif()
-endif()
-
-set(PROJECT_SOURCES
-        main.cpp
-        windows/mainwindow.cpp
-        windows/mainwindow.h
-        windows/mainwindow.ui
-)
-
-if(APPLE)
-    set(APP_ICON_MACOSX "${CMAKE_CURRENT_SOURCE_DIR}/res/img/ZcVersionBox.icns")
-    set(APP_INFO_PLIST_TEMPLATE_MACOSX "${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist.in")
-    set(APP_INFO_PLIST_MACOSX "${CMAKE_CURRENT_BINARY_DIR}/ZcVersionBoxInfo.plist")
-    configure_file("${APP_INFO_PLIST_TEMPLATE_MACOSX}" "${APP_INFO_PLIST_MACOSX}" @ONLY)
-    set_source_files_properties("${APP_ICON_MACOSX}" PROPERTIES
-        MACOSX_PACKAGE_LOCATION "Resources"
-    )
-    list(APPEND PROJECT_SOURCES
-        macos/macos_services.h
-        macos/macos_services.mm
-        "${APP_ICON_MACOSX}"
-    )
-endif()
-
-if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
-    qt_add_executable(ZcVersionBox
-        ${ZCVERSIONBOX_BUNDLE_OPTION}
-        MANUAL_FINALIZATION
-        ${PROJECT_SOURCES}
-        windows/mainwindow_child/homepage/homepage.h windows/mainwindow_child/homepage/homepage.cpp windows/mainwindow_child/homepage/homepage.ui
-        windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.cpp
-        windows/mainwindow_child/homepage/pages/homepage_page_dashboard.cpp windows/mainwindow_child/homepage/pages/homepage_page_dashboard.ui
-        windows/mainwindow_child/homepage/pages/homepage_page_backup.cpp
-        windows/mainwindow_child/homepage/pages/homepage_page_diff.cpp
-        windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.h windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.cpp windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.ui
-        windows/mainwindow_child/aboutpage/aboutpage.h windows/mainwindow_child/aboutpage/aboutpage.cpp windows/mainwindow_child/aboutpage/aboutpage.ui
-        windows/mainwindow_child/settingpage/settingpage.h windows/mainwindow_child/settingpage/settingpage.cpp windows/mainwindow_child/settingpage/settingpage.ui
-        GlobalConstants.h
-        res.qrc
-
-        utils/fileutils.h utils/fileutils.cpp
-        utils/backuprestorehelper.h utils/backuprestorehelper.cpp
-        utils/aiconfighelper.h utils/aiconfighelper.cpp
-        utils/aicommitmessagehelper.h utils/aicommitmessagehelper.cpp
-    )
-    set_source_files_properties(
-        windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.cpp
-        windows/mainwindow_child/homepage/pages/homepage_page_backup.cpp
-        windows/mainwindow_child/homepage/pages/homepage_page_diff.cpp
-        PROPERTIES SKIP_AUTOUIC ON
-    )
-# Define target properties for Android with Qt 6 as:
-#    set_property(TARGET ZcVersionBox APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
-#                 ${CMAKE_CURRENT_SOURCE_DIR}/android)
-# For more information, see https://doc.qt.io/qt-6/qt-add-executable.html#target-creation
-else()
-    if(ANDROID)
-        add_library(ZcVersionBox SHARED
-            ${PROJECT_SOURCES}
-        )
-# Define properties for Android with Qt 5 after find_package() calls as:
-#    set(ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
-    else()
-        add_executable(ZcVersionBox
-            ${ZCVERSIONBOX_BUNDLE_OPTION}
-            ${PROJECT_SOURCES}
-        )
-    endif()
-endif()
-
-include_directories(
-    include
-)
-
-set(LOCAL_THIRDPARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty")
-set(PARENT_THIRDPARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/..")
-
-target_include_directories(ZcVersionBox PRIVATE
-    ${LOCAL_THIRDPARTY_DIR}/ElaWidgetTools/include
-    ${LOCAL_THIRDPARTY_DIR}/ZcWidgetTools/include
-    ${LOCAL_THIRDPARTY_DIR}/ZcAILib/include
-    ${PARENT_THIRDPARTY_DIR}/ElaWidgetTools/ElaWidgetTools
-    ${PARENT_THIRDPARTY_DIR}/ZcWidgetTools/src
-    ${PARENT_THIRDPARTY_DIR}/ZcAILib/src
-)
-
-if(APPLE)
-    set(ELA_WIDGETTOOLS_LIB_DIRS
-        "${LOCAL_THIRDPARTY_DIR}/ElaWidgetTools/lib"
-        "${PARENT_THIRDPARTY_DIR}/ElaWidgetTools/build-mac-universal/ElaWidgetTools"
-    )
-    set(ZC_WIDGETTOOLS_LIB_DIRS
-        "${LOCAL_THIRDPARTY_DIR}/ZcWidgetTools/lib"
-        "${PARENT_THIRDPARTY_DIR}/ZcWidgetTools/build-mac-universal"
-    )
-    set(ZCAI_LIB_DIRS
-        "${LOCAL_THIRDPARTY_DIR}/ZcAILib/lib"
-        "${PARENT_THIRDPARTY_DIR}/ZcAILib/build-mac-universal"
-        "${PARENT_THIRDPARTY_DIR}/ZcAILib/build"
-    )
-else()
-    set(ELA_WIDGETTOOLS_LIB_DIRS
-        "${LOCAL_THIRDPARTY_DIR}/ElaWidgetTools/lib"
-        "${PARENT_THIRDPARTY_DIR}/ElaWidgetTools/build-mac-universal/ElaWidgetTools"
-    )
-    set(ZC_WIDGETTOOLS_LIB_DIRS
-        "${LOCAL_THIRDPARTY_DIR}/ZcWidgetTools/lib"
-        "${PARENT_THIRDPARTY_DIR}/ZcWidgetTools/build-mac-universal"
-    )
-    set(ZCAI_LIB_DIRS
-        "${LOCAL_THIRDPARTY_DIR}/ZcAILib/lib"
-        "${PARENT_THIRDPARTY_DIR}/ZcAILib/build-mac-universal"
-    )
-endif()
-
-find_library(ELA_WIDGETTOOLS_LIB
-    NAMES ElaWidgetTools elawidgettools
-    PATHS ${ELA_WIDGETTOOLS_LIB_DIRS}
-    NO_DEFAULT_PATH
-)
-find_library(ZC_WIDGETTOOLS_LIB
-    NAMES ZcWidgetTools zcwidgettools
-    PATHS ${ZC_WIDGETTOOLS_LIB_DIRS}
-    NO_DEFAULT_PATH
-)
-find_library(ZCAI_LIB
-    NAMES ZcAiLib zcailib
-    PATHS ${ZCAI_LIB_DIRS}
-    NO_DEFAULT_PATH
-)
-
-if(NOT ELA_WIDGETTOOLS_LIB)
-    message(FATAL_ERROR "Missing ElaWidgetTools library. Put libelawidgettools.a/.dylib or elawidgettools.lib in 3rdparty/ElaWidgetTools/lib")
-endif()
-if(NOT ZC_WIDGETTOOLS_LIB)
-    message(FATAL_ERROR "Missing ZcWidgetTools library. Put libZcWidgetTools.a/.dylib or ZcWidgetTools.lib in 3rdparty/ZcWidgetTools/lib")
-endif()
-if(NOT ZCAI_LIB)
-    message(FATAL_ERROR "Missing ZcAiLib library. Put libZcAiLib.a/.dylib or ZcAiLib.lib in 3rdparty/ZcAILib/lib")
-endif()
-
-target_link_libraries(ZcVersionBox PRIVATE
-    Qt${QT_VERSION_MAJOR}::Widgets
-    Qt${QT_VERSION_MAJOR}::Network
-    ${ZCAI_LIB}
-    ${ELA_WIDGETTOOLS_LIB}
-    ${ZC_WIDGETTOOLS_LIB}
-)
-
-if(APPLE)
+    configure_file(macos/Info.plist.in "${CMAKE_CURRENT_BINARY_DIR}/ZcVersionBoxInfo.plist" @ONLY)
+    target_sources(ZcVersionBox PRIVATE res/img/ZcVersionBox.icns)
+    set_source_files_properties(res/img/ZcVersionBox.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     set_target_properties(ZcVersionBox PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/ZcVersionBoxInfo.plist"
         BUILD_RPATH "@executable_path/../Frameworks"
-        INSTALL_RPATH "@executable_path/../Frameworks"
-    )
-
-    function(copy_macos_runtime_library target library_path runtime_name)
-        if(library_path MATCHES "\\.dylib$")
-            add_custom_command(TARGET ${target} POST_BUILD
-                COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>/../Frameworks"
-                COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "${library_path}"
-                        "$<TARGET_FILE_DIR:${target}>/../Frameworks/${runtime_name}"
-                COMMENT "Copying ${runtime_name} into macOS app bundle"
-            )
-        endif()
-    endfunction()
-
-    copy_macos_runtime_library(ZcVersionBox "${ZCAI_LIB}" "libZcAiLib.1.dylib")
-    copy_macos_runtime_library(ZcVersionBox "${ELA_WIDGETTOOLS_LIB}" "libElaWidgetTools.dylib")
-    copy_macos_runtime_library(ZcVersionBox "${ZC_WIDGETTOOLS_LIB}" "libZcWidgetTools.1.dylib")
-
+        INSTALL_RPATH "@executable_path/../Frameworks")
     add_custom_command(TARGET ZcVersionBox POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ZcVersionBox>/.."
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                "${APP_INFO_PLIST_MACOSX}"
-                "$<TARGET_FILE_DIR:ZcVersionBox>/../Info.plist"
-        COMMENT "Copying macOS Info.plist into app bundle"
-    )
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ZcVersionBox>/../Frameworks"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ZCAI_RUNTIME}" "$<TARGET_FILE_DIR:ZcVersionBox>/../Frameworks/libZcAiLib.1.dylib")
 endif()
-
-if(WIN32 AND QT_VERSION_MAJOR EQUAL 6)
-    get_target_property(QT_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
-    if(QT_QMAKE_EXECUTABLE)
-        get_filename_component(QT_BIN_DIR "${QT_QMAKE_EXECUTABLE}" DIRECTORY)
-        find_program(WINDEPLOYQT_EXECUTABLE windeployqt HINTS "${QT_BIN_DIR}")
-    endif()
-
-    if(WINDEPLOYQT_EXECUTABLE)
-        add_custom_command(TARGET ZcVersionBox POST_BUILD
-            COMMAND "${WINDEPLOYQT_EXECUTABLE}" --no-compiler-runtime --no-translations "$<TARGET_FILE:ZcVersionBox>"
-            COMMENT "Deploying Qt runtime"
-        )
-    endif()
-
-    set(ELA_WIDGET_TOOLS_DLL "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ElaWidgetTools/bin/elawidgettools.dll")
-    if(EXISTS "${ELA_WIDGET_TOOLS_DLL}")
-        add_custom_command(TARGET ZcVersionBox POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${ELA_WIDGET_TOOLS_DLL}"
-                    "$<TARGET_FILE_DIR:ZcVersionBox>/elawidgettools.dll"
-            COMMENT "Copying ElaWidgetTools runtime"
-        )
-    endif()
-
-    set(ZC_WIDGET_TOOLS_DLL "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcWidgetTools/bin/ZcWidgetTools.dll")
-    if(EXISTS "${ZC_WIDGET_TOOLS_DLL}")
-        add_custom_command(TARGET ZcVersionBox POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${ZC_WIDGET_TOOLS_DLL}"
-                    "$<TARGET_FILE_DIR:ZcVersionBox>/ZcWidgetTools.dll"
-            COMMENT "Copying ZcWidgetTools runtime"
-        )
-    endif()
-
-    set(ZCAI_DLL "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/bin/ZcAiLib.dll")
-    if(EXISTS "${ZCAI_DLL}")
-        add_custom_command(TARGET ZcVersionBox POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${ZCAI_DLL}"
-                    "$<TARGET_FILE_DIR:ZcVersionBox>/ZcAiLib.dll"
-            COMMENT "Copying ZcAiLib runtime"
-        )
-    endif()
-endif()
-
-if(APPLE)
-    set_target_properties(ZcVersionBox PROPERTIES
-        MACOSX_BUNDLE_GUI_IDENTIFIER "${ZCVERSIONBOX_MACOS_BUNDLE_IDENTIFIER}"
-        MACOSX_BUNDLE_INFO_PLIST "${APP_INFO_PLIST_MACOSX}"
-        MACOSX_BUNDLE_ICON_FILE "${ZCVERSIONBOX_MACOS_ICON_FILE}"
-        MACOSX_BUNDLE_BUNDLE_NAME "${ZCVERSIONBOX_MACOS_BUNDLE_NAME}"
-        MACOSX_BUNDLE_BUNDLE_VERSION "${ZCVERSIONBOX_MACOS_BUNDLE_VERSION}"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "${ZCVERSIONBOX_MACOS_SHORT_VERSION}"
-        MACOSX_BUNDLE TRUE
-    )
-endif()
-
-if(WIN32)
-    set_target_properties(ZcVersionBox PROPERTIES
-        WIN32_EXECUTABLE TRUE
-    )
-endif()
-
 include(GNUInstallDirs)
-install(TARGETS ZcVersionBox
-    BUNDLE DESTINATION .
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
-
-if(QT_VERSION_MAJOR EQUAL 6)
-    qt_finalize_executable(ZcVersionBox)
+install(TARGETS ZcVersionBox BUNDLE DESTINATION . RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+include(CTest)
+if(BUILD_TESTING)
+    find_package(Qt6 6.8.3 REQUIRED COMPONENTS Test)
+    add_subdirectory(tests)
 endif()

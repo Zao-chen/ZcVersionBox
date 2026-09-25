@@ -1,0 +1,421 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ui version="4.0">
+ <class>DashboardPage</class>
+ <widget class="QWidget" name="DashboardPage">
+  <layout class="QVBoxLayout" name="layout">
+   <property name="spacing">
+    <number>12</number>
+   </property>
+   <item>
+    <widget class="QScrollArea" name="scroll">
+     <property name="widgetResizable">
+      <bool>true</bool>
+     </property>
+     <property name="frameShape">
+      <enum>QFrame::NoFrame</enum>
+     </property>
+     <widget class="QWidget" name="body">
+      <layout class="QVBoxLayout" name="bodyLayout">
+       <property name="spacing">
+        <number>12</number>
+       </property>
+       <item>
+        <layout class="QHBoxLayout" name="headerLayout" stretch="1,0,0">
+         <property name="spacing">
+          <number>12</number>
+         </property>
+         <item>
+          <widget class="oclero::qlementine::Label" name="titleLabel">
+           <property name="text">
+            <string>仪表盘</string>
+           </property>
+           <property name="textFormat">
+            <enum>Qt::PlainText</enum>
+           </property>
+           <property name="role">
+            <enum>oclero::qlementine::TextRole::H2</enum>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="historyButton">
+           <property name="text">
+            <string>历史版本</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="refreshButton">
+           <property name="text">
+            <string>刷新</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="pathsGroup">
+         <property name="title">
+          <string>路径</string>
+         </property>
+         <layout class="QFormLayout" name="pathsLayout">
+          <item row="0" column="0">
+           <widget class="QLabel" name="sourcePathEditCaption">
+            <property name="text">
+             <string>源文件</string>
+            </property>
+            <property name="buddy">
+             <cstring>sourcePathEdit</cstring>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLineEdit" name="sourcePathEdit">
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+            <property name="accessibleName">
+             <string>源文件路径</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="repositoryPathEditCaption">
+            <property name="text">
+             <string>备份仓库</string>
+            </property>
+            <property name="buddy">
+             <cstring>repositoryPathEdit</cstring>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLineEdit" name="repositoryPathEdit">
+            <property name="readOnly">
+             <bool>true</bool>
+            </property>
+            <property name="accessibleName">
+             <string>备份仓库路径</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="metricsLayout">
+         <property name="spacing">
+          <number>12</number>
+         </property>
+         <item>
+          <widget class="QGroupBox" name="versionGroup">
+           <property name="title">
+            <string>版本数</string>
+           </property>
+           <layout class="QVBoxLayout" name="versionLayout">
+            <property name="spacing">
+             <number>12</number>
+            </property>
+            <item>
+             <widget class="oclero::qlementine::Label" name="versionValue">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="textFormat">
+               <enum>Qt::PlainText</enum>
+              </property>
+              <property name="role">
+               <enum>oclero::qlementine::TextRole::H4</enum>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QGroupBox" name="fileGroup">
+           <property name="title">
+            <string>文件数</string>
+           </property>
+           <layout class="QVBoxLayout" name="fileLayout">
+            <property name="spacing">
+             <number>12</number>
+            </property>
+            <item>
+             <widget class="oclero::qlementine::Label" name="fileValue">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="textFormat">
+               <enum>Qt::PlainText</enum>
+              </property>
+              <property name="role">
+               <enum>oclero::qlementine::TextRole::H4</enum>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QGroupBox" name="sizeGroup">
+           <property name="title">
+            <string>快照大小</string>
+           </property>
+           <layout class="QVBoxLayout" name="sizeLayout">
+            <property name="spacing">
+             <number>12</number>
+            </property>
+            <item>
+             <widget class="oclero::qlementine::Label" name="sizeValue">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="textFormat">
+               <enum>Qt::PlainText</enum>
+              </property>
+              <property name="role">
+               <enum>oclero::qlementine::TextRole::H4</enum>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QGroupBox" name="cacheGroup">
+           <property name="title">
+            <string>Git 缓存</string>
+           </property>
+           <layout class="QVBoxLayout" name="cacheLayout">
+            <property name="spacing">
+             <number>12</number>
+            </property>
+            <item>
+             <widget class="oclero::qlementine::Label" name="cacheValue">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="textFormat">
+               <enum>Qt::PlainText</enum>
+              </property>
+              <property name="role">
+               <enum>oclero::qlementine::TextRole::H4</enum>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QGroupBox" name="stateGroup">
+           <property name="title">
+            <string>源状态</string>
+           </property>
+           <layout class="QVBoxLayout" name="stateLayout">
+            <property name="spacing">
+             <number>12</number>
+            </property>
+            <item>
+             <widget class="oclero::qlementine::Label" name="stateValue">
+              <property name="text">
+               <string>—</string>
+              </property>
+              <property name="textFormat">
+               <enum>Qt::PlainText</enum>
+              </property>
+              <property name="role">
+               <enum>oclero::qlementine::TextRole::H4</enum>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="remoteGroup">
+         <property name="title">
+          <string>云端同步</string>
+         </property>
+         <layout class="QVBoxLayout" name="remoteLayout">
+          <property name="spacing">
+           <number>12</number>
+          </property>
+          <item>
+           <layout class="QHBoxLayout" name="remoteHeaderLayout">
+            <property name="spacing">
+             <number>12</number>
+            </property>
+            <item>
+             <widget class="QPushButton" name="expandButton">
+              <property name="text">
+               <string>展开配置</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="remoteHeaderLayoutSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QWidget" name="remoteContent">
+            <layout class="QVBoxLayout" name="remoteContentLayout">
+             <property name="spacing">
+              <number>12</number>
+             </property>
+             <item>
+              <widget class="QLabel" name="remoteHint">
+               <property name="textFormat">
+                <enum>Qt::PlainText</enum>
+               </property>
+               <property name="wordWrap">
+                <bool>true</bool>
+               </property>
+               <property name="text">
+                <string>编辑完成后自动保存地址。关闭云端同步会移除已保存的地址。</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QLineEdit" name="remoteUrl">
+               <property name="accessibleName">
+                <string>云端仓库地址</string>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <layout class="QHBoxLayout" name="remoteActions">
+               <property name="spacing">
+                <number>12</number>
+               </property>
+               <item>
+                <widget class="QPushButton" name="openRemoteButton">
+                 <property name="text">
+                  <string>打开地址</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="pullButton">
+                 <property name="text">
+                  <string>拉取</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="pushButton">
+                 <property name="text">
+                  <string>推送</string>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <spacer name="remoteActionsSpacer">
+                 <property name="orientation">
+                  <enum>Qt::Horizontal</enum>
+                 </property>
+                </spacer>
+               </item>
+              </layout>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QGroupBox" name="maintenanceGroup">
+         <property name="title">
+          <string>维护</string>
+         </property>
+         <layout class="QVBoxLayout" name="maintenanceLayout">
+          <property name="spacing">
+           <number>12</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="maintenanceHint">
+            <property name="text">
+             <string>删除备份保留源文件；重建会清除历史，并可能覆盖云端。</string>
+            </property>
+            <property name="textFormat">
+             <enum>Qt::PlainText</enum>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="maintenanceActions">
+            <property name="spacing">
+             <number>12</number>
+            </property>
+            <item>
+             <widget class="QPushButton" name="removeButton">
+              <property name="text">
+               <string>删除备份</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="rebuildButton">
+              <property name="text">
+               <string>重建仓库</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="maintenanceActionsSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="spacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources />
+ <connections />
+ <customwidgets>
+  <customwidget>
+   <class>oclero::qlementine::Label</class>
+   <extends>QLabel</extends>
+   <header>oclero/qlementine/widgets/Label.hpp</header>
+  </customwidget>
+ </customwidgets>
+</ui>
