@@ -1,6 +1,6 @@
 #include "aiconfighelper.h"
 
-#include "services/apppaths.h"
+#include "utils/apppaths.h"
 
 namespace
 {

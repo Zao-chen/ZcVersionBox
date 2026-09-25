@@ -1,5 +1,5 @@
-#include "services/backupmonitor.h"
-#include "ui/mainwindow.h"
+#include "utils/backupmonitor.h"
+#include "windows/mainwindow.h"
 #include <QApplication>
 #include <QSystemTrayIcon>
 #ifdef Q_OS_MACOS

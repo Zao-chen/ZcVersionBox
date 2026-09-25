@@ -67,17 +67,28 @@ Windows 显式复制 `ZcAiLib.dll`，并要求部署 `vc_redist.x64.exe`；安�
 ## 修改 UI
 
 ```text
-ui/                   窗口、路由、独立页面与 Designer 表单
-ui/components/        主题、导航展示、通知与确认对话框
-services/             备份、应用级监控、设置、AI 传输
-utils/                现有文件、恢复与 AI 辅助函数
-3rdparty/qlementine/   固定版本的 Qlementine 源码
-3rdparty/ZcAILib/      保留的 AI SDK
-tests/                临时仓库与模拟 AI 的 Qt Test
-scripts/              共用打包脚本
+windows/mainwindow.*                         主窗口与 Designer 表单
+windows/mainwindow_*.cpp/.h                   主窗口的导航、主题与通知辅助
+windows/mainwindow_child/homepage/           首页
+  pages/homepage_page_*                      概览、历史、Diff 与备份操作
+  trackfiles/homepagechild_trackfile.*       备份展示模型与 delegate
+windows/mainwindow_child/settingpage/        常规与 AI 设置
+windows/mainwindow_child/aboutpage/          关于页面
+GlobalConstants.h                           原有默认路径常量
+utils/                                      备份、监控、设置、AI 与文件辅助
+3rdparty/qlementine/                         固定版本的 Qlementine 源码
+3rdparty/ZcAILib/                            保留的 AI SDK
+tests/                                      临时仓库与模拟 AI 的 Qt Test
+scripts/                                    共用打包脚本
 ```
 
+沿用项目已有命名和目录：C++ / Designer 文件使用小写名称；同一模块拆分时使用既有的下划线前缀，例如 `homepage_page_backup.cpp`。已有的 `mainwindow`、`homepage`、`settingpage`、`aboutpage` 保持原名，`GlobalConstants.h`、`CMakeLists.txt` 等既有名称保持大小写。类名继续使用 Qt 风格的 PascalCase，文件名不跟随类名改成驼峰。新文件就近放入原模块目录。
+
+备份、监控、设置和 AI 服务类位于 `utils/`，保持独立于窗口的职责和生命周期。窗口导航与展示辅助放在 `windows/`；功能和视觉重构同时遵循这些工程约定。分支名不使用 `codex` 前缀。
+
 表单中的 Qlementine `Label` 使用 Designer 的提升控件机制，头文件为 `oclero/qlementine/widgets/Label.hpp`。不需要额外 Designer 插件即可编辑布局；实际样式由运行时统一应用。
+
+布局与数据视图优先使用标准 Qt Widgets，Switch、Expander、LoadingSpinner、Popover 等 Qlementine 增强控件可按交互用途直接用于页面。主题位于 `res/themes`，字体和颜色角色集中在 `windows/mainwindow_presentation.*`；不要修改上游源码、增加装饰性 Card 包装或用大量 QSS 重写控件。
 
 Git、文件和配置操作应放进服务，通过结果/信号反馈给页面。新增页面不得拥有备份扫描定时器，不通过父对象层级或显示文案寻找其他页面。
 

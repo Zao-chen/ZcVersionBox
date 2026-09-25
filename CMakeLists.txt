@@ -55,12 +55,13 @@ else()
 endif()
 
 add_library(zc_services STATIC
-    services/apppaths.h services/operationresult.h
-    services/gitcommand.h services/gitcommand.cpp
-    services/backupservice.h services/backupservice.cpp
-    services/backupmonitor.h services/backupmonitor.cpp
-    services/aigateway.h services/aigateway.cpp
-    services/settingsservice.h services/settingsservice.cpp
+    GlobalConstants.h
+    utils/apppaths.h utils/operationresult.h
+    utils/gitcommand.h utils/gitcommand.cpp
+    utils/backupservice.h utils/backupservice.cpp
+    utils/backupmonitor.h utils/backupmonitor.cpp
+    utils/aigateway.h utils/aigateway.cpp
+    utils/settingsservice.h utils/settingsservice.cpp
     utils/fileutils.h utils/fileutils.cpp
     utils/backuprestorehelper.h utils/backuprestorehelper.cpp
     utils/aiconfighelper.h utils/aiconfighelper.cpp
@@ -72,15 +73,17 @@ if(APPLE)
     target_link_libraries(zc_services PUBLIC "-framework AppKit")
 endif()
 add_library(zc_ui STATIC
-    ui/mainwindow.h ui/mainwindow.cpp ui/mainwindow.ui
-    ui/navigation.h ui/navigation.cpp
-    ui/components/presentation.h ui/components/presentation.cpp
-    ui/pages/backupsPage.h ui/pages/backupsPage.cpp ui/pages/backupsPage.ui
-    ui/pages/dashboardPage.h ui/pages/dashboardPage.cpp ui/pages/dashboardPage.ui
-    ui/pages/historyPage.h ui/pages/historyPage.cpp ui/pages/historyPage.ui
-    ui/pages/diffPage.h ui/pages/diffPage.cpp ui/pages/diffPage.ui
-    ui/pages/settingsPage.h ui/pages/settingsPage.cpp ui/pages/generalSettingsPage.ui ui/pages/aiSettingsPage.ui
-    ui/pages/aboutPage.h ui/pages/aboutPage.cpp ui/pages/aboutPage.ui)
+    windows/mainwindow.h windows/mainwindow.cpp windows/mainwindow.ui
+    windows/mainwindow_navigation.h windows/mainwindow_navigation.cpp
+    windows/mainwindow_presentation.h windows/mainwindow_presentation.cpp
+    windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.h windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.cpp
+    windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.h windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.cpp
+    windows/mainwindow_child/homepage/homepage.h windows/mainwindow_child/homepage/homepage.cpp windows/mainwindow_child/homepage/homepage.ui
+    windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h windows/mainwindow_child/homepage/pages/homepage_page_dashboard.cpp windows/mainwindow_child/homepage/pages/homepage_page_dashboard.ui
+    windows/mainwindow_child/homepage/pages/homepage_page_backup.h windows/mainwindow_child/homepage/pages/homepage_page_backup.cpp windows/mainwindow_child/homepage/pages/homepage_page_backup.ui
+    windows/mainwindow_child/homepage/pages/homepage_page_diff.h windows/mainwindow_child/homepage/pages/homepage_page_diff.cpp windows/mainwindow_child/homepage/pages/homepage_page_diff.ui
+    windows/mainwindow_child/settingpage/settingpage.h windows/mainwindow_child/settingpage/settingpage.cpp windows/mainwindow_child/settingpage/settingpage.ui windows/mainwindow_child/settingpage/settingpage_page_ai.ui
+    windows/mainwindow_child/aboutpage/aboutpage.h windows/mainwindow_child/aboutpage/aboutpage.cpp windows/mainwindow_child/aboutpage/aboutpage.ui)
 target_link_libraries(zc_ui PUBLIC zc_services qlementine Qt6::Widgets)
 if(MSVC)
     target_compile_options(zc_services PRIVATE /utf-8)
