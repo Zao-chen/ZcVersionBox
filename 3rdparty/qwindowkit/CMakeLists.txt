@@ -1,11 +1,20 @@
 cmake_minimum_required(VERSION 3.19)
 
-project(QWindowKit
-    VERSION 1.5.0.0
-    LANGUAGES CXX
-    HOMEPAGE_URL "https://github.com/stdware/qwindowkit"
-    DESCRIPTION "Cross-platform window customization framework"
-)
+if(APPLE)
+    project(QWindowKit
+        VERSION 1.5.0.0
+        LANGUAGES CXX OBJCXX
+        HOMEPAGE_URL "https://github.com/stdware/qwindowkit"
+        DESCRIPTION "Cross-platform window customization framework"
+    )
+else()
+    project(QWindowKit
+        VERSION 1.5.0.0
+        LANGUAGES CXX
+        HOMEPAGE_URL "https://github.com/stdware/qwindowkit"
+        DESCRIPTION "Cross-platform window customization framework"
+    )
+endif()
 
 # ----------------------------------
 # Build Options

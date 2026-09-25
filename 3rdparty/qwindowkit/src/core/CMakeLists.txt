@@ -1,7 +1,14 @@
-project(QWKCore
-    VERSION ${QWINDOWKIT_VERSION}
-    LANGUAGES CXX
-)
+if(APPLE)
+    project(QWKCore
+        VERSION ${QWINDOWKIT_VERSION}
+        LANGUAGES CXX OBJCXX
+    )
+else()
+    project(QWKCore
+        VERSION ${QWINDOWKIT_VERSION}
+        LANGUAGES CXX
+    )
+endif()
 
 set(_src
     qwkglobal.h

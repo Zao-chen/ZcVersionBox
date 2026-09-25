@@ -88,6 +88,18 @@ function(qm_install_package _name)
             set(_extra_args -A "${CMAKE_GENERATOR_PLATFORM}")
         endif()
 
+        if(APPLE)
+            if(CMAKE_OSX_SYSROOT)
+                list(APPEND _extra_args "-DCMAKE_OSX_SYSROOT=${CMAKE_OSX_SYSROOT}")
+            endif()
+            if(CMAKE_OSX_DEPLOYMENT_TARGET)
+                list(APPEND _extra_args "-DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+            endif()
+            if(CMAKE_OSX_ARCHITECTURES)
+                list(APPEND _extra_args "-DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}")
+            endif()
+        endif()
+
         # Remove old build directory
         if(IS_DIRECTORY ${_build_dir})
             file(REMOVE_RECURSE ${_build_dir})
