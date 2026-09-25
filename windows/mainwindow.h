@@ -10,6 +10,10 @@ namespace Ui
 {
 class MainWindow;
 }
+namespace QWK
+{
+class WidgetWindowAgent;
+}
 class HomePage;
 class HomePageDashboardPage;
 class HomePageBackupPage;
@@ -36,12 +40,10 @@ class MainWindow : public QMainWindow
     void closeEvent(QCloseEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
     void changeEvent(QEvent *event) override;
-#if defined(Q_OS_WIN)
-    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
-#endif
 
   private:
     std::unique_ptr<Ui::MainWindow> ui;
+    QWK::WidgetWindowAgent *m_windowAgent{nullptr};
     BackupService *m_backups;
     SettingsService *m_settings;
     ThemeController *m_theme;

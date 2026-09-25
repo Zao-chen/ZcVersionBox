@@ -28,6 +28,13 @@ set(QLEMENTINE_SANDBOX OFF CACHE BOOL "" FORCE)
 set(QLEMENTINE_SHOWCASE OFF CACHE BOOL "" FORCE)
 add_subdirectory(3rdparty/qlementine EXCLUDE_FROM_ALL)
 
+set(QWINDOWKIT_BUILD_STATIC ON CACHE BOOL "" FORCE)
+set(QWINDOWKIT_BUILD_WIDGETS ON CACHE BOOL "" FORCE)
+set(QWINDOWKIT_BUILD_QUICK OFF CACHE BOOL "" FORCE)
+set(QWINDOWKIT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(QWINDOWKIT_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory(3rdparty/qwindowkit EXCLUDE_FROM_ALL)
+
 add_library(ZcAiLib SHARED IMPORTED GLOBAL)
 set_target_properties(ZcAiLib PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/include"
@@ -87,10 +94,7 @@ add_library(zc_ui STATIC
     windows/mainwindow_child/homepage/pages/homepage_page_diff.h windows/mainwindow_child/homepage/pages/homepage_page_diff.cpp windows/mainwindow_child/homepage/pages/homepage_page_diff.ui
     windows/mainwindow_child/settingpage/settingpage.h windows/mainwindow_child/settingpage/settingpage.cpp windows/mainwindow_child/settingpage/settingpage.ui windows/mainwindow_child/settingpage/settingpage_page_ai.ui
     windows/mainwindow_child/aboutpage/aboutpage.h windows/mainwindow_child/aboutpage/aboutpage.cpp windows/mainwindow_child/aboutpage/aboutpage.ui)
-target_link_libraries(zc_ui PUBLIC zc_services qlementine Qt6::Widgets)
-if(WIN32)
-    target_link_libraries(zc_ui PUBLIC dwmapi)
-endif()
+target_link_libraries(zc_ui PUBLIC zc_services qlementine Qt6::Widgets QWKWidgets)
 if(MSVC)
     target_compile_options(zc_services PRIVATE /utf-8)
     target_compile_options(zc_ui PRIVATE /utf-8)
