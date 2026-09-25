@@ -14,6 +14,7 @@
 #include <QScopedValueRollback>
 #include <QScrollBar>
 #include <QShortcut>
+#include <QShowEvent>
 #include <QStyledItemDelegate>
 #include <QTimer>
 #include <QToolTip>
@@ -374,14 +375,13 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
             return;
         const auto id = m_id;
         const auto generation = m_service->repositoryGeneration(id);
-        QScopedValueRollback<bool> loading(m_loading, true);
-        emit notification(m_service->editMessage(id, item->data(CommitRole).toString(), item->text()));
-        // The editor must finish committing before its item is replaced. The
-        // original short/full-hash amend rule and failure refill stay intact.
-        QTimer::singleShot(0, this, [this, id, generation]
+        m_service->editMessage(id, item->data(CommitRole).toString(), item->text(), this, [this, id, generation](const OperationResult &result)
         {
             if (id == m_id && generation == m_service->repositoryGeneration(id))
+            {
+                emit notification(result);
                 refresh();
+            }
         }); });
     connect(service, &BackupService::repositoryChanged, this, [this](const QString &id)
             {
@@ -418,7 +418,9 @@ void HomePageBackupPage::rememberState()
 void HomePageBackupPage::deactivate()
 {
     rememberState();
+    m_refreshNeeded = true;
     ++m_contextGeneration;
+    ++m_refreshGeneration;
     closeRevisionMenu();
 }
 void HomePageBackupPage::setBackup(const QString &id)
@@ -455,26 +457,42 @@ void HomePageBackupPage::previewRevision(const RevisionContext &context)
 {
     if (!isCurrentContext(context))
         return;
-    const auto result = m_service->preview(context.backupId, context.commit);
-    emit notification(result);
-    if (result.success && !result.path.isEmpty())
-        openLocalPath(this, result.path);
+    m_service->preview(context.backupId, context.commit, this, [this, context](const OperationResult &result)
+                       {
+        if (!isCurrentContext(context))
+            return;
+        emit notification(result);
+        if (result.success && !result.path.isEmpty())
+            openLocalPath(this, result.path); });
 }
 void HomePageBackupPage::restoreRevision(const RevisionContext &context)
 {
     if (!isCurrentContext(context))
         return;
-    const auto name = QFileInfo(m_service->sourcePath(context.backupId)).fileName();
-    const auto question = QString("将“%1”恢复到版本 %2？\n\n源文件或文件夹中的当前内容将被该版本替换。历史版本记录会保留。").arg(name, context.commit);
-    const QPointer<HomePageBackupPage> guard(this);
-    if (!confirmAction(this, question, "恢复版本") || !guard)
-        return;
-    if (!isCurrentContext(context))
-    {
-        emit notification(OperationResult::warn("操作已取消", "版本上下文已变化，请重新打开版本菜单后再试。"));
-        return;
-    }
-    emit notification(m_service->restore(context.backupId, context.commit));
+    m_service->prepareRestore(context.backupId, context.commit, this, [this, context](const BackupResult<RestoreRequest> &prepared)
+                              {
+        if (!isCurrentContext(context))
+            return;
+        if (!prepared.result.success)
+        {
+            emit notification(prepared.result);
+            return;
+        }
+        const auto name = QFileInfo(m_service->sourcePath(context.backupId)).fileName();
+        const auto question = QString("将“%1”恢复到版本 %2？\n\n源文件或文件夹中的当前内容将被该版本替换。历史版本记录会保留。").arg(name, context.commit.left(8));
+        const QPointer<HomePageBackupPage> guard(this);
+        if (!confirmAction(this, question, "恢复版本") || !guard)
+            return;
+        if (!isCurrentContext(context))
+        {
+            emit notification(OperationResult::warn("操作已取消", "版本上下文已变化，请重新打开版本菜单后再试。"));
+            return;
+        }
+        m_service->restore(prepared.value, this, [this, context](const OperationResult &result)
+        {
+            if (isCurrentContext(context))
+                emit notification(result);
+        }); });
 }
 void HomePageBackupPage::editRevision(const RevisionContext &context)
 {
@@ -501,12 +519,13 @@ void HomePageBackupPage::showRevisionMenu(const RevisionContext &context, const 
     menu->setObjectName("revisionMenu");
     m_revisionMenu = menu;
     connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
-    menu->addSection("版本 " + context.commit);
+    menu->addSection("版本 " + context.commit.left(8));
     const auto add = [this, menu, context](QAction *source, void (HomePageBackupPage::*callback)(const RevisionContext &))
     {
         auto *action = UiStyle::action(menu, source->objectName() + "Menu", source->text(), source->property("iconName").toString());
         action->setShortcuts(source->shortcuts());
         action->setShortcutContext(Qt::WidgetShortcut);
+        action->setEnabled(source->isEnabled());
         menu->addAction(action);
         // Capture the version, never the row number or a later selection.
         connect(action, &QAction::triggered, this, [this, context, callback]
@@ -536,32 +555,53 @@ void HomePageBackupPage::updateActions()
     const bool enabled = ui->table->currentIndex().isValid() && m_loadedId == m_id && m_loadedGeneration == m_service->repositoryGeneration(m_id);
     for (auto *action : {m_compare, m_preview, m_restore, m_edit, m_more})
         action->setEnabled(enabled);
+    m_restore->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
+    m_edit->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
 }
 void HomePageBackupPage::refresh()
 {
     if (m_id.isEmpty())
         return;
-    m_editing = false;
+    if (m_editing)
+    {
+        m_refreshPending = true;
+        return;
+    }
     m_refreshPending = false;
+    m_refreshNeeded = false;
     rememberState();
-    auto state = m_states.value(m_id);
-    if (state.generation != m_service->repositoryGeneration(m_id))
+    const auto id = m_id;
+    const auto generation = m_service->repositoryGeneration(id);
+    const auto request = ++m_refreshGeneration;
+    ui->countLabel->setText("正在读取历史…");
+    updateActions();
+    m_service->history(id, this, [this, id, generation, request](const BackupResult<QVector<Revision>> &reply)
+                       {
+    if (id != m_id || generation != m_service->repositoryGeneration(id) || request != m_refreshGeneration)
+        return;
+    if (m_editing)
+    {
+        m_refreshPending = true;
+        return;
+    }
+    rememberState();
+    auto state = m_states.value(id);
+    if (state.generation != generation)
         state = {};
-    QVector<Revision> revisions;
-    const auto result = m_service->history(m_id, revisions);
+    const auto &revisions = reply.value;
     QScopedValueRollback<bool> loading(m_loading, true);
     m_model.clear();
     m_model.setHorizontalHeaderLabels({"提交说明", "提交时间", "短哈希", {}});
     m_model.horizontalHeaderItem(ActionsColumn)->setData("版本操作", Qt::AccessibleTextRole);
-    if (!result.success)
-        emit notification(result);
+    if (!reply.result.success)
+        emit notification(reply.result);
     int selectedRow = 0;
     for (const auto &revision : revisions)
     {
         const auto time = revision.committedAt.toLocalTime().toString("yyyy-MM-dd HH:mm");
         auto *message = new QStandardItem(revision.message);
         auto *date = new QStandardItem(time);
-        auto *hash = new QStandardItem(revision.hash);
+        auto *hash = new QStandardItem(revision.shortHash);
         auto *actions = new QStandardItem;
         date->setEditable(false);
         hash->setEditable(false);
@@ -594,12 +634,11 @@ void HomePageBackupPage::refresh()
     if (!revisions.isEmpty())
         ui->table->selectRow(selectedRow);
     ui->table->verticalScrollBar()->setValue(state.scroll);
-    const auto refreshGeneration = ++m_refreshGeneration;
-    QTimer::singleShot(0, this, [this, state, refreshGeneration]
+    QTimer::singleShot(0, this, [this, state, request]
                        {
-        if (refreshGeneration == m_refreshGeneration)
+        if (request == m_refreshGeneration)
             ui->table->verticalScrollBar()->setValue(state.scroll); });
-    updateActions();
+    updateActions(); });
 }
 void HomePageBackupPage::resizeEvent(QResizeEvent *event)
 {
@@ -613,4 +652,10 @@ void HomePageBackupPage::hideEvent(QHideEvent *event)
 {
     deactivate();
     QWidget::hideEvent(event);
+}
+void HomePageBackupPage::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    if (m_refreshNeeded)
+        refresh();
 }

@@ -52,3 +52,4 @@ runs:
         path: |
           build/release/Testing/Temporary/LastTest.log
           build/release/tests/regression.txt
+          build/release/tests/backup_core.txt

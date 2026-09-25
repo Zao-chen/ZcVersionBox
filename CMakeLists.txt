@@ -60,10 +60,13 @@ add_library(zc_services STATIC
     utils/gitcommand.h utils/gitcommand.cpp
     utils/backupservice.h utils/backupservice.cpp
     utils/backupmonitor.h utils/backupmonitor.cpp
+    utils/backup_types.h utils/backup_dependencies.h
+    utils/backup_catalog.h utils/backup_catalog.cpp
+    utils/backup_files.h utils/backup_files.cpp
+    utils/backup_git.h utils/backup_git.cpp
+    utils/backup_engine.h utils/backup_engine.cpp
     utils/aigateway.h utils/aigateway.cpp
     utils/settingsservice.h utils/settingsservice.cpp
-    utils/fileutils.h utils/fileutils.cpp
-    utils/backuprestorehelper.h utils/backuprestorehelper.cpp
     utils/aiconfighelper.h utils/aiconfighelper.cpp
     utils/aicommitmessagehelper.h utils/aicommitmessagehelper.cpp)
 target_include_directories(zc_services PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")

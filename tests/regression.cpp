@@ -1,3 +1,4 @@
+#include "backup_test_support.h"
 #include "utils/backupmonitor.h"
 #include "utils/gitcommand.h"
 #include "windows/mainwindow.h"
@@ -71,7 +72,7 @@ QByteArray readFile(const QString &path)
     return file.readAll();
 }
 AppPaths pathsIn(const QTemporaryDir &dir) { return {dir.path() + "/Backup", dir.path() + "/config.ini"}; }
-QString encoded(const QString &path) { return QString::fromUtf8(QUrl::toPercentEncoding(path)); }
+QString encoded(const QString &path) { return testBackupId(path); }
 QString head(const BackupService &service, const QString &id) { return runGit(service.repoPath(id), {"rev-parse", "HEAD"}).output.trimmed(); }
 QPoint historyActionPoint(QTableView *table, int row, int action)
 {
@@ -102,19 +103,10 @@ class FakeAi : public AiGateway
   public:
     QVector<ModelsCallback> models;
     QVector<SummaryCallback> summaries;
+    QVector<SummaryCallback> messages;
     void fetchModels(const AiConfigHelper::RuntimeConfig &, QObject *, ModelsCallback callback) override { models.append(std::move(callback)); }
     void summarize(const AiConfigHelper::RuntimeConfig &, const QString &, QObject *, SummaryCallback callback) override { summaries.append(std::move(callback)); }
-};
-class CountingBackup : public BackupService
-{
-  public:
-    using BackupService::BackupService;
-    int calls{0};
-    OperationResult backup(const QString &) override
-    {
-        ++calls;
-        return OperationResult::ok({});
-    }
+    void generateCommitMessage(const AiConfigHelper::RuntimeConfig &, const QString &, QObject *, SummaryCallback callback) override { messages.append(std::move(callback)); }
 };
 } // namespace
 class Regression : public QObject
@@ -158,8 +150,8 @@ class Regression : public QObject
     }
     void localBackupRestoreAndDiff()
     {
-        QTemporaryDir dir;
-        BackupService service(pathsIn(dir));
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/源 file.txt";
         const auto id = encoded(source);
         writeFile(source, "first\n");
@@ -167,6 +159,7 @@ class Regression : public QObject
         const auto first = head(service, id);
         writeFile(source, "second\nextra\n");
         QVERIFY(service.backup(id).success);
+        settle(service);
         QVector<Revision> revisions;
         QVERIFY(service.history(id, revisions).success);
         QCOMPARE(revisions.size(), 2);
@@ -176,7 +169,7 @@ class Regression : public QObject
         QCOMPARE(stats.versionCount, 2);
         DiffData data;
         QVERIFY(service.diff(id, first, data).success);
-        QCOMPARE(data.oldCommit, QString("4b825dc642cb6eb9a060e54bf8d69288fbee4904"));
+        QVERIFY(data.oldCommit.isEmpty());
         QVERIFY(!data.files.isEmpty());
         QCOMPARE(data.files.first().path, QString("源 file.txt"));
         QString firstText;
@@ -196,8 +189,8 @@ class Regression : public QObject
         QCOMPARE(head(service, id), before);
         QFile::setPermissions(preview.path + "/源 file.txt", QFileDevice::ReadOwner | QFileDevice::WriteOwner);
         QVERIFY(QDir(preview.path).removeRecursively());
-        // Baseline keeps the existing short/full-hash edit restriction.
-        QVERIFY(!service.editMessage(id, revisions.first().hash, "edited").success);
+        // Complete commit IDs are used for editing; older revisions remain immutable.
+        QVERIFY(service.editMessage(id, revisions.first().hash, "edited").success);
         QVERIFY(!service.editMessage(id, first, "").success);
         QVERIFY(service.removeBackup(id).success);
         QVERIFY(QFileInfo::exists(source));
@@ -206,8 +199,8 @@ class Regression : public QObject
     }
     void directoryBinaryAndRemoteImport()
     {
-        QTemporaryDir dir;
-        BackupService service(pathsIn(dir));
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/source";
         const auto id = encoded(source);
         writeFile(source + "/.hidden", "hidden");
@@ -217,6 +210,7 @@ class Regression : public QObject
         const auto first = head(service, id);
         writeFile(source + "/image.bin", QByteArray("\0second", 7));
         QVERIFY(service.backup(id).success);
+        settle(service);
         DiffData data;
         QVERIFY(service.diff(id, head(service, id), data).success);
         bool binary = false;
@@ -239,24 +233,24 @@ class Regression : public QObject
         QCOMPARE(stats.remoteUrl, remote);
         const auto prepared = service.prepareImport(remote);
         QVERIFY(prepared.result.success);
-        QVERIFY(prepared.directory);
+        QCOMPARE(prepared.value.suggestedPath, QString("source"));
         QCOMPARE(service.trackedItems().size(), 1);
         const auto imported = dir.path() + "/imported";
-        QVERIFY(service.finishImport(prepared.temporaryRepo, imported).success);
+        QVERIFY(service.finishImport(prepared.value.sessionId, prepared.value.suggestedPath, imported).success);
         QCOMPARE(readFile(imported + "/nested/item.txt"), QByteArray("old"));
         QCOMPARE(service.trackedItems().size(), 2);
         const auto cancelled = service.prepareImport(remote);
         QVERIFY(cancelled.result.success);
-        service.cancelImport(cancelled.temporaryRepo);
-        QVERIFY(!QFileInfo::exists(cancelled.temporaryRepo));
+        QVERIFY(service.cancelImport(cancelled.value.sessionId).success);
+        QVERIFY(!service.finishImport(cancelled.value.sessionId, ".", dir.path() + "/cancelled").success);
         QVERIFY(service.removeRemote(id).success);
         QVERIFY(service.statistics(id, stats).success);
         QVERIFY(stats.remoteUrl.isEmpty());
     }
     void monitorSurvivesPageRefresh()
     {
-        QTemporaryDir dir;
-        CountingBackup service(pathsIn(dir));
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/file.txt";
         writeFile(source, "initial");
         QVERIFY(service.addLocal(source).success);
@@ -267,61 +261,115 @@ class Regression : public QObject
             HomePage page(&service);
             for (int i = 0; i < 10; ++i)
                 page.refresh();
+            settle(service);
         }
         writeFile(source, "modified and larger");
         monitor.reconcile();
         monitor.scanNow();
-        QCOMPARE(service.calls, 1);
+        settle(service);
+        settle(service);
+        QCOMPARE(runGit(service.repoPath(encoded(source)), {"rev-list", "--count", "HEAD"}).output.trimmed(), QString("2"));
         monitor.scanNow();
-        QCOMPARE(service.calls, 1);
+        settle(service);
+        settle(service);
+        QCOMPARE(runGit(service.repoPath(encoded(source)), {"rev-list", "--count", "HEAD"}).output.trimmed(), QString("2"));
         QVERIFY(service.removeBackup(encoded(source)).success);
         QCOMPARE(monitor.trackedCount(), 0);
     }
+    void defaultFileSelectionKeepsBuildAndGitIgnoreSemantics()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/project";
+        const auto id = encoded(source);
+        writeFile(source + "/visible.txt", "one");
+        writeFile(source + "/.hidden", "hidden");
+        writeFile(source + "/build/output.bin", "initial build");
+        writeFile(source + "/ignored.log", "ignored");
+        writeFile(source + "/.gitignore", "*.log\n");
+        QVERIFY(service.addLocal(source).success);
+        const auto initial = head(service, id);
+        const auto repo = service.repoPath(id);
+        QVERIFY(runGit(repo, {"cat-file", "-e", "HEAD:project/build/output.bin"}).success());
+        QVERIFY(runGit(repo, {"cat-file", "-e", "HEAD:project/.hidden"}).success());
+        QVERIFY(!runGit(repo, {"cat-file", "-e", "HEAD:project/ignored.log"}).success());
+        QCOMPARE(readFile(repo + "/project/ignored.log"), QByteArray("ignored"));
+        BackupMonitor monitor(&service);
+        monitor.reconcile();
+        writeFile(source + "/build/output.bin", "changed build only");
+        monitor.scanNow();
+        settle(service);
+        QCOMPARE(head(service, id), initial);
+        QCOMPARE(readFile(repo + "/project/build/output.bin"), QByteArray("initial build"));
+        writeFile(source + "/visible.txt", "two, normal change");
+        monitor.scanNow();
+        settle(service);
+        QVERIFY(head(service, id) != initial);
+        QCOMPARE(readFile(repo + "/project/build/output.bin"), QByteArray("changed build only"));
+        QCOMPARE(runGit(repo, {"show", "HEAD:project/build/output.bin"}).output, QString("changed build only"));
+        QVERIFY(!runGit(repo, {"cat-file", "-e", "HEAD:project/ignored.log"}).success());
+    }
     void automaticAiMessagesAndDeletedContext()
     {
-        QTemporaryDir dir;
+        TestDirectory dir;
         const auto paths = pathsIn(dir);
         const auto source = dir.path() + "/file.txt";
         const auto id = encoded(source);
+        FakeAi gateway;
+        SettingsService settings(paths, &gateway);
+        settings.saveField("ApiKey", "fixture-only");
+        settings.saveField("Model", "test-model");
         {
             QSettings ini(paths.settingsFile, QSettings::IniFormat);
             ini.setValue("AI/Enabled", true);
         }
-        QString reply = "AI fixture message";
-        bool replaceDuringRequest = false;
-        int requests = 0;
-        BackupService *active = nullptr;
-        BackupService service(paths, nullptr, [&](const QString &diff, const QString &settingsFile)
-                              {
-                                  ++requests;
-                                  if (diff.isEmpty() || settingsFile != paths.settingsFile)
-                                      qFatal("Wrong AI request context");
-                                  if (replaceDuringRequest)
-                                  {
-                                      if (!active->removeBackup(id).success || !active->addLocal(source).success)
-                                          qFatal("Cannot replace test repository");
-                                  }
-                                  return reply; });
-        active = &service;
+        BackupDependencies dependencies;
+        dependencies.aiTimeoutMs = 150;
+        auto service = std::make_unique<TestBackupService>(paths, nullptr, &gateway, dependencies);
         writeFile(source, "one");
-        QVERIFY(service.addLocal(source).success);
+        QVERIFY(service->addLocal(source).success);
         writeFile(source, "two");
-        QVERIFY(service.backup(id).success);
-        QCOMPARE(requests, 1);
+        bool finished = false;
+        OperationResult result;
+        service->backup(id, this, [&](const OperationResult &r)
+                        { result = r; finished = true; });
+        QTRY_COMPARE(gateway.messages.size(), 1);
+        QVERIFY(!finished);
+        gateway.messages[0]("AI fixture message", {});
+        QTRY_VERIFY(finished);
+        QVERIFY2(result.success, qPrintable(result.message));
         QVector<Revision> revisions;
-        QVERIFY(service.history(id, revisions).success);
-        QCOMPARE(revisions.first().message, reply);
-        reply.clear();
+        QVERIFY(service->history(id, revisions).success);
+        QCOMPARE(revisions.first().message, QString("AI fixture message"));
+
         writeFile(source, "three");
-        QVERIFY(service.backup(id).success);
-        QVERIFY(service.history(id, revisions).success);
+        QVERIFY(service->backup(id).success); // No reply: use the timeout fallback.
+        QVERIFY(service->history(id, revisions).success);
         QVERIFY(revisions.first().message.startsWith("Auto backup - "));
-        replaceDuringRequest = true;
+        const auto fallbackHead = head(*service, id);
+        gateway.messages[1]("late message", {});
+        settle(*service);
+        QCOMPARE(head(*service, id), fallbackHead);
+
         writeFile(source, "four");
-        QVERIFY(!service.backup(id).success);
-        QVERIFY(service.history(id, revisions).success);
-        QCOMPARE(revisions.size(), 1);
-        QCOMPARE(revisions.first().message, QString("Initial backup"));
+        finished = false;
+        const auto task = service->backup(id, this, [&](const OperationResult &r)
+                                          { result = r; finished = true; });
+        QTRY_COMPARE(gateway.messages.size(), 3);
+        service->cancel(task);
+        QTRY_VERIFY(finished);
+        QVERIFY(!result.success);
+        QCOMPARE(head(*service, id), fallbackHead);
+        QCOMPARE(readFile(service->repoPath(id) + "/file.txt"), QByteArray("three"));
+        gateway.messages[2]("cancelled request", {});
+
+        service->backup(id, this);
+        QTRY_COMPARE(gateway.messages.size(), 4);
+        service.reset(); // The worker rolls back while the asynchronous AI request is outstanding.
+        gateway.messages[3]("reply after service destruction", {});
+        TestBackupService reopened(paths);
+        QCOMPARE(head(reopened, id), fallbackHead);
+        QCOMPARE(reopened.syncState(id), BackupSyncState::Tracking);
     }
     void navigationUsesIdentifiers()
     {
@@ -347,8 +395,8 @@ class Regression : public QObject
     }
     void duplicateNamesHaveIndependentRoutes()
     {
-        QTemporaryDir dir;
-        BackupService service(pathsIn(dir));
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
         const auto first = dir.path() + "/a/same.txt";
         const auto second = dir.path() + "/b/same.txt";
         writeFile(first, "first");
@@ -388,6 +436,7 @@ class Regression : public QObject
         const auto index = sidebar->model()->index(1, 0);
         const auto id = index.data(BackupListModel::IdRole).toString();
         window.navigate({PageId::History, id});
+        settle(service);
         QCOMPARE(sidebar->currentIndex().data(BackupListModel::IdRole).toString(), id);
         auto *pages = window.findChild<QStackedWidget *>("pages");
         QCOMPARE(pages->currentWidget(), window.findChild<HomePageBackupPage *>());
@@ -402,7 +451,7 @@ class Regression : public QObject
     }
     void settingsRejectStaleResponses()
     {
-        QTemporaryDir dir;
+        TestDirectory dir;
         const auto paths = pathsIn(dir);
         {
             QSettings ini(paths.settingsFile, QSettings::IniFormat);
@@ -449,15 +498,16 @@ class Regression : public QObject
     }
     void settingsNavigationPreservesApplication()
     {
-        QTemporaryDir dir;
+        TestDirectory dir;
         const auto paths = pathsIn(dir);
-        BackupService service(paths);
+        TestBackupService service(paths);
         const auto source = dir.path() + "/设置导航.txt";
         const auto id = encoded(source);
         writeFile(source, "first\n");
         QVERIFY(service.addLocal(source).success);
         writeFile(source, "second\n");
         QVERIFY(service.backup(id).success);
+        settle(service);
         FakeAi gateway;
         SettingsService settings(paths, &gateway);
         settings.saveField("ApiKey", "fixture-only");
@@ -485,6 +535,7 @@ class Regression : public QObject
         QSignalSpy changes(&settings, &SettingsService::changed);
 
         window.navigate({PageId::History, id});
+        settle(service);
         table->setCurrentIndex(table->model()->index(1, 0));
         const auto selected = table->currentIndex().data(Qt::UserRole + 1).toString();
         QVERIFY(!selected.isEmpty());
@@ -559,6 +610,7 @@ class Regression : public QObject
         QCOMPARE(pages->currentWidget(), ai);
         search->setText("没有匹配项");
         window.navigate({PageId::About});
+        settle(service);
         QVERIFY(search->text().isEmpty());
         QVERIFY(pages->isVisible());
         returnButton->click();
@@ -569,12 +621,14 @@ class Regression : public QObject
         // Returning to the application must respect repository and object invalidation.
         window.findChild<QToolButton *>("collapseButton")->click();
         window.navigate({PageId::Diff, id, head(service, id)});
+        settle(service);
         window.findChild<QToolButton *>("settingsButton")->click();
         QVERIFY(service.rebuild(id).success);
         returnButton->click();
         QCOMPARE(pages->currentWidget(), history);
         QVERIFY(sidebar->isVisible());
         window.navigate({PageId::Dashboard, id});
+        settle(service);
         window.findChild<QToolButton *>("settingsButton")->click();
         QVERIFY(service.removeBackup(id).success);
         returnButton->click();
@@ -583,8 +637,8 @@ class Regression : public QObject
     }
     void stableModelsAndStaleDiff()
     {
-        QTemporaryDir dir;
-        BackupService service(pathsIn(dir));
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/file.txt";
         writeFile(source, "one");
         QVERIFY(service.addLocal(source).success);
@@ -596,26 +650,33 @@ class Regression : public QObject
         settings.saveField("Model", "fixture-model");
         HomePageBackupPage history(&service);
         history.setBackup(id);
+        settle(service);
         auto *table = history.findChild<QTableView *>("table");
         auto *model = table->model();
         for (int i = 0; i < 20; ++i)
             history.setBackup(id);
+        settle(service);
         QCOMPARE(table->model(), model);
         HomePageDiffPage diff(&service, &settings, &gateway);
         diff.setRevision(id, commit);
+        settle(service);
         auto *analyze = diff.findChild<QAction *>("analyzeAction");
         analyze->trigger();
+        settle(service);
         QCOMPARE(gateway.summaries.size(), 1);
         diff.deactivate();
         gateway.summaries[0]("stale-result", {});
         QVERIFY(!diff.findChild<QPlainTextEdit *>("analysis")->toPlainText().contains("stale-result"));
         diff.setRevision(id, commit);
+        settle(service);
         const auto originalDiff = diff.findChild<QPlainTextEdit *>("content")->toPlainText();
         analyze->trigger();
+        settle(service);
         gateway.summaries[1]("current-result", {});
         QCOMPARE(diff.findChild<QPlainTextEdit *>("analysis")->toPlainText(), QString("current-result"));
         QCOMPARE(diff.findChild<QPlainTextEdit *>("content")->toPlainText(), originalDiff);
         analyze->trigger();
+        settle(service);
         QCOMPARE(gateway.summaries.size(), 3);
         QVERIFY(service.removeBackup(id).success);
         QVERIFY(service.addLocal(source).success);
@@ -623,6 +684,7 @@ class Regression : public QObject
         QVERIFY(!diff.findChild<QPlainTextEdit *>("analysis")->toPlainText().contains("deleted-context-result"));
         HomePageDashboardPage dashboard(&service);
         dashboard.setBackup(id);
+        settle(service);
         dashboard.findChild<QToolButton *>("expandButton")->click();
         dashboard.findChild<QToolButton *>("expandButton")->click();
         QVERIFY(!runGit(service.repoPath(id), {"remote", "get-url", "origin"}).success());
@@ -635,6 +697,7 @@ class Regression : public QObject
         auto *url = dashboard.findChild<QLineEdit *>("remoteUrl");
         url->setFocus();
         dashboard.setBackup(otherId);
+        settle(service);
         QCOMPARE(url->text(), QString("https://example.test/second.git"));
         dashboard.findChild<QToolButton *>("expandButton")->click();
         dashboard.findChild<QToolButton *>("expandButton")->click();
@@ -642,21 +705,24 @@ class Regression : public QObject
         auto *toggle = dashboard.findChild<oclero::qlementine::Switch *>("remoteSwitch");
         QTest::keyClick(toggle, Qt::Key_Space);
         QVERIFY(!toggle->isChecked());
+        settle(service);
         QVERIFY(!runGit(service.repoPath(otherId), {"remote", "get-url", "origin"}).success());
     }
     void historyRowActionsUseClickedVersion()
     {
-        QTemporaryDir dir;
-        BackupService service(pathsIn(dir));
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/行内操作.txt";
         const auto id = encoded(source);
         writeFile(source, "first\n");
         QVERIFY(service.addLocal(source).success);
         writeFile(source, "second\n");
         QVERIFY(service.backup(id).success);
+        settle(service);
         HomePageBackupPage page(&service);
         page.resize(820, 580);
         page.setBackup(id);
+        settle(service);
         page.show();
         page.activateWindow();
         QTRY_VERIFY(page.isActiveWindow());
@@ -676,11 +742,11 @@ class Regression : public QObject
         const auto previewPoint = historyActionPoint(table, 1, 0);
         QTest::mouseMove(table->viewport(), previewPoint);
         QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, previewPoint);
-        QCOMPARE(preview.urls.size(), 1);
+        QTRY_COMPARE(preview.urls.size(), 1);
         QCOMPARE(routes.count(), 0);
         const auto previewPath = preview.urls.first().toLocalFile();
-        QVERIFY(previewPath.startsWith(QDir::tempPath() + "/ZcBox_Preview_"));
-        QVERIFY(previewPath.endsWith("_" + id));
+        QVERIFY(previewPath.startsWith(QDir(QDir::tempPath()).canonicalPath() + "/ZcVersionBoxPreview-"));
+        QVERIFY(previewPath.endsWith("/contents"));
         QCOMPARE(readFile(previewPath + "/行内操作.txt"), QByteArray("first\n"));
         QCOMPARE(readFile(source), QByteArray("second\n"));
         QCOMPARE(head(service, id), originalHead);
@@ -693,9 +759,10 @@ class Regression : public QObject
         QTest::mousePress(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 1, 1));
         QTest::mouseRelease(table->viewport(), Qt::LeftButton, {}, previewPoint);
         QCOMPARE(routes.count(), 1);
-        QCOMPARE(preview.urls.size(), 1);
+        QTRY_COMPARE(preview.urls.size(), 1);
         QTest::mousePress(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 1, 1));
         page.refresh();
+        settle(service);
         QTest::mouseRelease(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 1, 1));
         QCOMPARE(routes.count(), 1);
         QTest::mousePress(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 1, 1));
@@ -717,8 +784,8 @@ class Regression : public QObject
         QCOMPARE(routes.count(), 3);
         QCOMPARE(qvariant_cast<Route>(routes.last().first()).commit, first);
         QTest::keySequence(table, QKeySequence("Alt+P"));
-        QCOMPARE(preview.urls.size(), 2);
-        QCOMPARE(preview.urls.last(), preview.urls.first());
+        QTRY_COMPARE(preview.urls.size(), 2);
+        QCOMPARE(readFile(preview.urls.last().toLocalFile() + "/行内操作.txt"), QByteArray("first\n"));
 
         QTest::keySequence(table, QKeySequence("Shift+F10"));
         QTRY_VERIFY(QApplication::activePopupWidget());
@@ -760,10 +827,96 @@ class Regression : public QObject
         QFile::setPermissions(previewPath + "/行内操作.txt", QFileDevice::ReadOwner | QFileDevice::WriteOwner);
         QVERIFY(QDir(previewPath).removeRecursively());
     }
+    void pullStateActionsRespectConfirmation()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/source.txt";
+        writeFile(source, "initial\n");
+        QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        const auto remote = dir.path() + "/remote.git", writer = dir.path() + "/writer";
+        QVERIFY(runGit({}, {"init", "--bare", remote}).success());
+        QVERIFY(service.setRemote(id, remote).success);
+        QVERIFY(service.synchronize(id, true).success);
+        QVERIFY(runGit({}, {"clone", remote, writer}).success());
+        QVERIFY(runGit(writer, {"config", "user.name", "Fixture"}).success());
+        QVERIFY(runGit(writer, {"config", "user.email", "fixture@example.test"}).success());
+        writeFile(writer + "/source.txt", "pulled\n");
+        QVERIFY(runGit(writer, {"add", "--all"}).success());
+        QVERIFY(runGit(writer, {"commit", "-m", "remote"}).success());
+        QVERIFY(runGit(writer, {"push"}).success());
+        QVERIFY(service.synchronize(id, false).success);
+        const auto pulled = head(service, id);
+        HomePageDashboardPage page(&service);
+        page.setAttribute(Qt::WA_DontShowOnScreen);
+        page.resize(700, 600);
+        page.setBackup(id);
+        page.show();
+        settle(service);
+        auto *apply = page.findChild<QPushButton *>("applyPullButton");
+        auto *keep = page.findChild<QPushButton *>("keepSourceButton");
+        QVERIFY(apply->isVisible());
+        QVERIFY(keep->isVisible());
+        QVERIFY(!page.findChild<QPushButton *>("pullButton")->isEnabled());
+        QVERIFY(page.findChild<QPushButton *>("pushButton")->isEnabled());
+        QVERIFY(page.findChild<QLabel *>("syncDetailLabel")->text().contains("自动备份已暂停"));
+        const auto respond = [&](QPushButton *button, const auto &answer)
+        {
+            bool shown = false;
+            QTimer timer;
+            timer.setInterval(10);
+            connect(&timer, &QTimer::timeout, &timer, [&]
+                    {
+                if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+                {
+                    timer.stop(); shown = true; answer(dialog);
+                } });
+            timer.start();
+            button->click();
+            if (!QTest::qWaitFor([&]
+                                 { return shown; }, 5000))
+                return false;
+            settle(service);
+            return true;
+        };
+        QVERIFY(respond(apply, [](QDialog *dialog)
+                        { dialog->reject(); }));
+        QCOMPARE(service.syncState(id), BackupSyncState::RemotePending);
+        QCOMPARE(readFile(source), QByteArray("initial\n"));
+        QVERIFY(respond(apply, [&](QDialog *dialog)
+                        {
+            writeFile(source, "edited during confirmation\n");
+            dialog->accept(); }));
+        QCOMPARE(service.syncState(id), BackupSyncState::RemotePending);
+        QCOMPARE(readFile(source), QByteArray("edited during confirmation\n"));
+        QVERIFY(respond(keep, [](QDialog *dialog)
+                        { dialog->accept(); }));
+        QCOMPARE(service.syncState(id), BackupSyncState::Tracking);
+        QVERIFY(!apply->isVisible());
+        QVERIFY(!keep->isVisible());
+        QVERIFY(page.findChild<QPushButton *>("pullButton")->isEnabled());
+        QCOMPARE(runGit(service.repoPath(id), {"rev-parse", "HEAD^"}).output.trimmed(), pulled);
+
+        QVERIFY(service.synchronize(id, true).success);
+        QVERIFY(runGit(writer, {"pull", "--ff-only"}).success());
+        writeFile(writer + "/source.txt", "new remote version\n");
+        QVERIFY(runGit(writer, {"add", "--all"}).success());
+        QVERIFY(runGit(writer, {"commit", "-m", "second remote"}).success());
+        QVERIFY(runGit(writer, {"push"}).success());
+        QVERIFY(service.synchronize(id, false).success);
+        settle(service);
+        const auto latest = head(service, id);
+        QVERIFY(respond(apply, [](QDialog *dialog)
+                        { dialog->accept(); }));
+        QCOMPARE(service.syncState(id), BackupSyncState::Tracking);
+        QCOMPARE(readFile(source), QByteArray("new remote version\n"));
+        QCOMPARE(head(service, id), latest);
+    }
     void historyMenusAndRestoreKeepVersionContext()
     {
-        QTemporaryDir dir;
-        BackupService service(pathsIn(dir));
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/restore-context.txt";
         const auto other = dir.path() + "/other.txt";
         const auto id = encoded(source);
@@ -772,22 +925,25 @@ class Regression : public QObject
         QVERIFY(service.addLocal(source).success);
         writeFile(source, "second\n");
         QVERIFY(service.backup(id).success);
+        settle(service);
         writeFile(other, "other\n");
         QVERIFY(service.addLocal(other).success);
         HomePageBackupPage page(&service);
         page.resize(820, 580);
         page.setBackup(id);
+        settle(service);
         page.show();
         auto *table = page.findChild<QTableView *>("table");
         const auto first = table->model()->index(1, 0).data(Qt::UserRole + 1).toString();
         const auto openMenu = [&](int row)
         {
             QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, row, 2));
-            QTest::qWaitFor([]
-                            { return QApplication::activePopupWidget() != nullptr; }, 1000);
+            if (!QTest::qWaitFor([]
+                                 { return QApplication::activePopupWidget() != nullptr; }, 1000))
+                return static_cast<QMenu *>(nullptr);
             return qobject_cast<QMenu *>(QApplication::activePopupWidget());
         };
-        const auto confirmRestore = [](QMenu *menu, const auto &answer)
+        const auto confirmRestore = [&service](QMenu *menu, const auto &answer)
         {
             bool shown = false;
             QTimer responder;
@@ -804,14 +960,19 @@ class Regression : public QObject
             menu->setActiveAction(menu->findChild<QAction *>("restoreActionMenu"));
             // The menu can be deleted while the confirmation runs its nested event loop.
             QTest::keyPress(menu, Qt::Key_Return);
+            if (!QTest::qWaitFor([&]
+                                 { return shown; }, 5000))
+                return false;
+            settle(service);
             return shown;
         };
         QSignalSpy routes(&page, &HomePageBackupPage::navigate);
-        auto *menu = openMenu(1);
+        QPointer<QMenu> menu = openMenu(1);
         QVERIFY(menu);
         table->selectRow(0);
         writeFile(source, "third\n");
         QVERIFY(service.backup(id).success);
+        settle(service);
         QCOMPARE(table->model()->rowCount(), 3);
         menu->setActiveAction(menu->findChild<QAction *>("compareActionMenu"));
         QTest::keyPress(menu, Qt::Key_Return);
@@ -822,11 +983,14 @@ class Regression : public QObject
         QVERIFY(menu);
         QPointer<QAction> staleAction = menu->findChild<QAction *>("compareActionMenu");
         page.setBackup(otherId);
-        QVERIFY(!menu->isVisible());
+        settle(service);
+        // Settling the asynchronous refresh can process the menu's deferred deletion.
+        QVERIFY(!menu || !menu->isVisible());
         if (staleAction)
             staleAction->trigger();
         QCOMPARE(routes.count(), 1);
         page.setBackup(id);
+        settle(service);
 
         bool cancelDefault = false;
         menu = openMenu(2);
@@ -854,11 +1018,13 @@ class Regression : public QObject
         QVERIFY(confirmRestore(menu, [&](QDialog *dialog)
                                {
             page.setBackup(otherId);
+            settle(service);
             dialog->accept(); }));
         QCOMPARE(readFile(source), QByteArray("uncommitted\n"));
         QCOMPARE(readFile(other), QByteArray("other\n"));
 
         page.setBackup(id);
+        settle(service);
         menu = openMenu(2);
         QVERIFY(menu);
         QVERIFY(confirmRestore(menu, [&](QDialog *dialog)
@@ -879,8 +1045,8 @@ class Regression : public QObject
     }
     void manyRevisionsAndEditFeedback()
     {
-        QTemporaryDir dir;
-        BackupService service(pathsIn(dir));
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/file.txt";
         const auto id = encoded(source);
         writeFile(source, "initial");
@@ -890,6 +1056,7 @@ class Regression : public QObject
         page.setAttribute(Qt::WA_DontShowOnScreen);
         page.resize(820, 580);
         page.setBackup(id);
+        settle(service);
         page.show();
         QTest::qWait(20);
         auto *table = page.findChild<QTableView *>("table");
@@ -909,6 +1076,7 @@ class Regression : public QObject
         QVERIFY(git.waitForFinished());
         QCOMPARE(git.exitCode(), 0);
         page.refresh();
+        settle(service);
         auto *model = qobject_cast<QStandardItemModel *>(table->model());
         QCOMPARE(model->rowCount(), 1001);
         QCOMPARE(table->findChildren<QWidget *>().size(), widgetCount);
@@ -921,19 +1089,20 @@ class Regression : public QObject
         QCOMPARE(routes.count(), 1);
         QCOMPARE(qvariant_cast<Route>(routes.first().first()).commit, last.data(Qt::UserRole + 1).toString());
         QSignalSpy notifications(&page, &HomePageBackupPage::notification);
-        model->item(0, 0)->setText("attempted edit");
-        QCoreApplication::processEvents();
+        model->item(1, 0)->setText("attempted edit");
+        settle(service);
         QCOMPARE(notifications.count(), 1);
         QCOMPARE(model->item(0, 0)->text(), QString("Revision 1000"));
         for (int i = 0; i < 5; ++i)
             page.refresh();
+        settle(service);
         QCOMPARE(table->model(), model);
         QCOMPARE(model->rowCount(), 1001);
     }
     void confirmationsRespectObjectContext()
     {
-        QTemporaryDir dir;
-        BackupService service(pathsIn(dir));
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/file.txt";
         writeFile(source, "initial");
         QVERIFY(service.addLocal(source).success);
@@ -972,8 +1141,8 @@ class Regression : public QObject
     }
     void sharedBackupModelScales()
     {
-        QTemporaryDir dir;
-        BackupService service(pathsIn(dir));
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
         BackupListModel source;
         QAbstractItemModelTester tester(&source, QAbstractItemModelTester::FailureReportingMode::QtTest);
         HomePage page(&service, nullptr, &source);
@@ -1025,8 +1194,8 @@ class Regression : public QObject
     }
     void revisionTimeAndSelection()
     {
-        QTemporaryDir dir;
-        BackupService service(pathsIn(dir));
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/history.txt";
         const auto id = encoded(source);
         writeFile(source, "one\n");
@@ -1042,17 +1211,20 @@ class Regression : public QObject
         QCOMPARE(revisions.first().committedAt.toSecsSinceEpoch(), epoch);
         writeFile(source, "two\n");
         QVERIFY(service.backup(id).success);
+        settle(service);
         HomePageBackupPage page(&service);
         page.setAttribute(Qt::WA_DontShowOnScreen);
         page.resize(820, 640);
         page.setBackup(id);
+        settle(service);
         page.show();
         auto *table = page.findChild<QTableView *>("table");
         table->selectRow(1);
-        const auto previous = table->model()->index(1, 2).data().toString();
+        const auto previous = table->model()->index(1, 2).data(Qt::UserRole + 1).toString();
         writeFile(source, "three\n");
         QVERIFY(service.backup(id).success);
-        QCOMPARE(table->model()->index(table->currentIndex().row(), 2).data().toString(), previous);
+        settle(service);
+        QCOMPARE(table->model()->index(table->currentIndex().row(), 2).data(Qt::UserRole + 1).toString(), previous);
         QSignalSpy routes(&page, &HomePageBackupPage::navigate);
         table->setFocus();
         QTest::keyClick(table, Qt::Key_Return);
@@ -1066,6 +1238,7 @@ class Regression : public QObject
         QTest::keyClicks(editor, "pending edit");
         writeFile(source, "four\n");
         QVERIFY(service.backup(id).success);
+        settle(service);
         QCOMPARE(table->model()->rowCount(), 3);
         QCOMPARE(editor->text(), QString("pending edit"));
         QTest::keyClick(editor, Qt::Key_Escape);
@@ -1076,13 +1249,14 @@ class Regression : public QObject
         QCOMPARE(table->horizontalScrollBar()->maximum(), 0);
         QVERIFY(service.rebuild(id).success);
         page.setBackup(id);
+        settle(service);
         QCOMPARE(table->model()->rowCount(), 1);
         QCOMPARE(table->currentIndex().row(), 0);
     }
     void asyncControlsAndThemePreserveContext()
     {
-        QTemporaryDir dir;
-        BackupService service(pathsIn(dir));
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/long.txt";
         QByteArray document;
         for (int row = 0; row < 240; ++row)
@@ -1098,6 +1272,7 @@ class Regression : public QObject
         page.setAttribute(Qt::WA_DontShowOnScreen);
         page.resize(820, 620);
         page.setRevision(id, head(service, id));
+        settle(service);
         page.show();
         QTest::qWait(20);
         auto *content = page.findChild<QPlainTextEdit *>("content");
@@ -1121,6 +1296,7 @@ class Regression : public QObject
         auto *analyze = page.findChild<QAction *>("analyzeAction");
         auto *spinner = page.findChild<oclero::qlementine::LoadingSpinner *>("analysisSpinner");
         analyze->trigger();
+        settle(service);
         QVERIFY(spinner->spinning());
         page.deactivate();
         page.hide();
@@ -1129,6 +1305,7 @@ class Regression : public QObject
         QVERIFY(page.findChild<QPlainTextEdit *>("analysis")->toPlainText().isEmpty());
         page.show();
         analyze->trigger();
+        settle(service);
         QVERIFY(spinner->spinning());
         gateway.summaries.last()("当前分析结果", {});
         QVERIFY(!spinner->spinning());
@@ -1144,10 +1321,12 @@ class Regression : public QObject
         QVERIFY(page.findChild<QWidget *>("analysisContent")->height() <= page.findChild<QWidget *>("editorPane")->height() / 3);
         QVERIFY(expander->height() <= page.findChild<QWidget *>("editorPane")->height() / 3);
         analyze->trigger();
+        settle(service);
         gateway.summaries.last()({}, "模拟分析失败");
         QVERIFY(!spinner->spinning());
         QCOMPARE(page.findChild<QPlainTextEdit *>("analysis")->toPlainText(), QString("模拟分析失败"));
         analyze->trigger();
+        settle(service);
         QVERIFY(service.rebuild(id).success);
         QVERIFY(!spinner->spinning());
         gateway.summaries.last()("stale after rebuilding", {});
@@ -1236,8 +1415,8 @@ class Regression : public QObject
     }
     void renderAllPages()
     {
-        QTemporaryDir dir(QDir::tempPath() + "/zcu-XXXXXX");
-        BackupService service(pathsIn(dir));
+        TestDirectory dir(QDir::tempPath() + "/zcu-XXXXXX");
+        TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/Projects/示例项目";
         const auto readme = source + "/README.md";
         writeFile(readme, "# 项目说明\n\n自动保存每一次重要修改。\n");
@@ -1252,19 +1431,22 @@ class Regression : public QObject
         {
             writeFile(readme, QString("# 项目说明\n\n%1\n\n自动备份文件与文件夹。\n版本 %2\n").arg(messages[i]).arg(i + 1).toUtf8());
             QVERIFY(service.backup(id).success);
+            settle(service);
             QVERIFY(runGit(service.repoPath(id), {"commit", "--amend", "-m", messages[i]}).success());
         }
         writeFile(readme, "# 项目说明\n\n集中查看历史版本与文件变更。\n\n支持文件、文件夹和云端导入。\n");
         writeFile(source + "/src/settings.json", "{\n  \"theme\": \"neutral\",\n  \"interval\": 1500,\n  \"compact\": true\n}\n");
         writeFile(source + "/docs/使用说明.txt", "从侧栏选择备份对象，直接进入历史版本。\n双击版本可查看变更内容。\n");
         QVERIFY(service.backup(id).success);
+        settle(service);
         QVERIFY(runGit(service.repoPath(id), {"commit", "--amend", "-m", "统一导航，简化版本对比与配置"}).success());
-        // Synthetic display-only objects need no Git repositories or monitors.
+        // Small real fixtures populate the isolated catalog used by the list.
         const QStringList names{"产品需求.md", "会议记录", "个人知识库", "设计资源", "Release notes.md", "配置文件", "实验数据", "开发日志.md", "项目归档", "工作清单.md", "长中文名称的项目资料与使用文档"};
         for (int i = 0; i < names.size(); ++i)
         {
             const auto path = dir.path() + "/工作目录/" + names[i];
-            QVERIFY(QDir().mkpath(service.repoPath(encoded(path))));
+            writeFile(path, "fixture");
+            QVERIFY(service.addLocal(path).success);
         }
         FakeAi gateway;
         SettingsService settings(pathsIn(dir), &gateway);
@@ -1294,6 +1476,7 @@ class Regression : public QObject
             for (int i = 0; i < routes.size(); ++i)
             {
                 window.navigate(routes[i]);
+                settle(service);
                 QTest::qWait(160);
                 QVERIFY(window.isVisible());
                 QCOMPARE(window.size(), QSize(1080, 740));
@@ -1336,6 +1519,7 @@ class Regression : public QObject
                 if (routes[i].page == PageId::Diff)
                 {
                     window.findChild<HomePageDiffPage *>()->findChild<QAction *>("analyzeAction")->trigger();
+                    settle(service);
                     QVERIFY(!gateway.summaries.isEmpty());
                     capture(QString("loading-%1").arg(theme));
                     gateway.summaries.last()("本次版本统一了导航与版本对比。\n\n• 更新项目说明，集中展示历史版本\n• 保留原有自动备份周期\n• 补充从侧栏打开历史的使用说明\n\n变更未调整备份格式或恢复策略。", {});
@@ -1347,6 +1531,7 @@ class Regression : public QObject
             for (const auto pageId : {PageId::GeneralSettings, PageId::AiSettings, PageId::About})
             {
                 window.navigate({pageId});
+                settle(service);
                 QTest::qWait(160);
                 auto *page = window.findChild<QStackedWidget *>("pages")->currentWidget();
                 auto *scroll = page->findChild<QScrollArea *>("scroll");
@@ -1359,6 +1544,7 @@ class Regression : public QObject
             }
             window.resize(1080, 740);
             window.navigate({PageId::AiSettings});
+            settle(service);
             auto *settingsSearch = window.findChild<QLineEdit *>("settingsSearch");
             settingsSearch->setText("API Key");
             QTest::qWait(160);
@@ -1400,6 +1586,7 @@ class Regression : public QObject
         for (int i = 0; i < routes.size(); ++i)
         {
             window.navigate(routes[i]);
+            settle(service);
             QTest::qWait(160);
             QCOMPARE(window.size(), QSize(760, 520));
             auto *page = window.findChild<QStackedWidget *>("pages")->currentWidget();
@@ -1435,6 +1622,7 @@ class Regression : public QObject
             }
         }
         window.navigate({PageId::Dashboard, id});
+        settle(service);
         auto *dashboard = window.findChild<HomePageDashboardPage *>();
         dashboard->findChild<QToolButton *>("expandButton")->click();
         QTest::qWait(160);
@@ -1460,23 +1648,25 @@ class Regression : public QObject
         window.findChild<QAction *>("pinAction")->trigger();
         QVERIFY(!window.windowFlags().testFlag(Qt::WindowStaysOnTopHint));
         window.navigate({PageId::About});
+        settle(service);
         window.findChild<QToolButton *>("backButton")->click();
         QCOMPARE(window.findChild<QStackedWidget *>("pages")->currentWidget(), window.findChild<HomePageDashboardPage *>());
         window.findChild<QToolButton *>("forwardButton")->click();
         QCOMPARE(window.findChild<QStackedWidget *>("pages")->currentWidget()->objectName(), QString("AboutPage"));
         QVERIFY(service.removeBackup(id).success);
-        // Remove only synthetic directories in this QTemporaryDir.
+        // Remove only registered fixtures in this QTemporaryDir.
         for (const auto &item : service.trackedItems())
-            QVERIFY(QDir(service.repoPath(item.id)).removeRecursively());
+            QVERIFY(service.removeBackup(item.id).success);
         emit service.trackedItemsChanged();
         window.navigate({});
+        settle(service);
         QTest::qWait(160);
         QVERIFY(window.findChild<HomePage *>()->findChild<QLabel *>("emptyLabel")->isVisible());
         capture("empty");
     }
 
   private:
-    QTemporaryDir m_environment;
+    TestDirectory m_environment;
     ThemeController *m_theme{nullptr};
 };
 QTEST_MAIN(Regression)

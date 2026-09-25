@@ -1,47 +1,61 @@
 #include "backupmonitor.h"
-#include <QDateTime>
-#include <QDirIterator>
+#include <QDir>
+#include <algorithm>
 
-BackupMonitor::BackupMonitor(BackupService *service, QObject *parent) : QObject(parent), m_service(service)
+BackupMonitor::BackupMonitor(BackupService *service, QObject *parent, std::function<qint64()> clock)
+    : QObject(parent), m_service(service), m_clock(std::move(clock))
 {
+    m_elapsed.start();
+    if (!m_clock)
+        m_clock = [this]
+        { return m_elapsed.elapsed(); };
     m_timer.setInterval(1500);
     connect(&m_timer, &QTimer::timeout, this, &BackupMonitor::scanNow);
     connect(service, &BackupService::trackedItemsChanged, this, &BackupMonitor::reconcile);
-    connect(&m_watcher, &QFileSystemWatcher::directoryChanged, service, &BackupService::trackedItemsChanged);
+    connect(service, &BackupService::ready, this, [this]
+            { reconcile(); watchCatalog(); });
+    connect(&m_watcher, &QFileSystemWatcher::directoryChanged, this, [this]
+            {
+        if (!m_enabled || m_reloadPending) return;
+        m_reloadPending = true;
+        m_service->reload(this, [this](const OperationResult &result)
+        {
+            m_reloadPending = false;
+            Q_UNUSED(result);
+            watchCatalog();
+        }); });
+}
+void BackupMonitor::watchCatalog()
+{
+    if (!m_enabled || !m_timer.isActive())
+        return;
+    // The writer lock lives in backupRoot. Watching it would schedule another
+    // reload on every lock release, including releases caused by reload itself.
+    for (const auto &path : {m_service->paths().backupRoot + "/items"})
+        if (QDir(path).exists() && !m_watcher.directories().contains(path))
+            m_watcher.addPath(path);
 }
 void BackupMonitor::start()
 {
-    QDir().mkpath(m_service->paths().backupRoot);
-    if (m_watcher.directories().isEmpty())
-        m_watcher.addPath(m_service->paths().backupRoot);
+    m_enabled = true;
     reconcile();
     m_timer.start();
+    watchCatalog();
+    scanNow(); // Compare with the durable success baseline, including offline edits.
 }
-void BackupMonitor::stop() { m_timer.stop(); }
-QMap<QString, QString> BackupMonitor::scan(const State &state)
+void BackupMonitor::stop()
 {
-    QMap<QString, QString> result;
-    const auto add = [&result](const QFileInfo &info)
+    m_enabled = false;
+    ++m_epoch;
+    m_timer.stop();
+    if (!m_watcher.directories().isEmpty())
+        m_watcher.removePaths(m_watcher.directories());
+    for (const auto &state : m_states)
     {
-        result[QDir::cleanPath(info.filePath())] = QString::number(info.size()) + "|" + QString::number(info.lastModified().toMSecsSinceEpoch());
-    };
-    if (state.file)
-    {
-        QFileInfo info(state.path);
-        if (info.exists() && info.isFile())
-            add(info);
-        return result;
+        if (state->busy)
+            m_service->cancel(state->task);
+        state->busy = false;
     }
-    QDirIterator it(state.path, QDir::Files | QDir::Hidden | QDir::Readable | QDir::NoSymLinks, QDirIterator::Subdirectories);
-    while (it.hasNext())
-    {
-        it.next();
-        const auto path = QDir::fromNativeSeparators(QDir::cleanPath(it.filePath()));
-        if (path.contains("/.git/") || path.endsWith("/.git") || path.contains("/build/") || path.endsWith("/build"))
-            continue;
-        add(it.fileInfo());
-    }
-    return result;
 }
 void BackupMonitor::reconcile()
 {
@@ -49,35 +63,69 @@ void BackupMonitor::reconcile()
     for (const auto &item : m_service->trackedItems())
     {
         active.insert(item.id);
-        if (m_states.contains(item.id))
+        const auto generation = m_service->repositoryGeneration(item.id);
+        if (m_states.contains(item.id) && m_states[item.id]->generation == generation)
             continue;
         auto state = std::make_shared<State>();
-        state->path = QDir::cleanPath(item.sourcePath);
-        state->file = QFileInfo(state->path).isFile();
-        state->fingerprint = scan(*state);
+        state->generation = generation;
         m_states.insert(item.id, state);
     }
     for (const auto &id : m_states.keys())
         if (!active.contains(id))
             m_states.remove(id);
 }
+void BackupMonitor::completed(const std::shared_ptr<State> &state, const OperationResult &result)
+{
+    state->busy = false;
+    if (result.success)
+    {
+        state->failures = 0;
+        state->retryAt = 0;
+        state->lastError.clear();
+        if (!result.warning.isEmpty())
+            emit notification(result);
+        return;
+    }
+    ++state->failures;
+    state->retryAt = m_clock() + qMin<qint64>(60000, 1500LL << qMin(state->failures - 1, 6));
+    const auto error = result.title + result.message + result.warning;
+    if (error != state->lastError)
+        emit notification(result);
+    state->lastError = error;
+}
 void BackupMonitor::scanNow()
 {
-    // Snapshot references survive nested AI event loops and changes to the tracked set.
-    const auto states = m_states;
-    for (auto it = states.cbegin(); it != states.cend(); ++it)
+    if (!m_enabled)
+        return;
+    if (!m_service->isReady())
     {
+        if (!m_reloadPending)
+        {
+            m_reloadPending = true;
+            m_service->reload(this, [this](const OperationResult &)
+                              { m_reloadPending = false; watchCatalog(); });
+        }
+        return;
+    }
+    const auto epoch = m_epoch;
+    for (auto it = m_states.cbegin(); it != m_states.cend(); ++it)
+    {
+        const auto id = it.key();
         const auto state = it.value();
-        if (state->busy || m_states.value(it.key()) != state)
-            continue;
-        auto current = scan(*state);
-        if (current == state->fingerprint)
+        if (state->busy || state->retryAt > m_clock())
             continue;
         state->busy = true;
-        const auto result = m_service->backup(it.key());
-        state->fingerprint = std::move(current);
-        state->busy = false;
-        if (!result.success || !result.warning.isEmpty())
-            emit notification(result);
+        state->task = m_service->observe(id, this, [this, id, state, epoch](const BackupResult<bool> &reply)
+                                         {
+            if (!m_enabled || epoch != m_epoch || m_states.value(id) != state) return;
+            if (!reply.result.success || !reply.value || m_service->syncState(id) != BackupSyncState::Tracking)
+            {
+                completed(state, reply.result);
+                return;
+            }
+            state->task = m_service->backup(id, this, [this, id, state, epoch](const OperationResult &result)
+            {
+                if (m_enabled && epoch == m_epoch && m_states.value(id) == state) completed(state, result);
+            }, true); });
     }
 }

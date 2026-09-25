@@ -1,30 +1,5 @@
 #include "aicommitmessagehelper.h"
 
-#include <QEventLoop>
-#include <QTimer>
-
-#include "AiProvider.h"
-#include "aiconfighelper.h"
-
-namespace
-{
-
-void setupProvider(AiProvider &provider,
-                   const AiConfigHelper::RuntimeConfig &config,
-                   const QString &systemPrompt)
-{
-    provider.setServiceType(config.serviceType);
-    // Custom 才覆盖 Base URL。
-    if (config.serviceType == AiProvider::Custom)
-        provider.setBaseUrl(AiConfigHelper::deriveBaseUrl(config.baseUrl));
-    provider.setApiKey(config.apiKey);
-    provider.setModel(config.modelName);
-    provider.setStreamEnabled(false);
-    provider.setSystemPrompt(systemPrompt);
-}
-
-} // namespace
-
 namespace AiCommitMessageHelper
 {
 
@@ -46,53 +21,6 @@ QString buildDiffSummaryPrompt(const QString &diffText)
 QString diffSummarySystemPrompt()
 {
     return QStringLiteral("你是一个资深代码审阅助手。根据用户提供的 git diff 做清晰、简洁的中文版本对比分析，重点说明改了什么、影响什么、是否有风险。不要输出代码块。");
-}
-
-QString generateCommitMessageSync(const QString &diffText, int timeoutMs, QString *errorMessage, const QString &settingsFile)
-{
-    AiConfigHelper::RuntimeConfig config;
-    QString configError;
-    if (!AiConfigHelper::loadRuntimeConfig(config, &configError, settingsFile))
-    {
-        if (errorMessage)
-            *errorMessage = configError;
-        return {};
-    }
-
-    AiProvider provider;
-    setupProvider(provider, config, systemPrompt());
-
-    QString generated;
-    QEventLoop loop;
-    QTimer timeoutTimer;
-    timeoutTimer.setSingleShot(true);
-
-    QObject::connect(&provider, &AiProvider::replyReceived, &loop, [&](const QString &reply)
-                     {
-                         generated = reply.trimmed();
-                         loop.quit(); });
-
-    QObject::connect(&provider, &AiProvider::errorOccurred, &loop, [&](const QString &error)
-                     {
-                         if (errorMessage)
-                             *errorMessage = error;
-                         loop.quit(); });
-
-    QObject::connect(&timeoutTimer, &QTimer::timeout, &loop, [&]()
-                     {
-                         if (errorMessage)
-                             *errorMessage = QStringLiteral("AI 请求超时");
-                         loop.quit(); });
-
-    timeoutTimer.start(timeoutMs);
-    provider.chat(buildPromptFromDiff(diffText));
-    loop.exec();
-    timeoutTimer.stop();
-
-    if (generated.isEmpty() && errorMessage && errorMessage->isEmpty())
-        *errorMessage = QStringLiteral("AI 未返回有效提交说明");
-
-    return generated;
 }
 
 } // namespace AiCommitMessageHelper

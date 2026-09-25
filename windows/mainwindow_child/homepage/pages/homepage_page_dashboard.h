@@ -13,6 +13,8 @@ class Switch;
 class Expander;
 } // namespace oclero::qlementine
 class QAction;
+class QLabel;
+class QPushButton;
 class HomePageDashboardPage : public QWidget
 {
     Q_OBJECT
@@ -41,10 +43,18 @@ class HomePageDashboardPage : public QWidget
     BackupService *m_service;
     QString m_id;
     quint64 m_repositoryGeneration{0};
+    quint64 m_contextGeneration{0}, m_requestGeneration{0};
+    bool m_active{false};
     QHash<QString, ViewState> m_states;
     oclero::qlementine::Switch *m_remoteSwitch;
     oclero::qlementine::Expander *m_expander;
     QAction *m_refresh;
+    QLabel *m_syncState, *m_syncDetail, *m_busy;
+    QPushButton *m_applyPull, *m_keepSource, *m_recheck;
     void remoteToggled(bool checked);
     void rememberState();
+    void updateActions();
+    void resolvePull(bool applyToSource);
+    bool isCurrent(const QString &id, quint64 generation, quint64 context) const;
+    BackupService::Completion completion();
 };

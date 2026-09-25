@@ -5,7 +5,7 @@
 - Qt 6.8.3：Widgets、Network、Svg；运行回归测试还需要 Qt Test。
 - Windows：Visual Studio 2022 的 MSVC x64 工具链。
 - macOS：Xcode Command Line Tools，最低部署版本 12.0；仓库自带的 AI SDK 仅支持 arm64。
-- CMake 3.21 或更新版本、Git。使用 Ninja 生成器时另需 Ninja。
+- CMake 3.21 或更新版本、Git 2.29 或更新版本。使用 Ninja 生成器时另需 Ninja。
 
 Qlementine v1.4.2 源码已固定纳入 `3rdparty/qlementine`，提交为 `13f72eb8b53bafd9ac24e5562d8ddc28d5440469`，通过静态库链接，配置阶段不下载依赖。来源、MIT 许可证和字体许可证见其 `UPSTREAM.md`、`LICENSE`、`LICENSES`。`ZcAILib` 保留为仓库内的预编译 AI SDK，不使用项目父目录中的依赖。
 
@@ -90,6 +90,8 @@ scripts/                                    共用打包脚本
 
 布局与数据视图优先使用标准 Qt Widgets，Switch、Expander、LoadingSpinner、Popover 等 Qlementine 增强控件可按交互用途直接用于页面。主题位于 `res/themes`，字体和颜色角色集中在 `windows/mainwindow_presentation.*`；不要修改上游源码、增加装饰性 Card 包装或用大量 QSS 重写控件。
 
-Git、文件和配置操作应放进服务，通过结果/信号反馈给页面。新增页面不得拥有备份扫描定时器，不通过父对象层级或显示文案寻找其他页面。
+Git 和文件操作经 BackupService 的后台串行任务执行，以任务 ID、强类型异步结果及信号反馈给页面。列表和路径来自内存快照；页面绑定对象、仓库代次和请求代次，恢复与 pull 解决还必须使用准备好的确认请求。新增页面不得拥有备份扫描定时器，不通过父对象层级或显示文案寻找其他页面。
 
-详细边界和保留的 Git 限制见 [UI 架构](docs/ui-architecture.md)。测试覆盖、截图方式和平台验收见 [回归验证](docs/ui-regression.md)。回归请使用测试程序：正常启动应用会读取“文档”目录下的真实备份并启动监控。
+详细状态和文件范围见 [备份架构](docs/backup-architecture.md)，页面职责见 [UI 架构](docs/ui-architecture.md)。CTest 包含 `regression`（`zc_tests`，既有 UI 与功能）和 `backup_core`（`zc_backup_tests`，文件/Git 故障及进程边界），均隔离存储、Git 配置和 AI。同步等待便利接口仅存在于测试支持头，不得加入生产服务。
+
+测试覆盖、截图方式和平台验收见 [回归验证](docs/ui-regression.md)。回归请使用测试程序：正常应用会读取真实备份并启动监控。不要直接操作真实数据来验证失败或崩溃场景。

@@ -1,94 +1,69 @@
 #pragma once
-
 #include "apppaths.h"
-#include "operationresult.h"
-#include <QDateTime>
-#include <QHash>
+#include "backup_dependencies.h"
 #include <QObject>
-#include <QVector>
 #include <functional>
+#include <memory>
 
-struct TrackedItem
-{
-    QString id;
-    QString sourcePath;
-    QString name;
-};
-struct BackupStats
-{
-    int versionCount{0};
-    int fileCount{0};
-    qint64 fileSize{0};
-    qint64 cacheSize{0};
-    QString sourceState;
-    QString remoteUrl;
-};
-struct Revision
-{
-    QString hash;
-    QString message;
-    QDateTime committedAt;
-};
-struct DiffFile
-{
-    QString status;
-    QString path;
-    QString summary;
-};
-struct DiffData
-{
-    QString oldCommit;
-    QString newCommit;
-    QVector<DiffFile> files;
-};
-struct PreparedImport
-{
-    OperationResult result;
-    QString temporaryRepo;
-    QString entryName;
-    bool directory{false};
-};
-
+class AiGateway;
 class BackupService : public QObject
 {
     Q_OBJECT
   public:
-    using CommitMessageGenerator = std::function<QString(const QString &diff, const QString &settingsFile)>;
-    explicit BackupService(const AppPaths &paths, QObject *parent = nullptr, CommitMessageGenerator generator = {});
-    const AppPaths &paths() const { return m_paths; }
+    using Completion = std::function<void(const OperationResult &)>;
+    template <class T>
+    using Reply = std::function<void(const BackupResult<T> &)>;
+    explicit BackupService(const AppPaths &paths, QObject *parent = nullptr, AiGateway *gateway = nullptr, BackupDependencies dependencies = {});
+    ~BackupService() override;
+    const AppPaths &paths() const;
     QVector<TrackedItem> trackedItems() const;
     QString sourcePath(const QString &id) const;
     QString repoPath(const QString &id) const;
+    QString idForSource(const QString &source) const;
     bool contains(const QString &id) const;
-    quint64 repositoryGeneration(const QString &id) const { return m_generations.value(id); }
-    OperationResult addLocal(const QString &source);
-    virtual OperationResult backup(const QString &id);
-    OperationResult statistics(const QString &id, BackupStats &stats) const;
-    OperationResult history(const QString &id, QVector<Revision> &revisions) const;
-    OperationResult diff(const QString &id, const QString &commit, DiffData &data) const;
-    OperationResult diffText(const QString &id, const DiffData &data, const QString &file, QString &text) const;
-    OperationResult preview(const QString &id, const QString &commit);
-    OperationResult restore(const QString &id, const QString &commit);
-    OperationResult editMessage(const QString &id, const QString &commit, const QString &message);
-    OperationResult setRemote(const QString &id, const QString &url);
-    OperationResult removeRemote(const QString &id);
-    OperationResult synchronize(const QString &id, bool push);
-    OperationResult removeBackup(const QString &id);
-    OperationResult rebuild(const QString &id);
-    OperationResult checkRemote(const QString &url) const;
-    PreparedImport prepareImport(const QString &url);
-    OperationResult finishImport(const QString &temporaryRepo, const QString &target);
-    void cancelImport(const QString &temporaryRepo);
+    bool isReady() const;
+    bool isBusy() const;
+    quint64 repositoryGeneration(const QString &id) const;
+    BackupSyncState syncState(const QString &id) const;
+    QString pendingCommit(const QString &id) const;
+
+    BackupTaskId reload(QObject *context = nullptr, Completion callback = {});
+    BackupTaskId addLocal(const QString &source, QObject *context, Completion callback = {});
+    BackupTaskId backup(const QString &id, QObject *context, Completion callback = {}, bool changedOnly = false);
+    BackupTaskId observe(const QString &id, QObject *context, Reply<bool> callback);
+    BackupTaskId statistics(const QString &id, QObject *context, Reply<BackupStats> callback);
+    BackupTaskId history(const QString &id, QObject *context, Reply<QVector<Revision>> callback);
+    BackupTaskId diff(const QString &id, const QString &commit, QObject *context, Reply<DiffData> callback);
+    BackupTaskId diffText(const QString &id, const DiffData &data, const QString &file, QObject *context, Reply<QString> callback);
+    BackupTaskId preview(const QString &id, const QString &commit, QObject *context, Completion callback);
+    BackupTaskId prepareRestore(const QString &id, const QString &commit, QObject *context, Reply<RestoreRequest> callback);
+    BackupTaskId restore(const RestoreRequest &request, QObject *context, Completion callback);
+    BackupTaskId preparePullResolution(const QString &id, QObject *context, Reply<RestoreRequest> callback);
+    BackupTaskId resolvePull(const RestoreRequest &request, bool applyToSource, QObject *context, Completion callback);
+    BackupTaskId editMessage(const QString &id, const QString &commit, const QString &message, QObject *context, Completion callback = {});
+    BackupTaskId setRemote(const QString &id, const QString &url, QObject *context, Completion callback = {});
+    BackupTaskId removeRemote(const QString &id, QObject *context, Completion callback = {});
+    BackupTaskId synchronize(const QString &id, bool push, QObject *context, Completion callback = {});
+    BackupTaskId removeBackup(const QString &id, QObject *context, Completion callback = {});
+    BackupTaskId rebuild(const QString &id, QObject *context, Completion callback = {});
+    BackupTaskId checkRemote(const QString &url, QObject *context, Completion callback = {});
+    BackupTaskId prepareImport(const QString &url, QObject *context, Reply<PreparedImport> callback);
+    BackupTaskId finishImport(const QString &sessionId, const QString &entry, const QString &target, bool replaceExisting, QObject *context, Completion callback);
+    BackupTaskId cancelImport(const QString &sessionId, QObject *context = nullptr, Completion callback = {});
+    BackupTaskId recheck(const QString &id, QObject *context, Completion callback);
+    void cancel(BackupTaskId task);
 
   signals:
+    void notification(const OperationResult &result);
+    void ready();
     void trackedItemsChanged();
     void repositoryChanged(const QString &id);
     void repositoryInvalidated(const QString &id);
+    void taskStarted(BackupTaskId task, const QString &id);
+    void taskFinished(BackupTaskId task, const QString &id, const OperationResult &result);
+    void busyChanged(bool busy);
 
   private:
-    AppPaths m_paths;
-    CommitMessageGenerator m_generateMessage;
-    QHash<QString, quint64> m_generations;
-    bool ownsImport(const QString &path) const;
-    QStringList m_imports;
+    class Private;
+    std::unique_ptr<Private> d;
 };

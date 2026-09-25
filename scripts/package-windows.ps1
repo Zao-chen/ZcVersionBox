@@ -21,7 +21,7 @@ $required = 'ZcVersionBox.exe', 'ZcAiLib.dll', 'Qt6Core.dll', 'Qt6Widgets.dll', 
 foreach ($file in $required) {
     if (!(Test-Path -LiteralPath (Join-Path $payload $file))) { throw "Missing runtime: $file" }
 }
-$forbidden = Get-ChildItem -LiteralPath $payload -Recurse -File | Where-Object { $_.Name -match '(?i)ela|zcwidget|qlementine.*\.dll|zc_tests' }
+$forbidden = Get-ChildItem -LiteralPath $payload -Recurse -File | Where-Object { $_.Name -match '(?i)ela|zcwidget|qlementine.*\.dll|zc_(backup_)?tests' }
 if ($forbidden) { throw "Unexpected runtime in package: $($forbidden.Name -join ', ')" }
 $licenses = New-Item -ItemType Directory -Path (Join-Path $payload 'licenses')
 Copy-Item -LiteralPath "$projectRoot/3rdparty/qlementine/LICENSE" -Destination (Join-Path $licenses.FullName 'Qlementine.txt')
