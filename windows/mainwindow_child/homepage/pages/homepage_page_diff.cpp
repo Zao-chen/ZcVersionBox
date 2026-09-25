@@ -3,7 +3,9 @@
 #include "windows/mainwindow_presentation.h"
 #include <QAction>
 #include <QFileInfo>
+#include <QFocusEvent>
 #include <QHideEvent>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPointer>
 #include <QResizeEvent>
@@ -55,7 +57,11 @@ class DiffHighlighter : public QSyntaxHighlighter
 class FileDelegate : public QStyledItemDelegate
 {
   public:
-    using QStyledItemDelegate::QStyledItemDelegate;
+    explicit FileDelegate(QListView *view) : QStyledItemDelegate(view), m_view(view)
+    {
+        view->viewport()->installEventFilter(this);
+        view->installEventFilter(this);
+    }
     QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const override
     {
         return {0, UiStyle::rowHeight(56, UiStyle::font(UiStyle::FontRole::Body), true)};
@@ -72,7 +78,7 @@ class FileDelegate : public QStyledItemDelegate
             painter->setBrush(opt.state.testFlag(QStyle::State_Selected) ? colors.selected : colors.hover);
             painter->drawRoundedRect(row, 6, 6);
         }
-        if (opt.state.testFlag(QStyle::State_HasFocus))
+        if (m_keyboardFocus && opt.state.testFlag(QStyle::State_HasFocus))
         {
             painter->setPen(colors.secondary);
             painter->setBrush(Qt::NoBrush);
@@ -94,6 +100,51 @@ class FileDelegate : public QStyledItemDelegate
                           QFontMetrics(caption).elidedText(detail, Qt::ElideMiddle, textRect.width()));
         painter->restore();
     }
+  protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched == m_view->viewport() && event->type() == QEvent::MouseButtonPress)
+        {
+            if (m_keyboardFocus)
+            {
+                m_keyboardFocus = false;
+                m_view->viewport()->update();
+            }
+        }
+        if (watched == m_view || watched == m_view->viewport())
+        {
+            if (event->type() == QEvent::KeyPress)
+            {
+                if (!m_keyboardFocus)
+                {
+                    m_keyboardFocus = true;
+                    m_view->viewport()->update();
+                }
+            }
+            else if (event->type() == QEvent::FocusIn)
+            {
+                const auto *focus = static_cast<QFocusEvent *>(event);
+                const bool keyboard = focus->reason() == Qt::TabFocusReason || focus->reason() == Qt::BacktabFocusReason;
+                if (m_keyboardFocus != keyboard)
+                {
+                    m_keyboardFocus = keyboard;
+                    m_view->viewport()->update();
+                }
+            }
+            else if (event->type() == QEvent::FocusOut)
+            {
+                if (m_keyboardFocus)
+                {
+                    m_keyboardFocus = false;
+                    m_view->viewport()->update();
+                }
+            }
+        }
+        return QStyledItemDelegate::eventFilter(watched, event);
+    }
+  private:
+    QListView *m_view{nullptr};
+    bool m_keyboardFocus{false};
 };
 } // namespace
 

@@ -87,7 +87,7 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
     m_remoteSwitch = new oclero::qlementine::Switch(this);
     m_remoteSwitch->setObjectName("remoteSwitch");
     m_remoteSwitch->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    m_remoteSwitch->setFocusPolicy(Qt::StrongFocus);
+    m_remoteSwitch->setFocusPolicy(Qt::TabFocus);
     m_remoteSwitch->setAccessibleName("云端同步");
     ui->remoteHeaderLayout->addWidget(m_remoteSwitch);
     ui->remoteLayout->removeWidget(ui->remoteContent);

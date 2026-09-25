@@ -14,6 +14,7 @@
 #include <QMenu>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QScrollBar>
 #include <QShortcut>
 #include <QSignalBlocker>
 #include <QSystemTrayIcon>
@@ -63,6 +64,12 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     UiStyle::text(ui->settingsEmptyTitle, UiStyle::FontRole::Object);
     UiStyle::text(ui->settingsEmptyDescription, UiStyle::FontRole::Caption, true);
     ui->settingsEmptyState->hide();
+    for (auto *button : {ui->historyTab, ui->overviewTab, ui->diffTab, ui->generalTab, ui->aiTab, ui->aboutTab,
+                         ui->backupsButton, ui->settingsButton, ui->returnApplicationButton,
+                         ui->addSidebarButton, ui->collapseButton, ui->backButton, ui->forwardButton,
+                         ui->moreButton, ui->appMenuButton})
+        button->setFocusPolicy(Qt::TabFocus);
+    qApp->installEventFilter(this);
     for (auto *button : {ui->backupsButton, ui->settingsButton, ui->returnApplicationButton, ui->generalTab, ui->aiTab, ui->aboutTab})
         UiStyle::text(button, UiStyle::FontRole::Sidebar);
     for (auto *button : {ui->returnApplicationButton, ui->generalTab, ui->aiTab, ui->aboutTab})
@@ -232,7 +239,10 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     updateIcons();
     displayRoute({});
 }
-MainWindow::~MainWindow() = default;
+MainWindow::~MainWindow()
+{
+    qApp->removeEventFilter(this);
+}
 void MainWindow::syncBackups()
 {
     const auto items = m_backups->trackedItems();
@@ -492,6 +502,21 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
     if ((watched == ui->header || watched == ui->contextTitle) && event->type() == QEvent::Resize)
         updateHeaderLayout();
+
+    if (event->type() == QEvent::MouseButtonPress)
+    {
+        if (auto *widget = qobject_cast<QWidget *>(watched))
+        {
+            if (widget->focusPolicy() == Qt::NoFocus && !qobject_cast<QMenu *>(widget) && !qobject_cast<QScrollBar *>(widget))
+            {
+                if (auto *focus = QApplication::focusWidget())
+                {
+                    if (isAncestorOf(focus) && !focus->isAncestorOf(widget))
+                        focus->clearFocus();
+                }
+            }
+        }
+    }
     return QMainWindow::eventFilter(watched, event);
 }
 void MainWindow::notify(const OperationResult &result) { m_notifications->showResult(result); }

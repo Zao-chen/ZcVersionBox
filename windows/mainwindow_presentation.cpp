@@ -57,11 +57,13 @@ class AppStyle final : public QlementineStyle
     void polish(QWidget *widget) override
     {
         QlementineStyle::polish(widget);
-        if (qobject_cast<QToolButton *>(widget) || qobject_cast<QPushButton *>(widget))
+        if (auto *button = qobject_cast<QAbstractButton *>(widget))
         {
+            if (button->focusPolicy() == Qt::StrongFocus || button->focusPolicy() == Qt::ClickFocus)
+                button->setFocusPolicy(Qt::TabFocus);
             auto font = widget->font();
-            const auto *button = qobject_cast<QPushButton *>(widget);
-            font.setWeight(button && button->isDefault() ? QFont::DemiBold : QFont::Normal);
+            const auto *push = qobject_cast<QPushButton *>(widget);
+            font.setWeight(push && push->isDefault() ? QFont::DemiBold : QFont::Normal);
             widget->setFont(font);
         }
     }
@@ -249,7 +251,7 @@ QToolButton *toolButton(QWidget *parent, QAction *action, bool iconOnly)
     auto *button = new QToolButton(parent);
     button->setDefaultAction(action);
     button->setAutoRaise(true);
-    button->setFocusPolicy(Qt::StrongFocus);
+    button->setFocusPolicy(Qt::TabFocus);
     button->setIconSize({16, 16});
     button->setMinimumSize(28, 32);
     button->setToolButtonStyle(iconOnly ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);

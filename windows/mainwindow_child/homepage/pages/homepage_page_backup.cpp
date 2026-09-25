@@ -3,6 +3,7 @@
 #include "windows/mainwindow_presentation.h"
 #include <QAction>
 #include <QContextMenuEvent>
+#include <QFocusEvent>
 #include <QHeaderView>
 #include <QHelpEvent>
 #include <QHideEvent>
@@ -99,7 +100,7 @@ class HistoryDelegate : public QStyledItemDelegate
             painter->setBrush(opt.state.testFlag(QStyle::State_Selected) ? colors.selected : colors.hover);
             painter->drawRoundedRect(row, 6, 6);
         }
-        if (m_view->hasFocus() && m_view->currentIndex().row() == index.row())
+        if (m_keyboardFocus && m_view->hasFocus() && m_view->currentIndex().row() == index.row())
         {
             painter->setBrush(Qt::NoBrush);
             painter->setPen(colors.secondary);
@@ -215,8 +216,43 @@ class HistoryDelegate : public QStyledItemDelegate
                 m_action(index, RevisionAction::More, keyboard ? m_view->viewport()->mapToGlobal(m_view->visualRect(index.siblingAtColumn(ActionsColumn)).bottomLeft()) : context->globalPos());
             return true;
         }
-        if (watched == m_view && (event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut))
-            updateRow(m_view->currentIndex());
+        if (watched == m_view->viewport() && event->type() == QEvent::MouseButtonPress)
+        {
+            if (m_keyboardFocus)
+            {
+                m_keyboardFocus = false;
+                updateRow(m_view->currentIndex());
+            }
+        }
+        if (watched == m_view || watched == m_view->viewport())
+        {
+            if (event->type() == QEvent::KeyPress)
+            {
+                if (!m_keyboardFocus)
+                {
+                    m_keyboardFocus = true;
+                    updateRow(m_view->currentIndex());
+                }
+            }
+            else if (event->type() == QEvent::FocusIn)
+            {
+                const auto *focus = static_cast<QFocusEvent *>(event);
+                const bool keyboard = focus->reason() == Qt::TabFocusReason || focus->reason() == Qt::BacktabFocusReason;
+                if (m_keyboardFocus != keyboard)
+                {
+                    m_keyboardFocus = keyboard;
+                    updateRow(m_view->currentIndex());
+                }
+            }
+            else if (event->type() == QEvent::FocusOut)
+            {
+                if (m_keyboardFocus)
+                {
+                    m_keyboardFocus = false;
+                    updateRow(m_view->currentIndex());
+                }
+            }
+        }
         if (watched == m_view && (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange))
             updateIcons();
         if (watched == m_view && event->type() == QEvent::Hide)
@@ -243,6 +279,7 @@ class HistoryDelegate : public QStyledItemDelegate
     int m_pressedAction{-1};
     bool m_actionPress{false};
     bool m_pointerInside{false};
+    bool m_keyboardFocus{false};
     mutable bool m_editorOpen{false};
     void updateIcons()
     {
