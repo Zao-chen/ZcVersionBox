@@ -56,7 +56,6 @@ class BackupItemDelegate : public QStyledItemDelegate
   private:
     QListView *m_view;
     bool m_sidebar;
-    bool m_keyboardFocus{false};
     QString m_pressedId;
     QRect menuRect(const QRect &row) const;
 };

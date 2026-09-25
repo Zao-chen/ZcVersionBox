@@ -148,6 +148,40 @@ class Regression : public QObject
         QCOMPARE(UiStyle::font(UiStyle::FontRole::Body), body);
         m_theme->toggle();
     }
+    void focusVisiblePolicy()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        FakeAi gateway;
+        SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen);
+        window.show();
+
+        UiStyle::setKeyboardNavigationActive(false);
+        QVERIFY(!UiStyle::isKeyboardNavigationActive());
+
+        // Pressing Tab enables keyboard navigation active state
+        QKeyEvent tabPress(QEvent::KeyPress, Qt::Key_Tab, Qt::NoModifier);
+        qApp->sendEvent(&window, &tabPress);
+        QVERIFY(UiStyle::isKeyboardNavigationActive());
+
+        // Mouse click disables keyboard navigation active state
+        auto *button = window.findChild<QToolButton *>("backupsButton");
+        QVERIFY(button);
+        QMouseEvent mousePress(QEvent::MouseButtonPress, QPointF(5, 5), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        qApp->sendEvent(button, &mousePress);
+        QVERIFY(!UiStyle::isKeyboardNavigationActive());
+
+        // Switching to settings and returning to application retains clean mouse focus state
+        auto *settingsButton = window.findChild<QToolButton *>("settingsButton");
+        QVERIFY(settingsButton);
+        settingsButton->click();
+        auto *returnButton = window.findChild<QToolButton *>("returnApplicationButton");
+        QVERIFY(returnButton);
+        returnButton->click();
+        QVERIFY(!UiStyle::isKeyboardNavigationActive());
+    }
     void localBackupRestoreAndDiff()
     {
         TestDirectory dir;
