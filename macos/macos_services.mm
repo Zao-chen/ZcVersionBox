@@ -290,7 +290,7 @@ static void swizzledSetStyleMask(id self, SEL _cmd, NSWindowStyleMask mask)
     w.titleVisibility = NSWindowTitleHidden;
 }
 
-void setupMacTitleBar(WId winId)
+void setupMacTitleBar(quintptr winId)
 {
     if (!winId) {
         return;
