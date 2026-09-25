@@ -283,11 +283,15 @@ void MainWindow::toggleSidebar()
 }
 void MainWindow::openSettings()
 {
+    if (auto *focus = QApplication::focusWidget())
+        focus->clearFocus();
     ui->settingsSearch->clear();
     navigate({m_settingsPage});
 }
 void MainWindow::returnToApplication()
 {
+    if (auto *focus = QApplication::focusWidget())
+        focus->clearFocus();
     if (isSettingsPage(m_route.page))
         navigate(m_applicationRoute);
 }
@@ -422,6 +426,8 @@ void MainWindow::displayRoute(const Route &route)
         m_settingsPage = route.page;
     else
         m_applicationRoute = route;
+    if (auto *focus = QApplication::focusWidget())
+        focus->clearFocus();
     ui->sidebarStack->setCurrentWidget(settingsMode ? ui->settingsSidebar : ui->applicationSidebar);
     ui->header->setVisible(!settingsMode);
     ui->settingsButton->setVisible(!settingsMode);
@@ -464,6 +470,8 @@ void MainWindow::displayRoute(const Route &route)
         break;
     }
     ui->pages->setCurrentWidget(page);
+    if (auto *focus = QApplication::focusWidget())
+        focus->clearFocus();
     ui->backButton->setEnabled(m_navigation.canBack());
     ui->forwardButton->setEnabled(m_navigation.canForward());
     ui->backupsButton->setChecked(route.page == PageId::Backups);
