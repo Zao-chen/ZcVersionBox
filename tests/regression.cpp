@@ -621,17 +621,20 @@ class Regression : public QObject
         // Returning to the application must respect repository and object invalidation.
         window.findChild<QToolButton *>("collapseButton")->click();
         window.navigate({PageId::Diff, id, head(service, id)});
-        settle(service);
         window.findChild<QToolButton *>("settingsButton")->click();
+        QVERIFY(!returnButton->hasFocus());
         QVERIFY(service.rebuild(id).success);
         returnButton->click();
+        QVERIFY(!window.findChild<QToolButton *>("backupsButton")->hasFocus());
         QCOMPARE(pages->currentWidget(), history);
         QVERIFY(sidebar->isVisible());
         window.navigate({PageId::Dashboard, id});
         settle(service);
         window.findChild<QToolButton *>("settingsButton")->click();
+        QVERIFY(!returnButton->hasFocus());
         QVERIFY(service.removeBackup(id).success);
         returnButton->click();
+        QVERIFY(!window.findChild<QToolButton *>("backupsButton")->hasFocus());
         QCOMPARE(pages->currentWidget(), window.findChild<HomePage *>());
         QVERIFY(!sidebarList->currentIndex().isValid());
     }
