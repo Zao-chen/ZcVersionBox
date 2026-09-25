@@ -11,12 +11,16 @@
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QKeyEvent>
+#include <QLineEdit>
 #include <QMenu>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QScrollBar>
 #include <QShortcut>
 #include <QSignalBlocker>
+#include <QTextEdit>
 #include <QSystemTrayIcon>
 #include <QTimer>
 #include <algorithm>
@@ -513,6 +517,8 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 
     if (event->type() == QEvent::MouseButtonPress)
     {
+        UiStyle::setKeyboardNavigationActive(false);
+
         if (auto *widget = qobject_cast<QWidget *>(watched))
         {
             if (widget->focusPolicy() == Qt::NoFocus && !qobject_cast<QMenu *>(widget) && !qobject_cast<QScrollBar *>(widget))
@@ -522,6 +528,24 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
                     if (isAncestorOf(focus) && !focus->isAncestorOf(widget))
                         focus->clearFocus();
                 }
+            }
+        }
+    }
+    else if (event->type() == QEvent::KeyPress)
+    {
+        const auto *keyEvent = static_cast<QKeyEvent *>(event);
+        const int key = keyEvent->key();
+        if (key == Qt::Key_Tab || key == Qt::Key_Backtab)
+        {
+            UiStyle::setKeyboardNavigationActive(true);
+        }
+        else if (key == Qt::Key_Up || key == Qt::Key_Down || key == Qt::Key_Left || key == Qt::Key_Right ||
+                 key == Qt::Key_PageUp || key == Qt::Key_PageDown || key == Qt::Key_Home || key == Qt::Key_End)
+        {
+            auto *focus = QApplication::focusWidget();
+            if (!qobject_cast<QLineEdit *>(focus) && !qobject_cast<QTextEdit *>(focus) && !qobject_cast<QPlainTextEdit *>(focus))
+            {
+                UiStyle::setKeyboardNavigationActive(true);
             }
         }
     }

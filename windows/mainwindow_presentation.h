@@ -50,6 +50,8 @@ void flatView(QAbstractItemView *view);
 QAction *action(QObject *owner, const QString &name, const QString &label, const QString &iconName = {});
 QToolButton *toolButton(QWidget *parent, QAction *action, bool iconOnly = false);
 int rowHeight(int minimum, const QFont &font, bool twoLines = false);
+bool isKeyboardNavigationActive();
+void setKeyboardNavigationActive(bool active);
 } // namespace UiStyle
 
 class ThemeController : public QObject

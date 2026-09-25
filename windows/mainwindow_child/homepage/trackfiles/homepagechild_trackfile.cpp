@@ -128,7 +128,7 @@ void BackupItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &op
         painter->setBrush(selected ? colors.selected : colors.hover);
         painter->drawRoundedRect(row, 6, 6);
     }
-    if (m_keyboardFocus && option.state.testFlag(QStyle::State_HasFocus))
+    if (UiStyle::isKeyboardNavigationActive() && option.state.testFlag(QStyle::State_HasFocus))
     {
         painter->setBrush(Qt::NoBrush);
         painter->setPen(colors.secondary);
@@ -157,11 +157,6 @@ bool BackupItemDelegate::eventFilter(QObject *watched, QEvent *event)
     {
         if (event->type() == QEvent::MouseButtonPress)
         {
-            if (m_keyboardFocus)
-            {
-                m_keyboardFocus = false;
-                m_view->viewport()->update();
-            }
             const auto *mouse = static_cast<QMouseEvent *>(event);
             const auto index = m_view->indexAt(mouse->position().toPoint());
             if (mouse->button() == Qt::LeftButton && index.isValid() && menuRect(m_view->visualRect(index)).contains(mouse->position().toPoint()))
@@ -178,35 +173,6 @@ bool BackupItemDelegate::eventFilter(QObject *watched, QEvent *event)
             if (index.data(BackupListModel::IdRole).toString() == id)
                 emit menuRequested(id, mouse->globalPosition().toPoint());
             return true;
-        }
-    }
-    if (watched == m_view || watched == m_view->viewport())
-    {
-        if (event->type() == QEvent::KeyPress)
-        {
-            if (!m_keyboardFocus)
-            {
-                m_keyboardFocus = true;
-                m_view->viewport()->update();
-            }
-        }
-        else if (event->type() == QEvent::FocusIn)
-        {
-            const auto *focus = static_cast<QFocusEvent *>(event);
-            const bool keyboard = focus->reason() == Qt::TabFocusReason || focus->reason() == Qt::BacktabFocusReason;
-            if (m_keyboardFocus != keyboard)
-            {
-                m_keyboardFocus = keyboard;
-                m_view->viewport()->update();
-            }
-        }
-        else if (event->type() == QEvent::FocusOut)
-        {
-            if (m_keyboardFocus)
-            {
-                m_keyboardFocus = false;
-                m_view->viewport()->update();
-            }
         }
     }
     if ((watched == m_view->viewport() || watched == m_view) && event->type() == QEvent::ContextMenu)

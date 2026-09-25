@@ -7,6 +7,7 @@
 #include <QDialogButtonBox>
 #include <QEvent>
 #include <QFile>
+#include <QFocusFrame>
 #include <QFontDatabase>
 #include <QFontInfo>
 #include <QHBoxLayout>
@@ -14,7 +15,9 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPainter>
+#include <QLineEdit>
 #include <QPlainTextEdit>
+#include <QTextEdit>
 #include <QPushButton>
 #include <QScreen>
 #include <QShortcut>
@@ -31,6 +34,7 @@
 namespace
 {
 using namespace oclero::qlementine;
+static bool s_keyboardNavigationActive = false;
 
 // Keep public Qlementine drawing and metrics, with neutral navigation colors
 // and the application's lighter button typography.
@@ -41,6 +45,20 @@ class AppStyle final : public QlementineStyle
     using QlementineStyle::QlementineStyle;
     void drawControl(ControlElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget = nullptr) const override
     {
+        if (element == CE_FocusFrame)
+        {
+            if (const auto *focusFrame = qobject_cast<const QFocusFrame *>(widget))
+            {
+                if (const auto *monitored = focusFrame->widget())
+                {
+                    const bool isTextInput = qobject_cast<const QLineEdit *>(monitored)
+                                          || qobject_cast<const QTextEdit *>(monitored)
+                                          || qobject_cast<const QPlainTextEdit *>(monitored);
+                    if (!isTextInput && !s_keyboardNavigationActive)
+                        return;
+                }
+            }
+        }
         if (element == CE_ToolButtonLabel && widget && widget->property("navigationItem").toBool())
         {
             if (const auto *button = qstyleoption_cast<const QStyleOptionToolButton *>(option))
@@ -53,6 +71,28 @@ class AppStyle final : public QlementineStyle
             }
         }
         QlementineStyle::drawControl(element, option, painter, widget);
+    }
+    void drawPrimitive(PrimitiveElement element, const QStyleOption *option, QPainter *painter, const QWidget *widget = nullptr) const override
+    {
+        if (element == PE_FrameFocusRect && !s_keyboardNavigationActive)
+        {
+            bool allow = false;
+            if (const auto *focusFrame = qobject_cast<const QFocusFrame *>(widget))
+            {
+                if (const auto *monitored = focusFrame->widget())
+                {
+                    if (qobject_cast<const QLineEdit *>(monitored)
+                        || qobject_cast<const QTextEdit *>(monitored)
+                        || qobject_cast<const QPlainTextEdit *>(monitored))
+                    {
+                        allow = true;
+                    }
+                }
+            }
+            if (!allow)
+                return;
+        }
+        QlementineStyle::drawPrimitive(element, option, painter, widget);
     }
     void polish(QWidget *widget) override
     {
@@ -261,6 +301,53 @@ QToolButton *toolButton(QWidget *parent, QAction *action, bool iconOnly)
 int rowHeight(int minimum, const QFont &font, bool twoLines)
 {
     return qMax(minimum, QFontMetrics(font).height() * (twoLines ? 2 : 1) + (twoLines ? 16 : 12));
+}
+bool isKeyboardNavigationActive()
+{
+    return s_keyboardNavigationActive;
+}
+void setKeyboardNavigationActive(bool active)
+{
+    if (s_keyboardNavigationActive == active)
+        return;
+    s_keyboardNavigationActive = active;
+    for (auto *widget : QApplication::allWidgets())
+    {
+        if (auto *focusFrame = qobject_cast<QFocusFrame *>(widget))
+        {
+            if (!active)
+            {
+                if (auto *monitored = focusFrame->widget())
+                {
+                    if (!qobject_cast<QLineEdit *>(monitored) &&
+                        !qobject_cast<QTextEdit *>(monitored) &&
+                        !qobject_cast<QPlainTextEdit *>(monitored))
+                    {
+                        focusFrame->hide();
+                    }
+                }
+            }
+            else
+            {
+                if (auto *monitored = focusFrame->widget())
+                {
+                    if (monitored->hasFocus())
+                        focusFrame->show();
+                }
+            }
+            focusFrame->update();
+        }
+        else if (auto *itemView = qobject_cast<QAbstractItemView *>(widget))
+        {
+            itemView->update();
+            if (itemView->viewport())
+                itemView->viewport()->update();
+        }
+    }
+    if (auto *focusWidget = QApplication::focusWidget())
+    {
+        focusWidget->update();
+    }
 }
 } // namespace UiStyle
 
