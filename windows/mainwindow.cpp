@@ -33,6 +33,21 @@
 
 namespace
 {
+#ifdef Q_OS_MACOS
+// Qt 6.8 applies the macOS titlebar safe area (the contentLayoutRect inset)
+// as contents margins on widgets that keep WA_ContentsMarginsRespectsSafeArea
+// enabled, pushing the title bar row below the traffic lights even though the
+// native window draws full-size content. The inset moves to the next widget
+// that has not opted out, so the whole tree has to opt out.
+void disableSafeAreaInsets(QWidget *root)
+{
+    root->setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);
+    const auto children = root->findChildren<QWidget *>();
+    for (auto *child : children)
+        child->setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);
+}
+#endif
+
 bool matchesSettings(PageId page, const QString &query)
 {
     QString keywords;
@@ -61,6 +76,9 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
 {
     setAttribute(Qt::WA_DontCreateNativeAncestors);
     ui->setupUi(this);
+#ifdef Q_OS_MACOS
+    disableSafeAreaInsets(this);
+#endif
     setWindowTitle("ZcVersionBox");
     resize(1080, 740);
     setMinimumSize(760, 520);
@@ -630,6 +648,7 @@ void MainWindow::showEvent(QShowEvent *event)
 {
     QMainWindow::showEvent(event);
 #ifdef Q_OS_MACOS
+    disableSafeAreaInsets(this);
     setupMacTitleBar(winId());
 #endif
 }
