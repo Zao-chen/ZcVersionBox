@@ -27,7 +27,7 @@ SettingPage::SettingPage(SettingsService *settings, QWidget *parent) : QWidget(p
     for (auto *toggle : {rightClick, autoStart})
     {
         toggle->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-        toggle->setFocusPolicy(Qt::StrongFocus);
+        toggle->setFocusPolicy(Qt::TabFocus);
     }
     ui->rightClickLayout->addWidget(rightClick);
     ui->rightClickLayout->setStretch(0, 1);
@@ -85,7 +85,7 @@ SettingPageAiPage::SettingPageAiPage(SettingsService *settings, QWidget *parent)
     m_enabled->setObjectName("aiEnabledSwitch");
     m_enabled->setAccessibleName("AI 自动提交说明");
     m_enabled->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    m_enabled->setFocusPolicy(Qt::StrongFocus);
+    m_enabled->setFocusPolicy(Qt::TabFocus);
     ui->enabledLayout->addWidget(m_enabled);
     ui->enabledLayout->setStretch(0, 1);
     ui->enabledLayout->setAlignment(m_enabled, Qt::AlignVCenter);
