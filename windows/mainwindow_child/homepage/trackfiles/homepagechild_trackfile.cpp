@@ -1,330 +1,187 @@
 #include "homepagechild_trackfile.h"
-#include "ui_homepagechild_trackfile.h"
-
-#include "../../../../GlobalConstants.h"
-#include "../../../../utils/aicommitmessagehelper.h"
-#include "../../../../utils/fileutils.h"
-#include "../homepage.h"
-
-#include <QDateTime>
-#include <QDesktopServices>
+#include "windows/mainwindow_presentation.h"
+#include <QContextMenuEvent>
 #include <QDir>
-#include <QDirIterator>
-#include <QFile>
 #include <QFileInfo>
-#include <QMap>
-#include <QProcess>
-#include <QTimer>
-#include <QUrl>
+#include <QListView>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QSet>
+#include <utility>
 
-#include "ElaMessageBar.h"
-#include "ElaToolTip.h"
-
-namespace
+int BackupListModel::rowCount(const QModelIndex &parent) const
 {
-QString buildAutoCommitMessageWithAi(const QString &repoPath)
-{
-    // Auto AI commit message is optional and controlled by settings.
-    if (!AiCommitMessageHelper::isAutoCommitEnabled())
-        return {};
-
-    QProcess diffProcess;
-    diffProcess.setWorkingDirectory(repoPath);
-    diffProcess.start("git", QStringList() << "diff" << "--cached" << "--unified=0");
-    if (!diffProcess.waitForStarted())
-    {
-        qInfo() << "自动 AI 提交信息获取 diff 失败：无法启动 git";
-        return {};
-    }
-    diffProcess.waitForFinished();
-    if (diffProcess.exitCode() != 0)
-    {
-        qInfo() << "自动 AI 提交信息获取 diff 失败：" << QString::fromUtf8(diffProcess.readAllStandardError()).trimmed();
-        return {};
-    }
-
-    const QString diffText = QString::fromUtf8(diffProcess.readAllStandardOutput()).trimmed();
-    if (diffText.isEmpty())
-    {
-        qInfo() << "自动 AI 提交信息获取到空 diff，回退默认提交信息";
-        return {};
-    }
-
-    const QString prompt = AiCommitMessageHelper::buildPromptFromDiff(diffText);
-    qInfo() << "自动 AI 提交信息请求，repo=" << repoPath
-            << "diff长度=" << diffText.length()
-            << "prompt长度=" << prompt.length();
-
-    QString aiError;
-    const QString generated = AiCommitMessageHelper::generateCommitMessageSync(diffText, 15000, &aiError);
-
-    if (generated.isEmpty())
-    {
-        if (aiError.isEmpty())
-            qInfo() << "自动 AI 提交信息失败：未知错误";
-        else
-            qInfo() << "自动 AI 提交信息失败：" << aiError;
-        return {};
-    }
-
-    qInfo() << "自动 AI 提交信息成功，message长度=" << generated.length();
-    return generated;
+    return parent.isValid() ? 0 : m_items.size();
 }
-
-} // namespace
-
-HomePageChild_TrackFile::HomePageChild_TrackFile(QString FilePathWithCode, QWidget *parent)
-    : QWidget(parent), ui(new Ui::HomePageChild_TrackFile)
+QVariant BackupListModel::data(const QModelIndex &index, int role) const
 {
-    /*初始化*/
-    ui->setupUi(this);
-    /*读取参数*/
-    m_FilePathWithCode = FilePathWithCode;
-    /*显示设置*/
-    ui->label->setText(QFileInfo(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8())).fileName());
-    ElaToolTip *NameToolTip = new ElaToolTip(ui->label);
-    NameToolTip->setToolTip(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8()));
-
-    /*开始备份*/
-    QTimer *timer = new QTimer(this);
-    timer->setInterval(1500); //1.5秒扫描一次
-    QString rootPath = QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8());
-    rootPath = QDir::cleanPath(rootPath);
-    const bool isTrackedFile = QFileInfo(rootPath).isFile();
-    QMap<QString, QString> lastState; // path -> fingerprint
-    //递归扫描
-    auto scanState = [rootPath, isTrackedFile](QMap<QString, QString> &state)
+    if (!index.isValid() || index.row() < 0 || index.row() >= m_items.size())
+        return {};
+    const auto &item = m_items.at(index.row());
+    switch (role)
     {
-        if (isTrackedFile)
+    case Qt::DisplayRole:
+        return item.name;
+    case Qt::ToolTipRole:
+        return item.sourcePath;
+    case Qt::AccessibleTextRole:
+        return item.name + ", " + item.sourcePath;
+    case IdRole:
+        return item.id;
+    case PathRole:
+        return item.sourcePath;
+    case ParentPathRole:
+    {
+        const auto path = QDir::fromNativeSeparators(item.sourcePath);
+        return path.left(qMax(0, path.lastIndexOf('/')));
+    }
+    case SearchRole:
+        return item.name + "\n" + item.sourcePath + "\n" + QDir::fromNativeSeparators(item.sourcePath);
+    default:
+        return {};
+    }
+}
+QModelIndex BackupListModel::indexForId(const QString &id) const
+{
+    for (int row = 0; row < m_items.size(); ++row)
+        if (m_items[row].id == id)
+            return index(row);
+    return {};
+}
+void BackupListModel::setItems(const QVector<TrackedItem> &items)
+{
+    QSet<QString> ids;
+    for (const auto &item : items)
+        ids.insert(item.id);
+    for (int row = m_items.size() - 1; row >= 0; --row)
+        if (!ids.contains(m_items[row].id))
         {
-            QFileInfo info(rootPath);
-            if (info.exists() && info.isFile())
-            {
-                state[rootPath] = QString::number(info.size()) + "|" +
-                                  QString::number(info.lastModified().toMSecsSinceEpoch());
-            }
-            return;
+            beginRemoveRows({}, row, row);
+            m_items.removeAt(row);
+            endRemoveRows();
         }
-
-        QDirIterator it(rootPath,
-                        QDir::Files | QDir::Hidden | QDir::Readable | QDir::NoSymLinks,
-                        QDirIterator::Subdirectories);
-        while (it.hasNext())
+    for (int row = 0; row < items.size(); ++row)
+    {
+        const auto &item = items[row];
+        const auto old = indexForId(item.id);
+        if (!old.isValid())
         {
-            it.next();
-            QFileInfo info = it.fileInfo();
-
-            QString filePath = QDir::cleanPath(it.filePath());
-            const QString norm = QDir::fromNativeSeparators(filePath);
-
-            if (norm.contains("/.git/") || norm.endsWith("/.git") ||
-                norm.contains("/build/") || norm.endsWith("/build"))
-            {
-                continue;
-            }
-
-            const QString fingerprint =
-                QString::number(info.size()) + "|" +
-                QString::number(info.lastModified().toMSecsSinceEpoch());
-
-            state[filePath] = fingerprint;
-        }
-    };
-
-    //初始化
-    scanState(lastState);
-
-    //防止备份重入（备份过程中不重复触发）
-    bool *busy = new bool(false);
-    connect(timer, &QTimer::timeout, this, [=]() mutable
-            {
-                if (*busy) return;
-                QMap<QString, QString> newState;
-                scanState(newState);
-
-                if (newState != lastState)
-                {
-                    *busy = true;
-                    qInfo() << "检测到文件系统变化";
-                    BackupFile();
-                    lastState = std::move(newState);
-                    *busy = false;
-                } });
-    timer->start();
-}
-
-HomePageChild_TrackFile::~HomePageChild_TrackFile()
-{
-    delete ui;
-}
-
-/*打开文件*/
-void HomePageChild_TrackFile::on_pushButton_OpenFile_clicked()
-{
-    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8()))))
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "打开失败",
-                             "无法打开目标路径",
-                             3000,
-                             this);
-    }
-}
-
-/*同步文件到仓库*/
-void HomePageChild_TrackFile::BackupFile()
-{
-    QString FilePathWithoutCode = QUrl::fromPercentEncoding(m_FilePathWithCode.toUtf8());
-    QString backupDirPath = BackupPath + "/" + m_FilePathWithCode + "/" + QFileInfo(FilePathWithoutCode).fileName();
-    const QFileInfo sourceInfo(FilePathWithoutCode);
-    if (!sourceInfo.exists())
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "自动备份失败",
-                             "源文件或文件夹不存在",
-                             3000,
-                             this);
-        return;
-    }
-
-    /*备份*/
-    const QFileInfo backupInfo(backupDirPath);
-    if (backupInfo.exists())
-    {
-        if (backupInfo.isDir())
-        {
-            if (!QDir(backupDirPath).removeRecursively())
-            {
-                ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                     "自动备份失败",
-                                     "清理旧备份目录失败",
-                                     3000,
-                                     this);
-                return;
-            }
+            beginInsertRows({}, row, row);
+            m_items.insert(row, item);
+            endInsertRows();
         }
         else
         {
-            if (!QFile::remove(backupDirPath))
+            if (old.row() != row)
             {
-                ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                     "自动备份失败",
-                                     "清理旧备份文件失败",
-                                     3000,
-                                     this);
-                return;
+                beginMoveRows({}, old.row(), old.row(), {}, row);
+                m_items.move(old.row(), row);
+                endMoveRows();
+            }
+            if (m_items[row].name != item.name || m_items[row].sourcePath != item.sourcePath)
+            {
+                m_items[row] = item;
+                emit dataChanged(index(row), index(row));
             }
         }
     }
-
-    if (sourceInfo.isFile())
-    {
-        if (!QFile::copy(FilePathWithoutCode, backupDirPath))
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "自动备份失败",
-                                 "复制文件失败，请检查权限",
-                                 3000,
-                                 this);
-            return;
-        }
-    }
-    else
-    {
-        if (!FileUtils::copyDirectory(FilePathWithoutCode, backupDirPath))
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "自动备份失败",
-                                 "复制文件夹失败，请检查权限",
-                                 3000,
-                                 this);
-            return;
-        }
-    }
-
-    /*Git自动Commit*/
-    QProcess git;
-    const QString repoPath = BackupPath + "/" + m_FilePathWithCode;
-    git.setWorkingDirectory(repoPath);
-    qInfo() << "自动备份开始，repo=" << repoPath;
-    //添加变更
-    git.start("git", QStringList() << "add" << ".");
-    if (!git.waitForStarted())
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "自动备份失败",
-                             "无法启动 git，请确认 git 已安装",
-                             3000,
-                             this);
-        return;
-    }
-    git.waitForFinished();
-    if (git.exitCode() != 0)
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "自动备份失败",
-                             QString::fromUtf8(git.readAllStandardError()).trimmed(),
-                             3000,
-                             this);
-        return;
-    }
-    //检查是否真的有改动（避免空提交）
-    git.start("git", QStringList() << "diff" << "--cached" << "--quiet");
-    if (!git.waitForStarted())
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "自动备份失败",
-                             "无法启动 git，请确认 git 已安装",
-                             3000,
-                             this);
-        return;
-    }
-    git.waitForFinished();
-    if (git.exitCode() != 0)
-    {
-        QString timeStr = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
-        QString commitMessage = buildAutoCommitMessageWithAi(repoPath);
-        if (commitMessage.isEmpty())
-            commitMessage = QString("Auto backup - %1").arg(timeStr);
-
-        qInfo() << "自动备份提交信息：" << commitMessage.left(120);
-
-        git.start("git", QStringList() << "commit" << "-m" << commitMessage);
-        if (!git.waitForStarted())
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "自动备份失败",
-                                 "无法启动 git，请确认 git 已安装",
-                                 3000,
-                                 this);
-            return;
-        }
-        git.waitForFinished();
-        if (git.exitCode() != 0)
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "自动备份失败",
-                                 QString::fromUtf8(git.readAllStandardError()).trimmed(),
-                                 3000,
-                                 this);
-        }
-    }
 }
-
-/*查看备份*/
-void HomePageChild_TrackFile::on_pushButton_Backup_clicked()
+BackupFilterModel::BackupFilterModel(QObject *parent) : QSortFilterProxyModel(parent)
 {
-    qInfo() << "打开历史版本：" << m_FilePathWithCode;
-    //传递到父窗口
-    HomePage *mw = qobject_cast<HomePage *>(this->parent()->parent()->parent());
-    mw->openBackup(m_FilePathWithCode);
+    setFilterRole(BackupListModel::SearchRole);
+    setFilterCaseSensitivity(Qt::CaseInsensitive);
+    setSortCaseSensitivity(Qt::CaseInsensitive);
+    setDynamicSortFilter(true);
 }
-
-/*查看仪表盘*/
-void HomePageChild_TrackFile::on_pushButton_Dashboard_clicked()
+bool BackupFilterModel::lessThan(const QModelIndex &left, const QModelIndex &right) const
 {
-    qInfo() << "打开备份仪表盘：" << m_FilePathWithCode;
-    //传递到父窗口
-    HomePage *mw = qobject_cast<HomePage *>(this->parent()->parent()->parent());
-    mw->openBackupDashboard(m_FilePathWithCode);
+    const auto comparison = QString::localeAwareCompare(left.data().toString().toCaseFolded(), right.data().toString().toCaseFolded());
+    if (comparison != 0)
+        return comparison < 0;
+    return left.data(BackupListModel::IdRole).toString() < right.data(BackupListModel::IdRole).toString();
+}
+BackupItemDelegate::BackupItemDelegate(QListView *view, bool sidebar) : QStyledItemDelegate(view), m_view(view), m_sidebar(sidebar)
+{
+    view->viewport()->installEventFilter(this);
+    view->installEventFilter(this);
+}
+QRect BackupItemDelegate::menuRect(const QRect &row) const
+{
+    return QRect(row.right() - 32, row.center().y() - 14, 28, 28);
+}
+QSize BackupItemDelegate::sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const
+{
+    return {0, UiStyle::rowHeight(m_sidebar ? 52 : 56, UiStyle::font(m_sidebar ? UiStyle::FontRole::Sidebar : UiStyle::FontRole::Body), true)};
+}
+void BackupItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const
+{
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing);
+    const auto colors = UiStyle::colors();
+    const auto row = option.rect.adjusted(0, 2, 0, -2);
+    const bool selected = option.state.testFlag(QStyle::State_Selected);
+    const bool hovered = option.state.testFlag(QStyle::State_MouseOver);
+    if (selected || hovered)
+    {
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(selected ? colors.selected : colors.hover);
+        painter->drawRoundedRect(row, 6, 6);
+    }
+    if (option.state.testFlag(QStyle::State_HasFocus))
+    {
+        painter->setBrush(Qt::NoBrush);
+        painter->setPen(colors.secondary);
+        painter->drawRoundedRect(QRectF(row).adjusted(.5, .5, -.5, -.5), 6, 6);
+    }
+    const auto content = row.adjusted(12, 6, -36, -6);
+    const auto mainFont = UiStyle::font(m_sidebar ? UiStyle::FontRole::Sidebar : UiStyle::FontRole::Body);
+    const auto captionFont = UiStyle::font(UiStyle::FontRole::Caption);
+    const int mainHeight = QFontMetrics(mainFont).height();
+    painter->setFont(mainFont);
+    painter->setPen(colors.text);
+    painter->drawText(QRect(content.x(), content.y(), content.width(), mainHeight), Qt::AlignLeft | Qt::AlignVCenter,
+                      QFontMetrics(mainFont).elidedText(index.data().toString(), Qt::ElideRight, content.width()));
+    painter->setFont(captionFont);
+    painter->setPen(colors.secondary);
+    const auto path = index.data(m_sidebar ? BackupListModel::ParentPathRole : BackupListModel::PathRole).toString();
+    painter->drawText(QRect(content.x(), content.y() + mainHeight + 2, content.width(), QFontMetrics(captionFont).height()), Qt::AlignLeft | Qt::AlignVCenter,
+                      QFontMetrics(captionFont).elidedText(QDir::toNativeSeparators(path), Qt::ElideMiddle, content.width()));
+    if (hovered || selected)
+        UiStyle::icon("more").paint(painter, QRect(menuRect(row).center() - QPoint(8, 8), QSize(16, 16)));
+    painter->restore();
+}
+bool BackupItemDelegate::eventFilter(QObject *watched, QEvent *event)
+{
+    if (watched == m_view->viewport())
+    {
+        if (event->type() == QEvent::MouseButtonPress)
+        {
+            const auto *mouse = static_cast<QMouseEvent *>(event);
+            const auto index = m_view->indexAt(mouse->position().toPoint());
+            if (mouse->button() == Qt::LeftButton && index.isValid() && menuRect(m_view->visualRect(index)).contains(mouse->position().toPoint()))
+            {
+                m_pressedId = index.data(BackupListModel::IdRole).toString();
+                return true; // Opening the menu must not also navigate.
+            }
+        }
+        else if (event->type() == QEvent::MouseButtonRelease && !m_pressedId.isEmpty())
+        {
+            const auto id = std::exchange(m_pressedId, {});
+            const auto *mouse = static_cast<QMouseEvent *>(event);
+            const auto index = m_view->indexAt(mouse->position().toPoint());
+            if (index.data(BackupListModel::IdRole).toString() == id)
+                emit menuRequested(id, mouse->globalPosition().toPoint());
+            return true;
+        }
+    }
+    if ((watched == m_view->viewport() || watched == m_view) && event->type() == QEvent::ContextMenu)
+    {
+        const auto *context = static_cast<QContextMenuEvent *>(event);
+        const auto index = context->reason() == QContextMenuEvent::Keyboard ? m_view->currentIndex() : m_view->indexAt(context->pos());
+        if (index.isValid())
+            emit menuRequested(index.data(BackupListModel::IdRole).toString(),
+                               context->reason() == QContextMenuEvent::Keyboard ? m_view->viewport()->mapToGlobal(m_view->visualRect(index).bottomRight()) : context->globalPos());
+        return true;
+    }
+    return QStyledItemDelegate::eventFilter(watched, event);
 }

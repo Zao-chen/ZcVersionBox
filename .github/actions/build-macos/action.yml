@@ -1,0 +1,54 @@
+name: Build and package macOS
+description: Qt 6.8.3 / macOS 12.0 release with AI SDK architecture validation
+inputs:
+  tag:
+    description: Release tag
+    required: true
+  architectures:
+    description: Required architectures (the bundled AI SDK contains arm64)
+    default: arm64
+runs:
+  using: composite
+  steps:
+    - uses: seanmiddleditch/gha-setup-ninja@v5
+    - uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.8.3'
+        target: desktop
+        arch: clang_64
+        modules: qtsvg
+        cache: true
+    - name: Configure a clean Release build
+      shell: bash
+      env:
+        TARGET_ARCHS: ${{ inputs.architectures }}
+      run: |
+        test ! -e build/release || { echo 'Use a clean build/release directory'; exit 1; }
+        cmake -S . -B build/release -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+          -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCHS"
+    - name: Build and test
+      shell: bash
+      run: |
+        cmake --build build/release --parallel 4
+        ctest --test-dir build/release --output-on-failure
+    - name: Package and verify bundle
+      shell: bash
+      env:
+        PACKAGE_TAG: ${{ inputs.tag }}
+        TARGET_ARCHS: ${{ inputs.architectures }}
+      run: bash scripts/package-macos.sh build/release dist/macos "$PACKAGE_TAG" "$TARGET_ARCHS"
+    - uses: actions/upload-artifact@v4
+      with:
+        name: pkg-macos-dmg
+        path: dist/macos/ZcVersionBox-*.dmg
+        if-no-files-found: error
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: tests-macos
+        path: |
+          build/release/Testing/Temporary/LastTest.log
+          build/release/tests/regression.txt

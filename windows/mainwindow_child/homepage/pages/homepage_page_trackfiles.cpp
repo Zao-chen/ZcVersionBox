@@ -1,472 +1,155 @@
-#include "../homepage.h"
-#define HOMEPAGE_UI_HEADER "ui_homepage.h"
-#include HOMEPAGE_UI_HEADER
-#undef HOMEPAGE_UI_HEADER
-
-#include "../../../../GlobalConstants.h"
-#include "../../../../utils/fileutils.h"
-#include "../trackfiles/homepagechild_trackfile.h"
-
-#include "ElaText.h"
-
-#include <ElaContentDialog.h>
-#include <ElaMessageBar.h>
-
-#include <QCoreApplication>
-#include <QDateTime>
-#include <QDir>
-#include <QFile>
+#include "homepage_page_trackfiles.h"
+#include "windows/mainwindow_presentation.h"
+#include <QAction>
+#include <QApplication>
+#include <QClipboard>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFileDialog>
-#include <QFileInfo>
-#include <QFileSystemWatcher>
+#include <QLabel>
 #include <QLineEdit>
-#include <QProcess>
-#include <QSpacerItem>
-#include <QStandardPaths>
-#include <QTimer>
-#include <QUrl>
+#include <QMenu>
+#include <QPushButton>
+#include <QScopedValueRollback>
 #include <QVBoxLayout>
 
-#include <functional>
-
-namespace
+BackupUiActions::BackupUiActions(BackupService *service, QWidget *owner) : QObject(owner), m_service(service), m_owner(owner)
 {
-class SafeElaContentDialog : public ElaContentDialog
-{
-public:
-    using ElaContentDialog::ElaContentDialog;
-
-    void onLeftButtonClicked() override
-    {
-        if (leftClicked)
-            leftClicked();
-    }
-
-    void onMiddleButtonClicked() override
-    {
-        if (middleClicked)
-            middleClicked();
-    }
-
-    void onRightButtonClicked() override
-    {
-        if (rightClicked)
-            rightClicked();
-    }
-
-    std::function<void()> leftClicked;
-    std::function<void()> middleClicked;
-    std::function<void()> rightClicked;
-};
-}
-
-void HomePage::SetupTrackFilesPage()
-{
-    /*窗口初始化*/
-    LoadBackupFileList();
-
-    /*创建面包屑*/
-    ui->widget_BreadcrumbBar->setTextPixelSize(25);
-    ui->widget_BreadcrumbBar->appendBreadcrumb("备份中文件");
-
-    /*监控追踪中的文件*/
-    QFileSystemWatcher *watcher = new QFileSystemWatcher(this);
-    watcher->addPath(BackupPath);
-    connect(watcher, &QFileSystemWatcher::directoryChanged,
-            this, [=](const QString &path)
+    m_addMenu = new QMenu(owner);
+    m_addMenu->setObjectName("addBackupMenu");
+    auto *file = UiStyle::action(this, "addFileAction", "添加文件…", "file");
+    auto *folder = UiStyle::action(this, "addFolderAction", "添加文件夹…", "folder");
+    auto *cloud = UiStyle::action(this, "importBackupAction", "从云端导入…", "cloud");
+    m_addMenu->addActions({file, folder, cloud});
+    m_add = UiStyle::action(this, "addBackupAction", "添加备份", "add");
+    m_add->setMenu(m_addMenu);
+    m_add->setProperty("primary", true);
+    connect(file, &QAction::triggered, this, [this]
+            { addLocal(false); });
+    connect(folder, &QAction::triggered, this, [this]
+            { addLocal(true); });
+    connect(cloud, &QAction::triggered, this, &BackupUiActions::importRemote);
+    m_open = UiStyle::action(this, "openSourceAction", "打开源文件", "external");
+    m_overview = UiStyle::action(this, "overviewAction", "查看概览", "info");
+    m_copy = UiStyle::action(this, "copyPathAction", "复制路径", "copy");
+    m_remove = UiStyle::action(this, "removeBackupAction", "删除备份…");
+    m_rebuild = UiStyle::action(this, "rebuildBackupAction", "重建仓库…");
+    connect(m_open, &QAction::triggered, this, [this]
             {
-                qInfo() << "追踪中的文件列表变化：" << path;
-                LoadBackupFileList(); });
+        if (m_service->contains(target()))
+            openLocalPath(m_owner, m_service->sourcePath(target())); });
+    connect(m_copy, &QAction::triggered, this, [this]
+            {
+        if (m_service->contains(target()))
+            QApplication::clipboard()->setText(QDir::toNativeSeparators(m_service->sourcePath(target()))); });
+    connect(m_overview, &QAction::triggered, this, [this]
+            { emit navigate({PageId::Dashboard, target()}); });
+    connect(m_remove, &QAction::triggered, this, [this]
+            { remove(target()); });
+    connect(m_rebuild, &QAction::triggered, this, [this]
+            { rebuild(target()); });
 }
-
-/*加载追踪文件列表*/
-void HomePage::LoadBackupFileList()
+void BackupUiActions::refreshIcons()
 {
-    //清空文件列表
-    QLayoutItem *child;
-    while ((child = ui->verticalLayout_TrackFiles->takeAt(0)) != nullptr)
-    {
-        if (QWidget *w = child->widget())
-            w->deleteLater();
-        delete child;
-    }
-
-    /*获取所有备份文件夹*/
-    //获取路径下所有文件夹并输出名字
-    QString docPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + "/ZcVersionBox/Backup";
-    QDir dir(docPath);
-    //只列出目录（排除文件），并排除 "." 和 ".."
-    QStringList folderNames = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
-    for (const QString &name : std::as_const(folderNames))
-    {
-        //创建子窗口
-        HomePageChild_TrackFile *trackfile_widget = new HomePageChild_TrackFile(name, this);
-        ui->verticalLayout_TrackFiles->addWidget(trackfile_widget);
-    }
-
-    //最后再添加一个verticalSpacer
-    auto *spacer = new QSpacerItem(20, 40, QSizePolicy::Minimum, QSizePolicy::Expanding);
-    ui->verticalLayout_TrackFiles->addItem(spacer);
+    for (auto *action : findChildren<QAction *>())
+        if (!action->property("iconName").toString().isEmpty())
+            action->setIcon(UiStyle::icon(action->property("iconName").toString()));
 }
-
-/*添加本地仓库*/
-void HomePage::on_pushButton_AddFromLoc_clicked()
+void BackupUiActions::showObjectMenu(const QString &id, const QPoint &position, bool maintenance)
 {
-    SafeElaContentDialog *dlg = new SafeElaContentDialog(this);
-
-    QWidget *central = new QWidget(dlg);
-    QVBoxLayout *layout = new QVBoxLayout(central);
-
-    ElaText *label = new ElaText(tr("你要添加单个文件，还是整个文件夹？"), central);
-    label->setTextPixelSize(16);
-    layout->addWidget(label);
-
-    dlg->setCentralWidget(central);
-    dlg->setLeftButtonText(tr("文件"));
-    dlg->setMiddleButtonText(tr("文件夹"));
-    dlg->setRightButtonText(tr("取消"));
-
-    int choose = 0;
-    dlg->leftClicked = [&]() { choose = 1; };
-    dlg->middleClicked = [&]()
-    {
-        choose = 2;
-        dlg->reject();
-    };
-    dlg->rightClicked = [&]() { choose = 0; };
-
-    dlg->exec();
-    dlg->leftClicked = nullptr;
-    dlg->middleClicked = nullptr;
-    dlg->rightClicked = nullptr;
-    QTimer::singleShot(1000, dlg, &QObject::deleteLater);
-
-    QString path;
-    QWidget *owner = this->window();
-
-    if (choose == 1) //添加文件
-    {
-        QFileDialog::Options options;
-        path = QFileDialog::getOpenFileName(
-            owner,
-            tr("选择文件"),
-            QDir::homePath(),
-            tr("All Files (*.*)"),
-            nullptr,
-            options);
-    }
-    else if (choose == 2) //添加文件夹
-    {
-        QFileDialog::Options options = QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks;
-        path = QFileDialog::getExistingDirectory(
-            owner,
-            tr("选择文件夹"),
-            QDir::homePath(),
-            options);
-    }
-    else //取消
-    {
+    if (!m_service->contains(id))
         return;
-    }
-
-    if (path.isEmpty())
-        return;
-
-    QString exePath = QCoreApplication::applicationFilePath();
-    if (!QProcess::startDetached(exePath, QStringList() << path))
+    QScopedValueRollback<QString> context(m_menuId, id);
+    QMenu menu(m_owner);
+    menu.setObjectName("backupObjectMenu");
+    menu.addActions({m_open, m_overview, m_copy});
+    if (maintenance)
     {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "添加失败",
-                             "无法启动新进程，请检查程序权限",
-                             3000,
-                             parentWidget());
+        menu.addSeparator();
+        menu.addActions({m_rebuild, m_remove});
     }
+    menu.exec(position);
 }
-
-/*从云端导入备份*/
-void HomePage::on_pushButton_AddFromRemo_clicked()
+void BackupUiActions::remove(const QString &id)
 {
-    SafeElaContentDialog *urlDialog = new SafeElaContentDialog(this);
-
-    QWidget *urlCentral = new QWidget(urlDialog);
-    QVBoxLayout *urlLayout = new QVBoxLayout(urlCentral);
-
-    ElaText *hintText = new ElaText(tr("请输入云端仓库地址"), urlCentral);
-    hintText->setTextPixelSize(16);
-    urlLayout->addWidget(hintText);
-
-    QLineEdit *urlEdit = new QLineEdit(urlCentral);
-    urlEdit->setPlaceholderText(tr("例如: https://github.com/user/repo.git"));
-    urlLayout->addWidget(urlEdit);
-
-    urlDialog->setCentralWidget(urlCentral);
-    urlDialog->setLeftButtonText(tr("确定"));
-    urlDialog->setMiddleButtonText(tr("检查链接"));
-    urlDialog->setRightButtonText(tr("取消"));
-
-    int confirm = 0;
-    urlDialog->leftClicked = [&]() { confirm = 1; };
-    urlDialog->middleClicked = [&]() //检查链接
+    const auto generation = m_service->repositoryGeneration(id);
+    if (!m_service->contains(id))
+        return;
+    const auto name = QFileInfo(m_service->sourcePath(id)).fileName();
+    if (confirmAction(m_owner, QString("确定要删除“%1”的备份吗？\n\n此操作会删除本地备份仓库和所有历史版本记录，但不会删除源文件。\n\n此操作不可撤销！").arg(name), "确认删除"))
+        emit notification(generation == m_service->repositoryGeneration(id) ? m_service->removeBackup(id)
+                                                                            : OperationResult::warn("操作已取消", "备份对象已变化，请重新打开此页面后再试"));
+}
+void BackupUiActions::rebuild(const QString &id)
+{
+    const auto generation = m_service->repositoryGeneration(id);
+    if (!m_service->contains(id))
+        return;
+    const auto name = QFileInfo(m_service->sourcePath(id)).fileName();
+    if (confirmAction(m_owner, QString("确定要重建“%1”的仓库吗？\n\n删除所有历史版本记录，仅保留当前快照。\n如已配置云端地址，将强制覆盖云端仓库。\n\n此操作不可撤销！").arg(name), "确认重建"))
+        emit notification(generation == m_service->repositoryGeneration(id) ? m_service->rebuild(id)
+                                                                            : OperationResult::warn("操作已取消", "备份对象已变化，请重新打开此页面后再试"));
+}
+void BackupUiActions::addLocal(bool directory)
+{
+    const auto path = directory ? QFileDialog::getExistingDirectory(m_owner, "选择文件夹", QDir::homePath(), QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks)
+                                : QFileDialog::getOpenFileName(m_owner, "选择文件", QDir::homePath(), "All Files (*.*)");
+    if (!path.isEmpty())
+        emit notification(m_service->addLocal(path));
+}
+void BackupUiActions::importRemote()
+{
+    QDialog dialog(m_owner);
+    dialog.setWindowTitle("从云端导入备份");
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(24, 24, 24, 24);
+    layout->setSpacing(12);
+    layout->addWidget(new QLabel("云端仓库地址", &dialog));
+    auto *url = new QLineEdit(&dialog);
+    url->setAccessibleName("云端仓库地址");
+    url->setPlaceholderText("https://github.com/user/repo.git");
+    layout->addWidget(url);
+    auto *status = new QLabel(&dialog);
+    status->setWordWrap(true);
+    status->setTextFormat(Qt::PlainText);
+    layout->addWidget(status);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText("导入");
+    buttons->button(QDialogButtonBox::Cancel)->setText("取消");
+    auto *check = buttons->addButton("检查链接", QDialogButtonBox::ActionRole);
+    check->setFlat(true);
+    layout->addWidget(buttons);
+    connect(check, &QPushButton::clicked, &dialog, [&]
+            {
+        const auto result = m_service->checkRemote(url->text());
+        status->setText(result.title + "：" + result.message); });
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    dialog.resize(520, dialog.sizeHint().height());
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    const auto prepared = m_service->prepareImport(url->text());
+    if (!prepared.result.success)
     {
-        const QString testUrl = urlEdit->text().trimmed();
-        if (testUrl.isEmpty())
-        {
-            ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                                   "检查失败",
-                                   "请先输入云端仓库地址",
-                                   2000,
-                                   parentWidget());
-            return;
-        }
-
-        QProcess checkProcess;
-        checkProcess.start("git", QStringList() << "ls-remote" << "--heads" << testUrl);
-        if (!checkProcess.waitForStarted())
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "检查失败",
-                                 "无法启动 git，请确认 git 已安装",
-                                 3000,
-                                 parentWidget());
-            return;
-        }
-        checkProcess.waitForFinished();
-
-        if (checkProcess.exitCode() == 0)
-        {
-            ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                                   "检查成功",
-                                   "仓库地址可访问",
-                                   2000,
-                                   parentWidget());
-        }
-        else
-        {
-            const QString errorText = QString::fromUtf8(checkProcess.readAllStandardError()).trimmed();
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "检查失败",
-                                 errorText.isEmpty() ? "仓库地址不可用，请检查链接和网络" : errorText,
-                                 3000,
-                                 parentWidget());
-        }
-    };
-    urlDialog->rightClicked = [&]() { confirm = 0; };
-
-    urlDialog->exec();
-    const QString repoUrl = urlEdit->text().trimmed();
-    urlDialog->leftClicked = nullptr;
-    urlDialog->middleClicked = nullptr;
-    urlDialog->rightClicked = nullptr;
-    QTimer::singleShot(1000, urlDialog, &QObject::deleteLater);
-
-    if (confirm != 1)
-    {
+        emit notification(prepared.result);
         return;
     }
-
-    if (repoUrl.isEmpty())
-    {
-        ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                               "导入失败",
-                               "云端仓库地址不能为空",
-                               2000,
-                               parentWidget());
-        return;
-    }
-
-    QDir().mkpath(BackupPath);
-
-    /*Clone仓库到暂存*/
-    QString repoName = QFileInfo(QUrl(repoUrl).path()).baseName();
-    if (repoName.isEmpty())
-        repoName = "repo";
-    const QString timeSuffix = QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss");
-    const QString tempRepoPath = QDir(BackupPath).filePath("_import_tmp_" + repoName + "_" + timeSuffix);
-
-    QProcess cloneProcess;
-    cloneProcess.start("git", QStringList() << "clone" << repoUrl << tempRepoPath);
-    if (!cloneProcess.waitForStarted())
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "导入失败",
-                             "无法启动 git，请确认 git 已安装",
-                             3000,
-                             parentWidget());
-        return;
-    }
-    cloneProcess.waitForFinished();
-
-    if (cloneProcess.exitCode() != 0)
-    {
-        const QString errorText = QString::fromUtf8(cloneProcess.readAllStandardError()).trimmed();
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "导入失败",
-                             errorText.isEmpty() ? "仓库克隆失败，请检查仓库地址和网络连接" : errorText,
-                             3000,
-                             parentWidget());
-        return;
-    }
-
-    QDir tempRepoDir(tempRepoPath);
-    const QFileInfoList rootEntries = tempRepoDir.entryInfoList(QDir::NoDotAndDotDot | QDir::AllEntries, QDir::Name);
-    QFileInfo trackedEntry;
-    for (const QFileInfo &entry : rootEntries)
-    {
-        if (entry.fileName() == ".git")
-            continue;
-        trackedEntry = entry;
-        break;
-    }
-
-    if (!trackedEntry.exists())
-    {
-        if (!QDir(tempRepoPath).removeRecursively())
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "导入失败",
-                                 "清理临时仓库失败",
-                                 3000,
-                                 parentWidget());
-            return;
-        }
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "导入失败",
-                             "仓库中未找到可导入内容",
-                             3000,
-                             parentWidget());
-        return;
-    }
-
-    /*选择保存位置*/
-    QString targetPath;
-    QWidget *owner = this->window();
-    if (trackedEntry.isFile())
-    {
-        targetPath = QFileDialog::getSaveFileName(
-            owner,
-            tr("选择追踪文件位置"),
-            QDir::home().filePath(trackedEntry.fileName()),
-            tr("All Files (*.*)"));
-    }
+    QString target;
+    if (!prepared.directory)
+        target = QFileDialog::getSaveFileName(m_owner, "选择追踪文件位置", QDir::home().filePath(prepared.entryName), "All Files (*.*)");
     else
     {
-        const QString targetParent = QFileDialog::getExistingDirectory(
-            owner,
-            tr("选择追踪文件夹位置"),
-            QDir::homePath(),
-            QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
-        if (!targetParent.isEmpty())
-            targetPath = QDir(targetParent).filePath(trackedEntry.fileName());
+        const auto folder = QFileDialog::getExistingDirectory(m_owner, "选择追踪文件夹位置", QDir::homePath(), QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
+        if (!folder.isEmpty())
+            target = QDir(folder).filePath(prepared.entryName);
     }
-
-    if (targetPath.isEmpty())
+    if (target.isEmpty())
     {
-        QDir(tempRepoPath).removeRecursively();
+        m_service->cancelImport(prepared.temporaryRepo);
         return;
     }
-
-    const QString encodedPath = QString::fromUtf8(QUrl::toPercentEncoding(targetPath));
-    const QString finalRepoPath = QDir(BackupPath).filePath(encodedPath);
-    if (QDir(finalRepoPath).exists())
-    {
-        QDir(tempRepoPath).removeRecursively();
-        ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                               "导入失败",
-                               "该位置已存在追踪记录，请更换位置",
-                               3000,
-                               parentWidget());
-        return;
-    }
-
-    const QString targetName = QFileInfo(targetPath).fileName();
-    if (trackedEntry.fileName() != targetName)
-    {
-        if (!tempRepoDir.rename(trackedEntry.fileName(), targetName))
-        {
-            QDir(tempRepoPath).removeRecursively();
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "导入失败",
-                                 "重命名导入内容失败",
-                                 3000,
-                                 parentWidget());
-            return;
-        }
-    }
-
-    if (!QDir(BackupPath).rename(QFileInfo(tempRepoPath).fileName(), encodedPath))
-    {
-        QDir(tempRepoPath).removeRecursively();
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "导入失败",
-                             "无法写入备份仓库，请检查权限",
-                             3000,
-                             parentWidget());
-        return;
-    }
-
-    if (trackedEntry.isFile())
-    {
-        if (!QDir().mkpath(QFileInfo(targetPath).absolutePath()))
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "导入失败",
-                                 "无法创建目标目录",
-                                 3000,
-                                 parentWidget());
-            return;
-        }
-        if (QFile::exists(targetPath))
-        {
-            if (!QFile::remove(targetPath))
-            {
-                ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                     "导入失败",
-                                     "无法覆盖现有文件",
-                                     3000,
-                                     parentWidget());
-                return;
-            }
-        }
-        if (!QFile::copy(QDir(finalRepoPath).filePath(targetName), targetPath))
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "导入失败",
-                                 "复制导入文件失败",
-                                 3000,
-                                 parentWidget());
-            return;
-        }
-    }
-    else
-    {
-        QDir targetDir(targetPath);
-        if (targetDir.exists())
-        {
-            if (!targetDir.removeRecursively())
-            {
-                ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                     "导入失败",
-                                     "清理目标文件夹失败",
-                                     3000,
-                                     parentWidget());
-                return;
-            }
-        }
-        if (!FileUtils::copyDirectory(QDir(finalRepoPath).filePath(targetName), targetPath))
-        {
-            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                 "导入失败",
-                                 "复制导入文件夹失败",
-                                 3000,
-                                 parentWidget());
-            return;
-        }
-    }
-
-    ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                           "导入成功",
-                           "云端备份已加入追踪",
-                           2500,
-                           parentWidget());
-    LoadBackupFileList();
+    const auto result = m_service->finishImport(prepared.temporaryRepo, target);
+    if (!result.success)
+        m_service->cancelImport(prepared.temporaryRepo);
+    emit notification(result);
 }

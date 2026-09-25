@@ -1,5 +1,33 @@
 <RCC>
-    <qresource prefix="/img/ico">
-        <file>res/img/logo.png</file>
-    </qresource>
+ <qresource prefix="/img/ico"><file>res/img/logo.png</file></qresource>
+ <qresource prefix="/icons">
+  <file alias="back.svg">res/icons/back.svg</file>
+  <file alias="forward.svg">res/icons/forward.svg</file>
+  <file alias="menu.svg">res/icons/menu.svg</file>
+  <file alias="theme.svg">res/icons/theme.svg</file>
+  <file alias="pin.svg">res/icons/pin.svg</file>
+  <file alias="folder.svg">res/icons/folder.svg</file>
+  <file alias="settings.svg">res/icons/settings.svg</file>
+  <file alias="info.svg">res/icons/info.svg</file>
+  <file alias="add.svg">res/icons/add.svg</file>
+  <file alias="file.svg">res/icons/file.svg</file>
+  <file alias="more.svg">res/icons/more.svg</file>
+  <file alias="refresh.svg">res/icons/refresh.svg</file>
+  <file alias="compare.svg">res/icons/compare.svg</file>
+  <file alias="preview.svg">res/icons/preview.svg</file>
+  <file alias="restore.svg">res/icons/restore.svg</file>
+  <file alias="copy.svg">res/icons/copy.svg</file>
+  <file alias="close.svg">res/icons/close.svg</file>
+  <file alias="search.svg">res/icons/search.svg</file>
+  <file alias="cloud.svg">res/icons/cloud.svg</file>
+  <file alias="edit.svg">res/icons/edit.svg</file>
+  <file alias="arrow_down.svg">res/icons/arrow_down.svg</file>
+  <file alias="chevron_right.svg">res/icons/chevron_right.svg</file>
+  <file alias="external.svg">res/icons/external.svg</file>
+  <file alias="sparkles.svg">res/icons/sparkles.svg</file>
+ </qresource>
+ <qresource prefix="/themes">
+  <file alias="light.json">res/themes/light.json</file>
+  <file alias="dark.json">res/themes/dark.json</file>
+ </qresource>
 </RCC>

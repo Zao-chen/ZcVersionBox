@@ -1,26 +1,23 @@
 #include "aboutpage.h"
 #include "ui_aboutpage.h"
-
+#include "windows/mainwindow_presentation.h"
 #include <QCoreApplication>
-#include <QPixmap>
-
-AboutPage::AboutPage(QWidget *parent)
-    : QWidget(parent), ui(new Ui::AboutPage)
+#include <QResizeEvent>
+AboutPage::AboutPage(QWidget *parent) : QWidget(parent), ui(new Ui::AboutPage)
 {
     ui->setupUi(this);
-    ui->widget_BreadcrumbBar->setTextPixelSize(25);
-    ui->widget_BreadcrumbBar->appendBreadcrumb("关于");
-
-    ui->label_AppName->setText(QStringLiteral("ZcVersionBox"));
-
-    QString appVersion = QCoreApplication::applicationVersion().trimmed();
-    if (appVersion.isEmpty())
-    {
-        appVersion = QStringLiteral("0.1.0");
-    }
+    ui->versionLabel->setText("版本 " + QCoreApplication::applicationVersion());
+    ui->logoLabel->setPixmap(QPixmap(":/img/ico/res/img/logo.png").scaled(40, 40, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    UiStyle::text(ui->pageTitle, UiStyle::FontRole::Page);
+    UiStyle::text(ui->appNameLabel, UiStyle::FontRole::Object);
+    UiStyle::text(ui->versionLabel, UiStyle::FontRole::Caption, true);
+    UiStyle::text(ui->technologyLabel, UiStyle::FontRole::Caption, true);
 }
-
-AboutPage::~AboutPage()
+AboutPage::~AboutPage() = default;
+void AboutPage::resizeEvent(QResizeEvent *event)
 {
-    delete ui;
+    QWidget::resizeEvent(event);
+    const bool compact = width() < 640;
+    const auto margin = compact ? 16 : 24;
+    ui->readingLayout->setContentsMargins(margin, compact ? 24 : 64, margin, 32);
 }

@@ -45,7 +45,7 @@ void migrateLegacySettings(QSettings &ini);
 RuntimeConfig loadProviderConfig(QSettings &ini, const QString &providerName, bool fallbackLegacy = false);
 
 // 读取实际请求 AI 时需要的配置。
-bool loadRuntimeConfig(RuntimeConfig &config, QString *errorMessage = nullptr);
+bool loadRuntimeConfig(RuntimeConfig &config, QString *errorMessage = nullptr, const QString &settingsFile = {});
 
 // 判断服务商是否已填好 Key 和模型。
 bool isProviderConfigured(QSettings &ini, const QString &providerName);

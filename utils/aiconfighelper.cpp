@@ -1,6 +1,6 @@
 #include "aiconfighelper.h"
 
-#include "../GlobalConstants.h"
+#include "utils/apppaths.h"
 
 namespace
 {
@@ -152,9 +152,9 @@ RuntimeConfig loadProviderConfig(QSettings &ini, const QString &providerName, bo
     return config;
 }
 
-bool loadRuntimeConfig(RuntimeConfig &config, QString *errorMessage)
+bool loadRuntimeConfig(RuntimeConfig &config, QString *errorMessage, const QString &settingsFile)
 {
-    QSettings ini(Settingpath, QSettings::IniFormat);
+    QSettings ini(settingsFile.isEmpty() ? AppPaths::defaults().settingsFile : settingsFile, QSettings::IniFormat);
     QString providerName = ini.value("AI/Provider").toString().trimmed();
     if (providerName.isEmpty())
         providerName = providerFromLegacyBaseUrl(ini.value("AI/BaseUrl").toString());

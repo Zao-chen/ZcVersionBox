@@ -1,356 +1,616 @@
-#include "../homepage.h"
-#define HOMEPAGE_UI_HEADER "ui_homepage.h"
-#include HOMEPAGE_UI_HEADER
-#undef HOMEPAGE_UI_HEADER
-
-#include "../../../../GlobalConstants.h"
-#include "../../../../utils/backuprestorehelper.h"
-#include "../../../../utils/fileutils.h"
-
-#include "ElaMessageBar.h"
-#include "ElaPushButton.h"
-
-#include <QAbstractItemModel>
-#include <QDesktopServices>
-#include <QDir>
-#include <QFile>
-#include <QFileInfo>
+#include "homepage_page_backup.h"
+#include "ui_homepage_page_backup.h"
+#include "windows/mainwindow_presentation.h"
+#include <QAction>
+#include <QContextMenuEvent>
 #include <QHeaderView>
-#include <QItemDelegate>
-#include <QProcess>
-#include <QStandardItem>
-#include <QUrl>
-#include <QVBoxLayout>
+#include <QHelpEvent>
+#include <QHideEvent>
+#include <QMenu>
+#include <QMouseEvent>
+#include <QPainter>
+#include <QPersistentModelIndex>
+#include <QResizeEvent>
+#include <QScopedValueRollback>
+#include <QScrollBar>
+#include <QShortcut>
+#include <QStyledItemDelegate>
+#include <QTimer>
+#include <QToolTip>
+#include <QtMath>
+#include <array>
+#include <utility>
 
-//自定义委体，只允许第二列编辑
-class EditableColumnDelegate : public QItemDelegate
+namespace
+{
+constexpr int CommitRole = Qt::UserRole + 1;
+constexpr int ActionsColumn = 3;
+constexpr int ActionSize = 28;
+constexpr int ActionSpacing = 4;
+constexpr int ActionsWidth = 3 * ActionSize + 2 * ActionSpacing + 16;
+enum class RevisionAction
+{
+    Preview,
+    Compare,
+    More
+};
+class HistoryDelegate : public QStyledItemDelegate
 {
   public:
-    explicit EditableColumnDelegate(QObject *parent = nullptr) : QItemDelegate(parent) {}
-
+    using ActionHandler = std::function<void(const QModelIndex &, RevisionAction, const QPoint &)>;
+    HistoryDelegate(QTableView *view, std::function<void()> editing, ActionHandler action)
+        : QStyledItemDelegate(view), m_view(view), m_editing(std::move(editing)), m_action(std::move(action))
+    {
+        updateIcons();
+        view->viewport()->installEventFilter(this);
+        view->installEventFilter(this);
+        connect(view->selectionModel(), &QItemSelectionModel::currentChanged, this, [this](const QModelIndex &current, const QModelIndex &previous)
+                {
+            updateRow(previous);
+            updateRow(current); });
+        connect(view->verticalScrollBar(), &QScrollBar::valueChanged, this, [this]
+                { if (m_pointerInside) updateHover(m_pointerPosition); });
+        connect(view->model(), &QAbstractItemModel::modelAboutToBeReset, this, [this]
+                {
+                    m_hovered = QModelIndex{};
+                    m_pressed = QModelIndex{};
+                    m_editorOpen = false;
+                    // Keep consuming a pending release even when the pressed row disappears.
+                });
+        connect(view->model(), &QAbstractItemModel::modelReset, this, [this]
+                {
+            // A reset precedes repopulation; resolve the row under a stationary pointer afterwards.
+            QTimer::singleShot(0, this, [this] { if (m_pointerInside) updateHover(m_pointerPosition); }); });
+        connect(this, &QAbstractItemDelegate::closeEditor, this, [this]
+                {
+            m_editorOpen = false;
+            m_view->viewport()->update(); });
+    }
     QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
-        //只允许第二列（索引1）编辑
-        if (index.column() == 1)
-            return QItemDelegate::createEditor(parent, option, index);
-        return nullptr;
-    }
-};
-
-/*打开备份*/
-void HomePage::openBackup(QString FilePathWithCode)
-{
-    m_NowFilePathWithCode = FilePathWithCode;
-
-    /*设置面包屑*/
-    const QString displayName = QFileInfo(QUrl::fromPercentEncoding(FilePathWithCode.toUtf8())).baseName();
-    ui->widget_BreadcrumbBar->setBreadcrumbList(QStringList() << "备份中文件" << displayName + " 历史版本");
-    ui->stackedWidget->setCurrentIndex(1);
-
-    /*设置表格*/
-    //初始化表格模型
-    QStandardItemModel *model = new QStandardItemModel(this);
-    model->setColumnCount(3);
-    model->setHorizontalHeaderLabels(QStringList() << "版本号" << "说明" << "操作"); //三列: commit hash, message, 操作
-
-    //获取 Git 仓库的所有 commit
-    QString repoPath = BackupPath + "/" + FilePathWithCode;
-    QProcess git;
-    git.setWorkingDirectory(repoPath);
-    git.start("git", QStringList() << "log" << "--oneline");
-    if (!git.waitForStarted())
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "打开备份失败",
-                             "无法启动 git，请确认 git 已安装",
-                             3000,
-                             parentWidget());
-        return;
-    }
-    git.waitForFinished();
-
-    if (git.exitCode() != 0)
-    {
-        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                             "打开备份失败",
-                             QString::fromUtf8(git.readAllStandardError()).trimmed(),
-                             3000,
-                             parentWidget());
-        return;
-    }
-
-    QString output = git.readAllStandardOutput();
-    QStringList commitList = output.split("\n", Qt::SkipEmptyParts);
-
-    //填充列表
-    for (const QString &commitInfo : std::as_const(commitList))
-    {
-        QStringList parts = commitInfo.split(' ', Qt::SkipEmptyParts);
-        if (parts.size() < 2)
-            continue;
-
-        QString hash = parts.takeFirst();
-        QString message = parts.join(" ");
-        QList<QStandardItem *> rowItems;
-        QStandardItem *item0 = new QStandardItem(hash);
-        QStandardItem *item1 = new QStandardItem(message);
-        QStandardItem *item2 = new QStandardItem(""); //占位，用于按钮
-        item0->setFlags(item0->flags() & ~Qt::ItemIsEditable);
-        item1->setFlags(item1->flags() | Qt::ItemIsEditable);
-        item2->setFlags(item2->flags() & ~Qt::ItemIsEditable);
-        item0->setTextAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
-        item1->setTextAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
-        item2->setTextAlignment(Qt::AlignHCenter | Qt::AlignVCenter);
-        rowItems << item0 << item1 << item2;
-        model->appendRow(rowItems);
-    }
-
-    ui->tableView_BackupFiles->setModel(model);
-    ui->tableView_BackupFiles->verticalHeader()->setVisible(false);
-    ui->tableView_BackupFiles->setSelectionMode(QAbstractItemView::SingleSelection);
-    ui->tableView_BackupFiles->setEditTriggers(QAbstractItemView::DoubleClicked | QAbstractItemView::EditKeyPressed);
-
-    // 使用默认委托以兼容 ElaTableView 主题渲染；通过 item flags 限制可编辑列
-
-    //设置列宽和表头行为
-    ui->tableView_BackupFiles->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
-    ui->tableView_BackupFiles->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-    ui->tableView_BackupFiles->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
-    ui->tableView_BackupFiles->setColumnWidth(0, 80);  //版本号列宽
-    ui->tableView_BackupFiles->setColumnWidth(2, 240); //操作列宽
-
-    //为每一行添加按钮
-    for (int row = 0; row < model->rowCount(); ++row)
-    {
-        QWidget *buttonWidget = new QWidget(ui->tableView_BackupFiles);
-        QHBoxLayout *layout = new QHBoxLayout(buttonWidget);
-        layout->setContentsMargins(4, 2, 4, 2);
-        layout->setSpacing(4);
-
-        ElaPushButton *button1 = new ElaPushButton("查看", buttonWidget);
-        ElaPushButton *button2 = new ElaPushButton("恢复", buttonWidget);
-        ElaPushButton *button3 = new ElaPushButton("对比", buttonWidget);
-        QFont font;
-        font.setPointSize(10); //字体大小统一
-        button1->setFont(font);
-        button2->setFont(font);
-        button3->setFont(font);
-
-        layout->addStretch();
-        layout->addWidget(button1);
-        layout->addWidget(button2);
-        layout->addWidget(button3);
-        layout->addStretch();
-
-        QString currentHash = model->item(row, 0)->text();
-        //预览
-        connect(button1, &QPushButton::clicked, this, [=]()
-                {
-                    /*切换到指定的commit*/
-                    QString sourceRepoPath = BackupPath + "/" + m_NowFilePathWithCode;
-                    QProcess git;
-                    git.setWorkingDirectory(sourceRepoPath);
-                    QString shortId = currentHash; //获取短 ID 方便后续命名
-                    git.start("git", QStringList() << "checkout" << "-f" << shortId); //强制切换到历史版本
-                    if (!git.waitForStarted())
-                    {
-                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                             "查看失败",
-                                             "无法启动 git，请确认 git 已安装",
-                                             3000,
-                                             parentWidget());
-                        return;
-                    }
-                    git.waitForFinished();
-                    if (git.exitCode() != 0)
-                    {
-                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                             "查看失败",
-                                             QString::fromUtf8(git.readAllStandardError()).trimmed(),
-                                             3000,
-                                             parentWidget());
-                        return;
-                    }
-
-                    /*准备临时目标路径*/
-                    QString pureFolderName = QFileInfo(m_NowFilePathWithCode).fileName();
-                    QString destinationPath = QDir::tempPath() + "/ZcBox_Preview_" + shortId + "_" + pureFolderName;
-                    QDir oldDir(destinationPath); //清理已存在的旧预览目录
-                    if (oldDir.exists())
-                    {
-                        if (!oldDir.removeRecursively())
-                        {
-                            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                                 "查看失败",
-                                                 "清理旧预览目录失败",
-                                                 3000,
-                                                 parentWidget());
-                            git.start("git", QStringList() << "checkout" << "-f" << "master");
-                            git.waitForFinished();
-                            return;
-                        }
-                    }
-
-                    /*执行复制并处理属性*/
-                    if (!FileUtils::copyDirectory(sourceRepoPath, destinationPath))
-                    {
-                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                             "查看失败",
-                                             "复制预览文件失败",
-                                             3000,
-                                             parentWidget());
-                        git.start("git", QStringList() << "checkout" << "-f" << "master");
-                        git.waitForFinished();
-                        return;
-                    }
-                    FileUtils::setReadOnlyRecursive(destinationPath); //设置只读保护
-                    if (!QDesktopServices::openUrl(QUrl::fromLocalFile(destinationPath)))
-                    {
-                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                             "查看失败",
-                                             "无法打开预览目录",
-                                             3000,
-                                             parentWidget());
-                    }
-
-                    /*将备份仓库切回 master*/
-                    git.start("git", QStringList() << "checkout" << "-f" << "master");
-                    if (git.waitForStarted())
-                    {
-                        git.waitForFinished();
-                        if (git.exitCode() != 0)
-                        {
-                            ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                                 "查看失败",
-                                                 "恢复工作分支失败，请手动执行 git checkout -f master",
-                                                 3500,
-                                                 parentWidget());
-                        }
-                    }
-                    else
-                    {
-                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                             "查看失败",
-                                             "无法启动 git 恢复工作分支",
-                                             3500,
-                                             parentWidget());
-                    } });
-        //恢复
-        connect(button2, &QPushButton::clicked, this, [=]()
-                {
-                    const QString repoPath = BackupPath + "/" + m_NowFilePathWithCode;
-                    const QString sourcePath = QUrl::fromPercentEncoding(m_NowFilePathWithCode.toUtf8());
-                    const BackupRestoreResult result = BackupRestoreHelper::restoreFromGitRevision(repoPath, currentHash, sourcePath);
-                    if (!result.success)
-                    {
-                        ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                             "还原失败",
-                                             result.errorMessage,
-                                             3000,
-                                             parentWidget());
-                        return;
-                    }
-
-                    if (!result.warningMessage.isEmpty())
-                    {
-                        ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                                               "还原完成，但需处理",
-                                               result.warningMessage,
-                                               6000,
-                                               parentWidget());
-                    }
-                    else
-                    {
-                        ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                                               "还原成功",
-                                               "已恢复到版本 " + currentHash,
-                                               3000,
-                                               parentWidget());
-                    } });
-
-        //对比上一版本
-        connect(button3, &QPushButton::clicked, this, [=]()
-                {
-                    openDiff(currentHash);
-                });
-
-        QModelIndex index = model->index(row, 2);
-        ui->tableView_BackupFiles->setIndexWidget(index, buttonWidget);
-    }
-
-    //修改提交信息
-    connect(model, &QStandardItemModel::itemChanged, this, [=](QStandardItem *item)
-            {
-        //只处理第二列（说明列）的修改
-        if (item->column() != 1)
-            return;
-
-        int row = item->row();
-        QString hash = model->item(row, 0)->text();
-        QString newMessage = item->text();
-
-        if (newMessage.isEmpty())
+        auto *editor = QStyledItemDelegate::createEditor(parent, option, index);
+        if (editor)
         {
-            ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                                   "错误",
-                                   "提交说明不能为空",
-                                   2000,
-                                   parentWidget());
-            return;
+            m_editorOpen = true;
+            m_editing();
+            m_view->viewport()->update();
         }
-
-        //使用 git commit --amend 修改提交消息
-        QString gitRepoPath = BackupPath + "/" + m_NowFilePathWithCode;
-        
-        //获取当前HEAD的hash
-        QProcess getCurrentHash;
-        getCurrentHash.setWorkingDirectory(gitRepoPath);
-        getCurrentHash.start("git", QStringList() << "rev-parse" << "HEAD");
-        getCurrentHash.waitForFinished();
-        QString currentHash = QString::fromUtf8(getCurrentHash.readAllStandardOutput()).trimmed();
-
-        if (hash == currentHash)
+        return editor;
+    }
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        auto opt = option;
+        initStyleOption(&opt, index);
+        const auto colors = UiStyle::colors();
+        const auto font = UiStyle::font(index.column() == 0   ? UiStyle::FontRole::Body
+                                        : index.column() == 2 ? UiStyle::FontRole::Code
+                                                              : UiStyle::FontRole::Caption);
+        painter->save();
+        painter->setClipRect(opt.rect);
+        painter->setRenderHint(QPainter::Antialiasing);
+        // Clear the native per-cell background before drawing the continuous row state.
+        painter->fillRect(opt.rect, opt.palette.base());
+        const auto row = QRect(0, opt.rect.y() + 2, m_view->viewport()->width(), opt.rect.height() - 4);
+        const bool hover = m_hovered.isValid() && m_hovered.row() == index.row();
+        if (opt.state.testFlag(QStyle::State_Selected) || hover)
         {
-            //修改最新提交的消息
-            QProcess amendProcess;
-            amendProcess.setWorkingDirectory(gitRepoPath);
-            amendProcess.start("git", QStringList() << "commit" << "--amend" << "-m" << newMessage);
-            amendProcess.waitForFinished();
-
-            if (amendProcess.exitCode() == 0)
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(opt.state.testFlag(QStyle::State_Selected) ? colors.selected : colors.hover);
+            painter->drawRoundedRect(row, 6, 6);
+        }
+        if (m_view->hasFocus() && m_view->currentIndex().row() == index.row())
+        {
+            painter->setBrush(Qt::NoBrush);
+            painter->setPen(colors.secondary);
+            painter->drawRoundedRect(QRectF(row).adjusted(.5, .5, -.5, -.5), 6, 6);
+        }
+        if (index.column() == ActionsColumn)
+        {
+            if (actionsVisible(index))
             {
-                ElaMessageBar::success(ElaMessageBarType::BottomRight,
-                                       "已保存",
-                                       "提交说明已更新",
-                                       2000,
-                                       parentWidget());
-            }
-            else
-            {
-                QString error = QString::fromUtf8(amendProcess.readAllStandardError());
-                ElaMessageBar::error(ElaMessageBarType::BottomRight,
-                                     "保存失败",
-                                     error.isEmpty() ? "更新提交说明失败" : error,
-                                     3000,
-                                     parentWidget());
+                for (int action = 0; action < static_cast<int>(m_icons.size()); ++action)
+                {
+                    const auto rect = actionRect(opt.rect, action);
+                    if (hover && rect.contains(m_pointerPosition))
+                    {
+                        painter->setPen(Qt::NoPen);
+                        const bool pressed = m_actionPress && m_pressed.row() == index.row() && m_pressedAction == action;
+                        painter->setBrush(pressed ? colors.separator : opt.state.testFlag(QStyle::State_Selected) ? colors.hover
+                                                                                                                  : colors.selected);
+                        painter->drawRoundedRect(rect, 6, 6);
+                    }
+                    m_icons[action].paint(painter, QRect(rect.center() - QPoint(8, 8), QSize(16, 16)));
+                }
             }
         }
         else
         {
-            ElaMessageBar::warning(ElaMessageBarType::BottomRight,
-                                   "无法编辑",
-                                   "只能编辑最新的提交说明",
-                                   2000,
-                                   parentWidget());
-            //恢复为原来的文本
-            QProcess getCommitMsg;
-            getCommitMsg.setWorkingDirectory(gitRepoPath);
-            getCommitMsg.start("git", QStringList() << "log" << "-1" << "--format=%B" << hash);
-            getCommitMsg.waitForFinished();
-            QString originalMessage = QString::fromUtf8(getCommitMsg.readAllStandardOutput()).trimmed();
-            item->setText(originalMessage);
-        } });
+            const auto textRect = opt.rect.adjusted(12, 0, -12, 0);
+            painter->setFont(font);
+            painter->setPen(index.column() == 0 ? colors.text : colors.secondary);
+            painter->drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft,
+                              QFontMetrics(font, painter->device()).elidedText(opt.text, Qt::ElideRight, qMax(0, textRect.width())));
+        }
+        painter->restore();
+    }
 
-    //设置焦点到表格，避免自动聚焦到远程URL输入框
-    ui->tableView_BackupFiles->setFocus();
+  protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched == m_view->viewport())
+        {
+            if (event->type() == QEvent::MouseMove)
+                updateHover(static_cast<QMouseEvent *>(event)->position().toPoint());
+            else if (event->type() == QEvent::Leave)
+            {
+                const auto previous = m_hovered;
+                m_hovered = QModelIndex{};
+                m_pressed = QModelIndex{};
+                m_pointerInside = false;
+                m_view->viewport()->unsetCursor();
+                updateRow(previous);
+            }
+            else if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonDblClick)
+            {
+                const auto *mouse = static_cast<QMouseEvent *>(event);
+                if (mouse->button() == Qt::LeftButton)
+                {
+                    m_pressed = QModelIndex{};
+                    m_actionPress = false;
+                    const auto position = mouse->position().toPoint();
+                    updateHover(position);
+                    const auto index = m_view->indexAt(position);
+                    const int action = hitAction(index, position);
+                    if (action >= 0)
+                    {
+                        m_actionPress = true;
+                        m_pressed = event->type() == QEvent::MouseButtonPress ? index.siblingAtColumn(0) : QModelIndex{};
+                        m_pressedAction = action;
+                        m_view->setCurrentIndex(index.siblingAtColumn(0));
+                        m_view->selectionModel()->select(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+                        m_view->setFocus(Qt::MouseFocusReason);
+                        updateRow(index);
+                        return true; // A painted action must not also activate the table row.
+                    }
+                }
+            }
+            else if (event->type() == QEvent::MouseButtonRelease && m_actionPress)
+            {
+                const auto *mouse = static_cast<QMouseEvent *>(event);
+                if (mouse->button() == Qt::LeftButton)
+                {
+                    const auto pressed = m_pressed;
+                    const int action = m_pressedAction;
+                    m_actionPress = false;
+                    m_pressed = QModelIndex{};
+                    const auto position = mouse->position().toPoint();
+                    updateHover(position);
+                    const auto index = m_view->indexAt(position);
+                    if (pressed.isValid() && index.siblingAtColumn(0) == pressed && hitAction(index, position) == action)
+                        m_action(index, static_cast<RevisionAction>(action), m_view->viewport()->mapToGlobal(actionRect(m_view->visualRect(index.siblingAtColumn(ActionsColumn)), action).bottomLeft()));
+                    return true;
+                }
+            }
+            else if (event->type() == QEvent::ToolTip)
+            {
+                const auto *help = static_cast<QHelpEvent *>(event);
+                const auto index = m_view->indexAt(help->pos());
+                const int action = hitAction(index, help->pos());
+                if (action >= 0)
+                {
+                    const std::array<QString, 3> labels{"预览 (Alt+P)", "对比 (Enter)", "更多操作 (Shift+F10)"};
+                    QToolTip::showText(help->globalPos(), labels[action], m_view->viewport(), actionRect(m_view->visualRect(index.siblingAtColumn(ActionsColumn)), action));
+                    return true;
+                }
+            }
+        }
+        if ((watched == m_view || watched == m_view->viewport()) && event->type() == QEvent::ContextMenu && !m_editorOpen)
+        {
+            const auto *context = static_cast<QContextMenuEvent *>(event);
+            const bool keyboard = context->reason() == QContextMenuEvent::Keyboard;
+            const auto position = watched == m_view ? m_view->viewport()->mapFrom(m_view, context->pos()) : context->pos();
+            const auto index = keyboard ? m_view->currentIndex() : m_view->indexAt(position);
+            if (index.isValid())
+                m_action(index, RevisionAction::More, keyboard ? m_view->viewport()->mapToGlobal(m_view->visualRect(index.siblingAtColumn(ActionsColumn)).bottomLeft()) : context->globalPos());
+            return true;
+        }
+        if (watched == m_view && (event->type() == QEvent::FocusIn || event->type() == QEvent::FocusOut))
+            updateRow(m_view->currentIndex());
+        if (watched == m_view && (event->type() == QEvent::PaletteChange || event->type() == QEvent::StyleChange))
+            updateIcons();
+        if (watched == m_view && event->type() == QEvent::Hide)
+        {
+            m_hovered = QModelIndex{};
+            m_pressed = QModelIndex{};
+            m_actionPress = false;
+            m_pointerInside = false;
+        }
+        // The base filter manages editor focus and commit events, not the view itself.
+        if (watched == m_view || watched == m_view->viewport())
+            return false;
+        return QStyledItemDelegate::eventFilter(watched, event);
+    }
+
+  private:
+    QTableView *m_view;
+    std::function<void()> m_editing;
+    ActionHandler m_action;
+    std::array<QIcon, 3> m_icons;
+    QPersistentModelIndex m_hovered;
+    QPersistentModelIndex m_pressed;
+    QPoint m_pointerPosition;
+    int m_pressedAction{-1};
+    bool m_actionPress{false};
+    bool m_pointerInside{false};
+    mutable bool m_editorOpen{false};
+    void updateIcons()
+    {
+        m_icons = {UiStyle::icon("preview"), UiStyle::icon("compare"), UiStyle::icon("more")};
+        m_view->viewport()->update();
+    }
+    QRect actionRect(const QRect &cell, int action) const
+    {
+        return {cell.x() + 8 + action * (ActionSize + ActionSpacing), cell.center().y() - ActionSize / 2, ActionSize, ActionSize};
+    }
+    bool actionsVisible(const QModelIndex &index) const
+    {
+        return index.isValid() && !m_editorOpen && ((m_hovered.isValid() && m_hovered.row() == index.row()) || (m_view->hasFocus() && m_view->currentIndex().row() == index.row()));
+    }
+    int hitAction(const QModelIndex &index, const QPoint &position) const
+    {
+        if (actionsVisible(index))
+        {
+            const auto cell = m_view->visualRect(index.siblingAtColumn(ActionsColumn));
+            for (int action = 0; action < 3; ++action)
+                if (actionRect(cell, action).contains(position))
+                    return action;
+        }
+        return -1;
+    }
+    void updateRow(const QModelIndex &index) const
+    {
+        if (index.isValid())
+        {
+            const auto cell = m_view->visualRect(index);
+            m_view->viewport()->update(QRect(0, cell.top(), m_view->viewport()->width(), cell.height()));
+        }
+    }
+    void updateHover(const QPoint &position)
+    {
+        const auto previous = m_hovered;
+        m_pointerPosition = position;
+        m_pointerInside = m_view->viewport()->rect().contains(position);
+        const auto index = m_pointerInside ? m_view->indexAt(position) : QModelIndex{};
+        m_hovered = index.siblingAtColumn(0);
+        if (previous != m_hovered)
+            updateRow(previous);
+        updateRow(m_hovered);
+        if (hitAction(index, position) >= 0)
+            m_view->viewport()->setCursor(Qt::PointingHandCursor);
+        else
+            m_view->viewport()->unsetCursor();
+    }
+};
+} // namespace
+
+HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) : QWidget(parent), ui(new Ui::HomePageBackupPage), m_service(service)
+{
+    ui->setupUi(this);
+    ui->table->setModel(&m_model);
+    ui->table->setAccessibleName("历史版本");
+    ui->table->setAccessibleDescription("按 Enter 对比版本，Alt+P 预览，Shift+F10 打开版本菜单，F2 编辑说明。");
+    UiStyle::flatView(ui->table);
+    ui->table->setEditTriggers(QAbstractItemView::EditKeyPressed);
+    ui->table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    auto *delegate = new HistoryDelegate(ui->table, [this]
+                                         { m_editing = true; }, [this](const QModelIndex &index, RevisionAction action, const QPoint &position)
+                                         {
+        const auto context = revisionContext(index);
+        switch (action)
+        {
+        case RevisionAction::Preview: previewRevision(context); break;
+        case RevisionAction::Compare: compareRevision(context); break;
+        case RevisionAction::More: showRevisionMenu(context, position); break;
+        } });
+    ui->table->setItemDelegate(delegate);
+    connect(delegate, &QAbstractItemDelegate::closeEditor, this, [this]
+            {
+        m_editing = false;
+        if (std::exchange(m_refreshPending, false))
+        {
+            const auto id = m_id;
+            QTimer::singleShot(0, this, [this, id] { if (m_id == id) refresh(); });
+        } });
+    ui->table->verticalHeader()->hide();
+    ui->table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
+    ui->table->verticalHeader()->setDefaultSectionSize(UiStyle::rowHeight(40, UiStyle::font(UiStyle::FontRole::Body)));
+    ui->table->horizontalHeader()->setHighlightSections(false);
+    ui->table->horizontalHeader()->setSectionsClickable(false);
+    ui->table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    ui->table->horizontalHeader()->setMinimumSectionSize(64);
+    UiStyle::text(ui->table->horizontalHeader(), UiStyle::FontRole::Caption, true);
+    UiStyle::text(ui->countLabel, UiStyle::FontRole::Caption, true);
+    UiStyle::text(ui->hintLabel, UiStyle::FontRole::Caption, true);
+    UiStyle::text(ui->emptyLabel, UiStyle::FontRole::Body, true);
+    m_compare = UiStyle::action(this, "compareAction", "对比", "compare");
+    m_preview = UiStyle::action(this, "previewAction", "预览", "preview");
+    m_restore = UiStyle::action(this, "restoreAction", "恢复到此版本…", "restore");
+    m_edit = UiStyle::action(this, "editMessageAction", "编辑说明", "edit");
+    m_more = UiStyle::action(this, "revisionMenuAction", "更多版本操作", "more");
+    m_refresh = UiStyle::action(this, "refreshHistoryAction", "刷新历史", "refresh");
+    m_refresh->setProperty("iconOnly", true);
+    m_edit->setShortcut(QKeySequence(Qt::Key_F2));
+    m_edit->setShortcutContext(Qt::WidgetShortcut);
+    ui->table->addAction(m_edit);
+    m_preview->setShortcut(QKeySequence("Alt+P"));
+    m_preview->setShortcutContext(Qt::WidgetShortcut);
+    ui->table->addAction(m_preview);
+    m_more->setShortcuts({QKeySequence("Shift+F10"), QKeySequence(Qt::Key_Menu)});
+    m_more->setShortcutContext(Qt::WidgetShortcut);
+    ui->table->addAction(m_more);
+    m_refresh->setShortcut(QKeySequence::Refresh);
+    m_refresh->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    addAction(m_refresh);
+    connect(m_compare, &QAction::triggered, this, [this]
+            { compareRevision(revisionContext(ui->table->currentIndex())); });
+    connect(ui->table, &QTableView::activated, this, [this](const QModelIndex &index)
+            { compareRevision(revisionContext(index)); });
+    connect(m_preview, &QAction::triggered, this, [this]
+            { previewRevision(revisionContext(ui->table->currentIndex())); });
+    connect(m_restore, &QAction::triggered, this, [this]
+            { restoreRevision(revisionContext(ui->table->currentIndex())); });
+    connect(m_refresh, &QAction::triggered, this, &HomePageBackupPage::refresh);
+    connect(m_edit, &QAction::triggered, this, [this]
+            { editRevision(revisionContext(ui->table->currentIndex())); });
+    connect(m_more, &QAction::triggered, this, [this]
+            {
+        const auto index = ui->table->currentIndex();
+        showRevisionMenu(revisionContext(index), ui->table->viewport()->mapToGlobal(ui->table->visualRect(index.siblingAtColumn(ActionsColumn)).bottomLeft())); });
+    connect(ui->table->selectionModel(), &QItemSelectionModel::selectionChanged, this, &HomePageBackupPage::updateActions);
+    connect(ui->table->selectionModel(), &QItemSelectionModel::currentChanged, this, &HomePageBackupPage::updateActions);
+    connect(&m_model, &QStandardItemModel::itemChanged, this, [this](QStandardItem *item)
+            {
+        if (m_loading || item->column() != 0)
+            return;
+        const auto id = m_id;
+        const auto generation = m_service->repositoryGeneration(id);
+        QScopedValueRollback<bool> loading(m_loading, true);
+        emit notification(m_service->editMessage(id, item->data(CommitRole).toString(), item->text()));
+        // The editor must finish committing before its item is replaced. The
+        // original short/full-hash amend rule and failure refill stay intact.
+        QTimer::singleShot(0, this, [this, id, generation]
+        {
+            if (id == m_id && generation == m_service->repositoryGeneration(id))
+                refresh();
+        }); });
+    connect(service, &BackupService::repositoryChanged, this, [this](const QString &id)
+            {
+        if (id == m_id && isVisible())
+        {
+            if (m_editing)
+                m_refreshPending = true;
+            else if (!m_loading)
+                refresh();
+        } });
+    connect(service, &BackupService::repositoryInvalidated, this, [this](const QString &id)
+            {
+        m_states.remove(id);
+        if (m_loadedId == id)
+        {
+            ++m_contextGeneration;
+            closeRevisionMenu();
+            m_editing = false;
+            m_refreshPending = false;
+            m_loadedId.clear();
+            QScopedValueRollback<bool> loading(m_loading, true);
+            m_model.clear();
+            updateActions();
+        } });
+    updateActions();
+}
+HomePageBackupPage::~HomePageBackupPage() = default;
+QList<QAction *> HomePageBackupPage::toolbarActions() const { return {m_refresh}; }
+void HomePageBackupPage::rememberState()
+{
+    if (!m_id.isEmpty() && m_loadedId == m_id && m_loadedGeneration == m_service->repositoryGeneration(m_id))
+        m_states[m_id] = {m_loadedGeneration, selectedCommit(), ui->table->verticalScrollBar()->value()};
+}
+void HomePageBackupPage::deactivate()
+{
+    rememberState();
+    ++m_contextGeneration;
+    closeRevisionMenu();
+}
+void HomePageBackupPage::setBackup(const QString &id)
+{
+    rememberState();
+    ++m_contextGeneration;
+    closeRevisionMenu();
+    m_id = id;
+    refresh();
+}
+HomePageBackupPage::RevisionContext HomePageBackupPage::revisionContext(const QModelIndex &index) const
+{
+    if (!index.isValid() || index.model() != &m_model || m_loadedId != m_id)
+        return {};
+    return {m_id, index.data(CommitRole).toString(), m_loadedGeneration, m_contextGeneration};
+}
+bool HomePageBackupPage::isCurrentContext(const RevisionContext &context) const
+{
+    return !context.commit.isEmpty() && context.backupId == m_id && context.backupId == m_loadedId &&
+           context.pageGeneration == m_contextGeneration && context.repositoryGeneration == m_service->repositoryGeneration(context.backupId) &&
+           m_service->contains(context.backupId);
+}
+QModelIndex HomePageBackupPage::indexForRevision(const RevisionContext &context) const
+{
+    const auto found = m_model.match(m_model.index(0, 0), CommitRole, context.commit, 1, Qt::MatchExactly);
+    return found.isEmpty() ? QModelIndex{} : found.first();
+}
+void HomePageBackupPage::compareRevision(const RevisionContext &context)
+{
+    if (isCurrentContext(context))
+        emit navigate({PageId::Diff, context.backupId, context.commit});
+}
+void HomePageBackupPage::previewRevision(const RevisionContext &context)
+{
+    if (!isCurrentContext(context))
+        return;
+    const auto result = m_service->preview(context.backupId, context.commit);
+    emit notification(result);
+    if (result.success && !result.path.isEmpty())
+        openLocalPath(this, result.path);
+}
+void HomePageBackupPage::restoreRevision(const RevisionContext &context)
+{
+    if (!isCurrentContext(context))
+        return;
+    const auto name = QFileInfo(m_service->sourcePath(context.backupId)).fileName();
+    const auto question = QString("将“%1”恢复到版本 %2？\n\n源文件或文件夹中的当前内容将被该版本替换。历史版本记录会保留。").arg(name, context.commit);
+    const QPointer<HomePageBackupPage> guard(this);
+    if (!confirmAction(this, question, "恢复版本") || !guard)
+        return;
+    if (!isCurrentContext(context))
+    {
+        emit notification(OperationResult::warn("操作已取消", "版本上下文已变化，请重新打开版本菜单后再试。"));
+        return;
+    }
+    emit notification(m_service->restore(context.backupId, context.commit));
+}
+void HomePageBackupPage::editRevision(const RevisionContext &context)
+{
+    if (!isCurrentContext(context))
+        return;
+    const auto index = indexForRevision(context);
+    if (index.isValid())
+    {
+        ui->table->setCurrentIndex(index);
+        ui->table->edit(index);
+    }
+}
+void HomePageBackupPage::showRevisionMenu(const RevisionContext &context, const QPoint &position)
+{
+    if (!isCurrentContext(context) || m_editing)
+        return;
+    closeRevisionMenu();
+    const auto index = indexForRevision(context);
+    if (!index.isValid())
+        return;
+    ui->table->setCurrentIndex(index);
+    ui->table->selectionModel()->select(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    auto *menu = new QMenu(this);
+    menu->setObjectName("revisionMenu");
+    m_revisionMenu = menu;
+    connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+    menu->addSection("版本 " + context.commit);
+    const auto add = [this, menu, context](QAction *source, void (HomePageBackupPage::*callback)(const RevisionContext &))
+    {
+        auto *action = UiStyle::action(menu, source->objectName() + "Menu", source->text(), source->property("iconName").toString());
+        action->setShortcuts(source->shortcuts());
+        action->setShortcutContext(Qt::WidgetShortcut);
+        menu->addAction(action);
+        // Capture the version, never the row number or a later selection.
+        connect(action, &QAction::triggered, this, [this, context, callback]
+                { (this->*callback)(context); });
+    };
+    add(m_preview, &HomePageBackupPage::previewRevision);
+    add(m_compare, &HomePageBackupPage::compareRevision);
+    menu->addSeparator();
+    add(m_edit, &HomePageBackupPage::editRevision);
+    menu->addSeparator();
+    add(m_restore, &HomePageBackupPage::restoreRevision);
+    menu->popup(position);
+}
+void HomePageBackupPage::closeRevisionMenu()
+{
+    if (m_revisionMenu)
+        m_revisionMenu->close();
+    m_revisionMenu = nullptr;
+}
+QString HomePageBackupPage::selectedCommit() const
+{
+    const auto rows = ui->table->selectionModel()->selectedRows();
+    return rows.isEmpty() ? QString() : rows.first().data(CommitRole).toString();
+}
+void HomePageBackupPage::updateActions()
+{
+    const bool enabled = ui->table->currentIndex().isValid() && m_loadedId == m_id && m_loadedGeneration == m_service->repositoryGeneration(m_id);
+    for (auto *action : {m_compare, m_preview, m_restore, m_edit, m_more})
+        action->setEnabled(enabled);
+}
+void HomePageBackupPage::refresh()
+{
+    if (m_id.isEmpty())
+        return;
+    m_editing = false;
+    m_refreshPending = false;
+    rememberState();
+    auto state = m_states.value(m_id);
+    if (state.generation != m_service->repositoryGeneration(m_id))
+        state = {};
+    QVector<Revision> revisions;
+    const auto result = m_service->history(m_id, revisions);
+    QScopedValueRollback<bool> loading(m_loading, true);
+    m_model.clear();
+    m_model.setHorizontalHeaderLabels({"提交说明", "提交时间", "短哈希", {}});
+    m_model.horizontalHeaderItem(ActionsColumn)->setData("版本操作", Qt::AccessibleTextRole);
+    if (!result.success)
+        emit notification(result);
+    int selectedRow = 0;
+    for (const auto &revision : revisions)
+    {
+        const auto time = revision.committedAt.toLocalTime().toString("yyyy-MM-dd HH:mm");
+        auto *message = new QStandardItem(revision.message);
+        auto *date = new QStandardItem(time);
+        auto *hash = new QStandardItem(revision.hash);
+        auto *actions = new QStandardItem;
+        date->setEditable(false);
+        hash->setEditable(false);
+        actions->setEditable(false);
+        actions->setData("预览、对比、更多版本操作", Qt::AccessibleTextRole);
+        for (auto *item : {message, date, hash, actions})
+        {
+            item->setData(revision.hash, CommitRole);
+            item->setToolTip(revision.message + "\n" + time + " · " + revision.hash);
+            item->setData("Enter 对比，Alt+P 预览，Shift+F10 更多操作，F2 编辑说明。", Qt::AccessibleDescriptionRole);
+        }
+        m_model.appendRow({message, date, hash, actions});
+        if (revision.hash == state.commit)
+            selectedRow = m_model.rowCount() - 1;
+    }
+    m_loadedId = m_id;
+    m_loadedGeneration = m_service->repositoryGeneration(m_id);
+    ui->table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    ui->table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
+    ui->table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
+    ui->table->horizontalHeader()->setSectionResizeMode(ActionsColumn, QHeaderView::Fixed);
+    // Round up fractional glyph advances so high-DPI hinting cannot elide the final digits.
+    ui->table->setColumnWidth(1, qCeil(QFontMetricsF(UiStyle::font(UiStyle::FontRole::Caption), ui->table->viewport()).horizontalAdvance("2000-00-00 00:00")) + 24);
+    ui->table->setColumnWidth(2, qCeil(QFontMetricsF(UiStyle::font(UiStyle::FontRole::Code), ui->table->viewport()).horizontalAdvance("00000000")) + 24);
+    ui->table->setColumnWidth(ActionsColumn, ActionsWidth);
+    ui->table->setColumnHidden(2, width() < 640);
+    ui->countLabel->setText(QString("%1 个版本").arg(revisions.size()));
+    ui->emptyLabel->setVisible(revisions.isEmpty());
+    ui->table->setVisible(!revisions.isEmpty());
+    if (!revisions.isEmpty())
+        ui->table->selectRow(selectedRow);
+    ui->table->verticalScrollBar()->setValue(state.scroll);
+    const auto refreshGeneration = ++m_refreshGeneration;
+    QTimer::singleShot(0, this, [this, state, refreshGeneration]
+                       {
+        if (refreshGeneration == m_refreshGeneration)
+            ui->table->verticalScrollBar()->setValue(state.scroll); });
+    updateActions();
+}
+void HomePageBackupPage::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    const int margin = width() < 640 ? 16 : 24;
+    ui->pageLayout->setContentsMargins(margin, 12, margin, 16);
+    ui->table->setColumnHidden(2, width() < 640);
+    ui->hintLabel->setVisible(width() >= 640);
+}
+void HomePageBackupPage::hideEvent(QHideEvent *event)
+{
+    deactivate();
+    QWidget::hideEvent(event);
 }

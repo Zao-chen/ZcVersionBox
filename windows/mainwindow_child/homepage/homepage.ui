@@ -2,43 +2,93 @@
 <ui version="4.0">
  <class>HomePage</class>
  <widget class="QWidget" name="HomePage">
-  <property name="geometry">
-   <rect>
-    <x>0</x>
-    <y>0</y>
-    <width>583</width>
-    <height>413</height>
-   </rect>
-  </property>
-  <property name="windowTitle">
-   <string>Form</string>
-  </property>
-  <layout class="QVBoxLayout" name="verticalLayout_2">
+  <layout class="QVBoxLayout" name="pageLayout" stretch="0,1">
    <property name="leftMargin">
-    <number>15</number>
+    <number>24</number>
    </property>
    <property name="topMargin">
-    <number>15</number>
+    <number>24</number>
    </property>
    <property name="rightMargin">
-    <number>15</number>
+    <number>24</number>
    </property>
    <property name="bottomMargin">
-    <number>15</number>
+    <number>24</number>
+   </property>
+   <property name="spacing">
+    <number>16</number>
    </property>
    <item>
-    <widget class="ElaBreadcrumbBar" name="widget_BreadcrumbBar" native="true"/>
-   </item>
-   <item>
-    <widget class="ZcStackedWidget" name="stackedWidget">
-     <property name="currentIndex">
+    <layout class="QHBoxLayout" name="listHeader" stretch="0,1,0">
+     <property name="leftMargin">
       <number>0</number>
      </property>
-     <widget class="QWidget" name="page_0">
-      <layout class="QVBoxLayout" name="verticalLayout">
-       <property name="spacing">
-        <number>9</number>
+     <property name="topMargin">
+      <number>0</number>
+     </property>
+     <property name="rightMargin">
+      <number>0</number>
+     </property>
+     <property name="bottomMargin">
+      <number>0</number>
+     </property>
+     <property name="spacing">
+      <number>16</number>
+     </property>
+     <item>
+      <widget class="QLabel" name="countLabel">
+       <property name="text">
+        <string>0 个备份</string>
        </property>
+       <property name="textFormat">
+        <enum>Qt::PlainText</enum>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="filterSpace">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>0</width>
+         <height>0</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="filter">
+       <property name="placeholderText">
+        <string>按名称或路径筛选</string>
+       </property>
+       <property name="accessibleName">
+        <string>按名称或路径筛选</string>
+       </property>
+       <property name="minimumSize">
+        <size>
+         <width>0</width>
+         <height>32</height>
+        </size>
+       </property>
+       <property name="clearButtonEnabled">
+        <bool>true</bool>
+       </property>
+       <property name="maximumSize">
+        <size>
+         <width>280</width>
+         <height>16777215</height>
+        </size>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QStackedWidget" name="listStack">
+     <widget class="QWidget" name="listPage">
+      <layout class="QVBoxLayout" name="listLayout">
        <property name="leftMargin">
         <number>0</number>
        </property>
@@ -51,8 +101,91 @@
        <property name="bottomMargin">
         <number>0</number>
        </property>
+       <property name="spacing">
+        <number>0</number>
+       </property>
        <item>
-        <layout class="QVBoxLayout" name="verticalLayout_TrackFiles">
+        <widget class="QListView" name="backupList">
+         <property name="frameShape">
+          <enum>QFrame::NoFrame</enum>
+         </property>
+         <property name="horizontalScrollBarPolicy">
+          <enum>Qt::ScrollBarAlwaysOff</enum>
+         </property>
+         <property name="uniformItemSizes">
+          <bool>true</bool>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>0</width>
+           <height>0</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="emptyPage">
+      <layout class="QVBoxLayout" name="emptyLayout" stretch="1,0,0,0,2">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <property name="spacing">
+        <number>12</number>
+       </property>
+       <item>
+        <spacer name="emptyTop">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>0</width>
+           <height>0</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QLabel" name="emptyLabel">
+         <property name="text">
+          <string>还没有备份</string>
+         </property>
+         <property name="textFormat">
+          <enum>Qt::PlainText</enum>
+         </property>
+         <property name="alignment">
+          <enum>Qt::AlignCenter</enum>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="emptyHint">
+         <property name="text">
+          <string>添加文件或文件夹，开始自动保存历史版本。</string>
+         </property>
+         <property name="textFormat">
+          <enum>Qt::PlainText</enum>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+         <property name="alignment">
+          <enum>Qt::AlignCenter</enum>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="emptyButtonLayout">
          <property name="leftMargin">
           <number>0</number>
          </property>
@@ -62,180 +195,62 @@
          <property name="rightMargin">
           <number>0</number>
          </property>
-        </layout>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayout" stretch="2,1,1">
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>8</number>
+         </property>
          <item>
-          <spacer name="horizontalSpacer">
+          <spacer name="emptyLeft">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
            </property>
            <property name="sizeHint" stdset="0">
             <size>
-             <width>40</width>
-             <height>20</height>
+             <width>0</width>
+             <height>0</height>
             </size>
            </property>
           </spacer>
          </item>
          <item>
-          <widget class="ElaPushButton" name="pushButton_AddFromLoc">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
+          <widget class="QPushButton" name="emptyAddButton">
            <property name="text">
-            <string>备份本地文件</string>
+            <string>添加备份</string>
+           </property>
+           <property name="autoDefault">
+            <bool>false</bool>
            </property>
           </widget>
          </item>
          <item>
-          <widget class="ElaPushButton" name="pushButton_AddFromRemo">
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="text">
-            <string>从云端导入备份</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="page_1">
-      <layout class="QVBoxLayout" name="verticalLayout_3">
-       <property name="spacing">
-        <number>6</number>
-       </property>
-       <property name="leftMargin">
-        <number>0</number>
-       </property>
-       <property name="topMargin">
-        <number>0</number>
-       </property>
-       <property name="rightMargin">
-        <number>0</number>
-       </property>
-       <property name="bottomMargin">
-        <number>0</number>
-       </property>
-       <item>
-        <widget class="ElaTableView" name="tableView_BackupFiles">
-         <property name="editTriggers">
-          <set>QAbstractItemView::NoEditTriggers</set>
-         </property>
-         <property name="selectionMode">
-          <enum>QAbstractItemView::NoSelection</enum>
-         </property>
-         <attribute name="verticalHeaderVisible">
-          <bool>false</bool>
-         </attribute>
-         <attribute name="verticalHeaderMinimumSectionSize">
-          <number>50</number>
-         </attribute>
-         <attribute name="verticalHeaderDefaultSectionSize">
-          <number>50</number>
-         </attribute>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-     <widget class="QWidget" name="page_2">
-      <layout class="QVBoxLayout" name="verticalLayout_DiffPage">
-       <property name="spacing">
-        <number>8</number>
-       </property>
-       <property name="leftMargin">
-        <number>0</number>
-       </property>
-       <property name="topMargin">
-        <number>0</number>
-       </property>
-       <property name="rightMargin">
-        <number>0</number>
-       </property>
-       <property name="bottomMargin">
-        <number>0</number>
-       </property>
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayout_DiffHeader">
-         <item>
-          <widget class="QLabel" name="label_DiffRange">
-           <property name="text">
-            <string>版本对比</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="horizontalSpacer_DiffHeader">
+          <spacer name="emptyRight">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
            </property>
            <property name="sizeHint" stdset="0">
             <size>
-             <width>40</width>
-             <height>20</height>
+             <width>0</width>
+             <height>0</height>
             </size>
            </property>
-         </spacer>
-        </item>
-         <item>
-          <widget class="ElaPushButton" name="pushButton_DiffAi">
-           <property name="text">
-            <string>AI 分析</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="ElaPushButton" name="pushButton_DiffBack">
-           <property name="text">
-            <string>返回版本列表</string>
-           </property>
-          </widget>
+          </spacer>
          </item>
         </layout>
        </item>
        <item>
-        <widget class="QSplitter" name="splitter_Diff">
+        <spacer name="emptyBottom">
          <property name="orientation">
-          <enum>Qt::Horizontal</enum>
+          <enum>Qt::Vertical</enum>
          </property>
-         <widget class="ElaTableView" name="tableView_DiffFiles">
-          <property name="minimumSize">
-           <size>
-            <width>220</width>
-            <height>0</height>
-           </size>
-          </property>
-          <property name="editTriggers">
-           <set>QAbstractItemView::NoEditTriggers</set>
-          </property>
-          <property name="selectionMode">
-           <enum>QAbstractItemView::SingleSelection</enum>
-          </property>
-          <attribute name="verticalHeaderVisible">
-           <bool>false</bool>
-          </attribute>
-         </widget>
-         <widget class="QTextEdit" name="textEdit_DiffContent">
-          <property name="readOnly">
-           <bool>true</bool>
-          </property>
-          <property name="lineWrapMode">
-           <enum>QTextEdit::NoWrap</enum>
-          </property>
-          <property name="placeholderText">
-           <string>选择左侧文件查看变更</string>
-          </property>
-         </widget>
-        </widget>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>0</width>
+           <height>0</height>
+          </size>
+         </property>
+        </spacer>
        </item>
       </layout>
      </widget>
@@ -245,32 +260,9 @@
  </widget>
  <customwidgets>
   <customwidget>
-   <class>ElaBreadcrumbBar</class>
-   <extends>QWidget</extends>
-   <header location="global">ElaBreadcrumbBar.h</header>
-   <container>1</container>
-  </customwidget>
-  <customwidget>
-   <class>ElaPushButton</class>
-   <extends>QPushButton</extends>
-   <header location="global">ElaPushButton.h</header>
-  </customwidget>
-  <customwidget>
-   <class>ZcStackedWidget</class>
-   <extends>QStackedWidget</extends>
-   <header location="global">zcstackedwidget.h</header>
-   <container>1</container>
-  </customwidget>
-  <customwidget>
-   <class>ElaTableView</class>
-   <extends>QTableView</extends>
-   <header location="global">ElaTableView.h</header>
-  </customwidget>
-  <customwidget>
-   <class>ElaDrawerArea</class>
-   <extends>QWidget</extends>
-   <header location="global">ElaDrawerArea.h</header>
-   <container>1</container>
+   <class>oclero::qlementine::Label</class>
+   <extends>QLabel</extends>
+   <header>oclero/qlementine/widgets/Label.hpp</header>
   </customwidget>
  </customwidgets>
  <resources/>

@@ -1,5 +1,6 @@
 # Build directories
 build/
+dist/
 build\ -\ 副本/
 *.ilk
 *.pdb
@@ -48,15 +49,11 @@ Thumbs.db
 # Log files
 *.log
 
-# Keep required prebuilt 3rdparty binaries in repository for CI builds.
-!3rdparty/ElaWidgetTools/lib/
-!3rdparty/ElaWidgetTools/lib/**
-!3rdparty/ElaWidgetTools/bin/
-!3rdparty/ElaWidgetTools/bin/**
-!3rdparty/ZcWidgetTools/lib/
-!3rdparty/ZcWidgetTools/lib/**
-!3rdparty/ZcWidgetTools/bin/
-!3rdparty/ZcWidgetTools/bin/**
+# Qlementine is vendored as source, including its lib directory.
+!3rdparty/qlementine/lib/
+!3rdparty/qlementine/lib/**
+
+# Keep the remaining prebuilt AI SDK in the repository for offline builds.
 !3rdparty/ZcAILib/lib/
 !3rdparty/ZcAILib/lib/**
 !3rdparty/ZcAILib/bin/
