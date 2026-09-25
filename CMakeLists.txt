@@ -23,6 +23,16 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
 find_package(Qt6 6.8.3 REQUIRED COMPONENTS Widgets Network Svg)
+# AGL.framework is gone from macOS SDKs (26+), and the system copy at
+# /System/Library/Frameworks is a binary-less stub, so every form Qt's
+# FindWrapOpenGL emits — the literal "-framework AGL" fallback or a
+# find_library path into the empty stub — fails at link time. Drop all AGL
+# items; Qt6::Gui links OpenGL directly and never calls AGL on Qt 6.
+if(APPLE AND TARGET WrapOpenGL::WrapOpenGL)
+    get_property(zc_opengl_links TARGET WrapOpenGL::WrapOpenGL PROPERTY INTERFACE_LINK_LIBRARIES)
+    list(FILTER zc_opengl_links EXCLUDE REGEX "AGL.framework$|^-framework AGL$")
+    set_property(TARGET WrapOpenGL::WrapOpenGL PROPERTY INTERFACE_LINK_LIBRARIES ${zc_opengl_links})
+endif()
 qt_standard_project_setup()
 set(QLEMENTINE_SANDBOX OFF CACHE BOOL "" FORCE)
 set(QLEMENTINE_SHOWCASE OFF CACHE BOOL "" FORCE)
