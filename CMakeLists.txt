@@ -88,6 +88,9 @@ add_library(zc_ui STATIC
     windows/mainwindow_child/settingpage/settingpage.h windows/mainwindow_child/settingpage/settingpage.cpp windows/mainwindow_child/settingpage/settingpage.ui windows/mainwindow_child/settingpage/settingpage_page_ai.ui
     windows/mainwindow_child/aboutpage/aboutpage.h windows/mainwindow_child/aboutpage/aboutpage.cpp windows/mainwindow_child/aboutpage/aboutpage.ui)
 target_link_libraries(zc_ui PUBLIC zc_services qlementine Qt6::Widgets)
+if(WIN32)
+    target_link_libraries(zc_ui PUBLIC dwmapi)
+endif()
 if(MSVC)
     target_compile_options(zc_services PRIVATE /utf-8)
     target_compile_options(zc_ui PRIVATE /utf-8)

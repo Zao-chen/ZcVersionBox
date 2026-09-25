@@ -20,6 +20,202 @@
      <number>0</number>
     </property>
     <item>
+     <widget class="QWidget" name="titleBar">
+      <property name="minimumSize">
+       <size>
+        <width>0</width>
+        <height>36</height>
+       </size>
+      </property>
+      <property name="maximumSize">
+       <size>
+        <width>16777215</width>
+        <height>36</height>
+       </size>
+      </property>
+      <layout class="QHBoxLayout" name="titleBarLayout">
+       <property name="leftMargin">
+        <number>8</number>
+       </property>
+       <property name="topMargin">
+        <number>4</number>
+       </property>
+       <property name="rightMargin">
+        <number>4</number>
+       </property>
+       <property name="bottomMargin">
+        <number>4</number>
+       </property>
+       <property name="spacing">
+        <number>4</number>
+       </property>
+       <item>
+        <widget class="QToolButton" name="collapseButton">
+         <property name="text">
+          <string>切换侧栏</string>
+         </property>
+         <property name="toolTip">
+          <string>切换侧栏 (Ctrl+B)</string>
+         </property>
+         <property name="accessibleName">
+          <string>切换侧栏</string>
+         </property>
+         <property name="autoRaise">
+          <bool>true</bool>
+         </property>
+         <property name="focusPolicy">
+          <enum>Qt::TabFocus</enum>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>28</width>
+           <height>28</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QToolButton" name="backButton">
+         <property name="text">
+          <string>后退</string>
+         </property>
+         <property name="toolTip">
+          <string>后退 (Alt+Left)</string>
+         </property>
+         <property name="accessibleName">
+          <string>后退</string>
+         </property>
+         <property name="autoRaise">
+          <bool>true</bool>
+         </property>
+         <property name="focusPolicy">
+          <enum>Qt::TabFocus</enum>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>28</width>
+           <height>28</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QToolButton" name="forwardButton">
+         <property name="text">
+          <string>前进</string>
+         </property>
+         <property name="toolTip">
+          <string>前进 (Alt+Right)</string>
+         </property>
+         <property name="accessibleName">
+          <string>前进</string>
+         </property>
+         <property name="autoRaise">
+          <bool>true</bool>
+         </property>
+         <property name="focusPolicy">
+          <enum>Qt::TabFocus</enum>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>28</width>
+           <height>28</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="titleBarSpacer">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+       <item>
+        <widget class="QToolButton" name="minimizeButton">
+         <property name="text">
+          <string>最小化</string>
+         </property>
+         <property name="toolTip">
+          <string>最小化</string>
+         </property>
+         <property name="accessibleName">
+          <string>最小化</string>
+         </property>
+         <property name="autoRaise">
+          <bool>true</bool>
+         </property>
+         <property name="focusPolicy">
+          <enum>Qt::NoFocus</enum>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>28</width>
+           <height>28</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QToolButton" name="maximizeButton">
+         <property name="text">
+          <string>最大化</string>
+         </property>
+         <property name="toolTip">
+          <string>最大化</string>
+         </property>
+         <property name="accessibleName">
+          <string>最大化</string>
+         </property>
+         <property name="autoRaise">
+          <bool>true</bool>
+         </property>
+         <property name="focusPolicy">
+          <enum>Qt::NoFocus</enum>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>28</width>
+           <height>28</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QToolButton" name="closeButton">
+         <property name="text">
+          <string>关闭</string>
+         </property>
+         <property name="toolTip">
+          <string>关闭</string>
+         </property>
+         <property name="accessibleName">
+          <string>关闭</string>
+         </property>
+         <property name="autoRaise">
+          <bool>true</bool>
+         </property>
+         <property name="focusPolicy">
+          <enum>Qt::NoFocus</enum>
+         </property>
+         <property name="minimumSize">
+          <size>
+           <width>28</width>
+           <height>28</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </item>
+    <item>
      <widget class="QSplitter" name="windowSplitter">
       <property name="orientation">
        <enum>Qt::Horizontal</enum>
@@ -585,9 +781,9 @@
             <height>48</height>
            </size>
           </property>
-          <layout class="QHBoxLayout" name="headerLayout" stretch="0,0,0,1,0,0">
+          <layout class="QHBoxLayout" name="headerLayout" stretch="1,0,0">
            <property name="leftMargin">
-            <number>8</number>
+            <number>12</number>
            </property>
            <property name="topMargin">
             <number>8</number>
@@ -601,81 +797,6 @@
            <property name="spacing">
             <number>4</number>
            </property>
-           <item>
-            <widget class="QToolButton" name="collapseButton">
-             <property name="text">
-              <string>切换侧栏</string>
-             </property>
-             <property name="toolTip">
-              <string>切换侧栏</string>
-             </property>
-             <property name="accessibleName">
-              <string>切换侧栏</string>
-             </property>
-             <property name="autoRaise">
-              <bool>true</bool>
-             </property>
-             <property name="focusPolicy">
-              <enum>Qt::TabFocus</enum>
-             </property>
-             <property name="minimumSize">
-              <size>
-               <width>28</width>
-               <height>32</height>
-              </size>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QToolButton" name="backButton">
-             <property name="text">
-              <string>后退</string>
-             </property>
-             <property name="toolTip">
-              <string>后退</string>
-             </property>
-             <property name="accessibleName">
-              <string>后退</string>
-             </property>
-             <property name="autoRaise">
-              <bool>true</bool>
-             </property>
-             <property name="focusPolicy">
-              <enum>Qt::TabFocus</enum>
-             </property>
-             <property name="minimumSize">
-              <size>
-               <width>28</width>
-               <height>32</height>
-              </size>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QToolButton" name="forwardButton">
-             <property name="text">
-              <string>前进</string>
-             </property>
-             <property name="toolTip">
-              <string>前进</string>
-             </property>
-             <property name="accessibleName">
-              <string>前进</string>
-             </property>
-             <property name="autoRaise">
-              <bool>true</bool>
-             </property>
-             <property name="focusPolicy">
-              <enum>Qt::TabFocus</enum>
-             </property>
-             <property name="minimumSize">
-              <size>
-               <width>28</width>
-               <height>32</height>
-              </size>
-             </property>
-            </widget>
-           </item>
            <item>
             <widget class="QLabel" name="contextTitle">
              <property name="text">

@@ -25,6 +25,11 @@
 #include <QTimer>
 #include <algorithm>
 #include <type_traits>
+#if defined(Q_OS_WIN)
+#include <windows.h>
+#include <windowsx.h>
+#include <dwmapi.h>
+#endif
 
 namespace
 {
@@ -58,6 +63,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     setWindowTitle("ZcVersionBox");
     resize(1080, 740);
     setMinimumSize(760, 520);
+    UiStyle::surface(ui->titleBar, UiStyle::Surface::Sidebar);
     UiStyle::surface(ui->sidebar, UiStyle::Surface::Sidebar);
     UiStyle::surface(ui->content, UiStyle::Surface::Canvas);
     UiStyle::surface(ui->sidebarList, UiStyle::Surface::Sidebar);
@@ -68,6 +74,26 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     UiStyle::text(ui->settingsEmptyTitle, UiStyle::FontRole::Object);
     UiStyle::text(ui->settingsEmptyDescription, UiStyle::FontRole::Caption, true);
     ui->settingsEmptyState->hide();
+    connect(ui->minimizeButton, &QToolButton::clicked, this, &MainWindow::showMinimized);
+    connect(ui->maximizeButton, &QToolButton::clicked, this, [this] {
+        if (isMaximized())
+            showNormal();
+        else
+            showMaximized();
+    });
+    connect(ui->closeButton, &QToolButton::clicked, this, &MainWindow::close);
+#if defined(Q_OS_WIN)
+    HWND hwnd = reinterpret_cast<HWND>(winId());
+    MARGINS margins = {1, 1, 1, 1};
+    DwmExtendFrameIntoClientArea(hwnd, &margins);
+    SetWindowLong(hwnd, GWL_STYLE, GetWindowLong(hwnd, GWL_STYLE) | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_CAPTION);
+    SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+#elif defined(Q_OS_MACOS)
+    ui->minimizeButton->hide();
+    ui->maximizeButton->hide();
+    ui->closeButton->hide();
+    ui->titleBarLayout->setContentsMargins(76, 0, 8, 0);
+#endif
     for (auto *button : {ui->historyTab, ui->overviewTab, ui->diffTab, ui->generalTab, ui->aiTab, ui->aboutTab,
                          ui->backupsButton, ui->settingsButton, ui->returnApplicationButton,
                          ui->addSidebarButton, ui->collapseButton, ui->backButton, ui->forwardButton,
@@ -331,7 +357,21 @@ void MainWindow::updateSettingsSearch()
 void MainWindow::updateIcons()
 {
     const QList<QPair<QToolButton *, QString>> icons{
-        {ui->backButton, "back"}, {ui->forwardButton, "forward"}, {ui->collapseButton, "menu"}, {ui->backupsButton, "folder"}, {ui->settingsButton, "settings"}, {ui->appMenuButton, "more"}, {ui->moreButton, "more"}, {ui->addSidebarButton, "add"}, {ui->returnApplicationButton, "back"}, {ui->generalTab, "settings"}, {ui->aiTab, "sparkles"}, {ui->aboutTab, "info"}};
+        {ui->backButton, "back"},
+        {ui->forwardButton, "forward"},
+        {ui->collapseButton, "menu"},
+        {ui->minimizeButton, "window_minimize"},
+        {ui->maximizeButton, isMaximized() ? "window_restore" : "window_maximize"},
+        {ui->closeButton, "close"},
+        {ui->backupsButton, "folder"},
+        {ui->settingsButton, "settings"},
+        {ui->appMenuButton, "more"},
+        {ui->moreButton, "more"},
+        {ui->addSidebarButton, "add"},
+        {ui->returnApplicationButton, "back"},
+        {ui->generalTab, "settings"},
+        {ui->aiTab, "sparkles"},
+        {ui->aboutTab, "info"}};
     for (const auto &[button, name] : icons)
         button->setIcon(m_theme->icon(name));
     for (auto *action : findChildren<QAction *>())
@@ -571,3 +611,76 @@ void MainWindow::closeEvent(QCloseEvent *event)
     else
         QMainWindow::closeEvent(event);
 }
+void MainWindow::changeEvent(QEvent *event)
+{
+    if (event->type() == QEvent::WindowStateChange)
+    {
+        const bool max = isMaximized();
+        ui->centralLayout->setContentsMargins(max ? QMargins(8, 8, 8, 8) : QMargins(0, 0, 0, 0));
+        if (ui->maximizeButton)
+        {
+            ui->maximizeButton->setToolTip(max ? "还原" : "最大化");
+            ui->maximizeButton->setIcon(m_theme->icon(max ? "window_restore" : "window_maximize"));
+        }
+    }
+    QMainWindow::changeEvent(event);
+}
+#if defined(Q_OS_WIN)
+bool MainWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
+{
+    MSG *msg = static_cast<MSG *>(message);
+    if (!msg || !ui)
+        return false;
+
+    if (msg->message == WM_NCCALCSIZE)
+    {
+        if (msg->wParam == TRUE)
+        {
+            *result = 0;
+            return true;
+        }
+    }
+    else if (msg->message == WM_NCHITTEST)
+    {
+        POINT pt = {GET_X_LPARAM(msg->lParam), GET_Y_LPARAM(msg->lParam)};
+        RECT winRect;
+        GetWindowRect(msg->hwnd, &winRect);
+
+        int x = pt.x - winRect.left;
+        int y = pt.y - winRect.top;
+        int w = winRect.right - winRect.left;
+        int h = winRect.bottom - winRect.top;
+
+        if (!isMaximized())
+        {
+            const int border = 6;
+            if (y < border && x < border) { *result = HTTOPLEFT; return true; }
+            if (y < border && x > w - border) { *result = HTTOPRIGHT; return true; }
+            if (y < border) { *result = HTTOP; return true; }
+            if (y > h - border && x < border) { *result = HTBOTTOMLEFT; return true; }
+            if (y > h - border && x > w - border) { *result = HTBOTTOMRIGHT; return true; }
+            if (y > h - border) { *result = HTBOTTOM; return true; }
+            if (x < border) { *result = HTLEFT; return true; }
+            if (x > w - border) { *result = HTRIGHT; return true; }
+        }
+
+        if (ui->titleBar && ui->titleBar->isVisible())
+        {
+            QPoint localPos = ui->titleBar->mapFromGlobal(QPoint(pt.x, pt.y));
+            if (ui->titleBar->rect().contains(localPos))
+            {
+                QWidget *child = ui->titleBar->childAt(localPos);
+                if (child && child != ui->titleBar)
+                {
+                    *result = HTCLIENT;
+                    return false;
+                }
+                *result = HTCAPTION;
+                return true;
+            }
+        }
+    }
+
+    return QMainWindow::nativeEvent(eventType, message, result);
+}
+#endif
