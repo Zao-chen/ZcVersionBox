@@ -123,7 +123,7 @@ class Regression : public QObject
         QVERIFY(runGit({}, {"--version"}).success());
         QCoreApplication::setApplicationName("ZcVersionBox tests");
         QCoreApplication::setApplicationVersion("0.1.0");
-        m_theme = new ThemeController(this);
+        m_theme = new ThemeController(nullptr, this);
     }
     void typographyUsesThemeRoles()
     {
@@ -516,7 +516,7 @@ class Regression : public QObject
         settings.saveField("Model", "manual");
         QCOMPARE(settings.value("AI/Model").toString(), QString("manual"));
         QSignalSpy changed(&settings, &SettingsService::changed);
-        SettingPage general(&settings);
+        SettingPage general(&settings, m_theme);
         SettingPageAiPage ai(&settings);
         ai.refresh();
         ai.refresh();

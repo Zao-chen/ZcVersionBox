@@ -9,15 +9,39 @@
 #include <QShowEvent>
 #include <QSignalBlocker>
 #include <oclero/qlementine/widgets/LoadingSpinner.hpp>
+#include <oclero/qlementine/widgets/SegmentedControl.hpp>
 #include <oclero/qlementine/widgets/Switch.hpp>
 
-SettingPage::SettingPage(SettingsService *settings, QWidget *parent) : QWidget(parent), ui(new Ui::SettingPage)
+SettingPage::SettingPage(SettingsService *settings, ThemeController *theme, QWidget *parent)
+    : QWidget(parent), ui(new Ui::SettingPage), m_theme(theme)
 {
     ui->setupUi(this);
     UiStyle::text(ui->pageTitle, UiStyle::FontRole::Page);
+    UiStyle::text(ui->appearanceSectionTitle, UiStyle::FontRole::Section);
     UiStyle::text(ui->systemSectionTitle, UiStyle::FontRole::Section);
+    UiStyle::text(ui->themeDescription, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->rightClickDescription, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->autoStartDescription, UiStyle::FontRole::Caption, true);
+    auto *themeMode = new oclero::qlementine::SegmentedControl(this);
+    themeMode->setObjectName("themeModeControl");
+    themeMode->setAccessibleName("主题");
+    themeMode->addItem("系统", {}, {}, static_cast<int>(ThemeMode::System));
+    themeMode->addItem("浅色", {}, {}, static_cast<int>(ThemeMode::Light));
+    themeMode->addItem("深色", {}, {}, static_cast<int>(ThemeMode::Dark));
+    ui->themeLayout->addWidget(themeMode);
+    ui->themeLayout->setAlignment(themeMode, Qt::AlignVCenter);
+    const auto syncThemeMode = [=]
+    {
+        const QSignalBlocker blocker(themeMode);
+        themeMode->setCurrentIndex(themeMode->findItemIndex(static_cast<int>(m_theme->mode())));
+    };
+    syncThemeMode();
+    connect(m_theme, &ThemeController::changed, this, syncThemeMode);
+    connect(themeMode, &oclero::qlementine::AbstractItemListWidget::currentIndexChanged, this, [=]
+            {
+        const auto data = themeMode->currentData();
+        if (data.isValid())
+            m_theme->setMode(static_cast<ThemeMode>(data.toInt())); });
     auto *rightClick = new oclero::qlementine::Switch(this);
     rightClick->setObjectName("rightClickSwitch");
     rightClick->setAccessibleName("右键菜单快捷入口");

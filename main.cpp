@@ -29,11 +29,11 @@ int main(int argc, char *argv[])
         return app.exec();
     }
     app.setQuitOnLastWindowClosed(false);
-    ThemeController theme(&app);
     SettingsService settings(paths, &gateway, &app);
 #ifdef Q_OS_MACOS
     setMacServicesProviderEnabled(settings.value("RightClickMenu", false).toBool());
 #endif
+    ThemeController theme(&settings, &app);
     BackupMonitor monitor(&backups, &app);
     MainWindow window(&backups, &settings, &gateway, &theme);
     QObject::connect(&backups, &BackupService::notification, &window, &MainWindow::notify);

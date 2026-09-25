@@ -35,7 +35,7 @@ bool matchesSettings(PageId page, const QString &query)
     switch (page)
     {
     case PageId::GeneralSettings:
-        keywords = "常规 设置 系统集成 右键菜单快捷入口 从文件或文件夹的系统菜单直接添加备份 开机自动启动 登录系统后启动 ZcVersionBox 继续自动备份 自启动";
+        keywords = "常规 设置 外观 主题 跟随系统 浅色 深色 选择界面颜色跟随系统或固定使用浅色深色 系统集成 右键菜单快捷入口 从文件或文件夹的系统菜单直接添加备份 开机自动启动 登录系统后启动 ZcVersionBox 继续自动备份 自启动";
         break;
     case PageId::AiSettings:
         keywords = "AI 设置 自动化 自动生成提交说明 使用AI为自动备份生成简短的变更说明 服务配置 服务商 选择生成提交说明和分析变更的AI服务 OpenAI DeepSeek Custom API Key 凭据 密钥 模型 model 获取模型 手工输入模型名称 自定义 Base URL 服务地址 兼容OpenAI的服务接口地址";
@@ -154,7 +154,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     m_dashboard = new HomePageDashboardPage(backups, this);
     m_history = new HomePageBackupPage(backups, this);
     m_diff = new HomePageDiffPage(backups, settings, gateway, this);
-    m_general = new SettingPage(settings, this);
+    m_general = new SettingPage(settings, theme, this);
     m_ai = new SettingPageAiPage(settings, this);
     m_about = new AboutPage(this);
     for (QWidget *page : QList<QWidget *>{m_list, m_dashboard, m_history, m_diff, m_general, m_ai, m_about})
