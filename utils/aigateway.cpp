@@ -64,3 +64,25 @@ void AiGateway::summarize(const AiConfigHelper::RuntimeConfig &config, const QSt
                        { complete({}, "AI 分析超时，请稍后重试"); });
     provider->chat(AiCommitMessageHelper::buildDiffSummaryPrompt(diff));
 }
+
+void AiGateway::generateCommitMessage(const AiConfigHelper::RuntimeConfig &config, const QString &diff, QObject *context, SummaryCallback callback)
+{
+    auto *provider = providerFor(config, context);
+    provider->setSystemPrompt(AiCommitMessageHelper::systemPrompt());
+    const auto finished = std::make_shared<bool>(false);
+    const auto complete = [guard = QPointer<AiProvider>(provider), finished, callback](const QString &reply, const QString &error)
+    {
+        if (!guard || *finished)
+            return;
+        *finished = true;
+        guard->deleteLater();
+        callback(reply.trimmed(), error);
+    };
+    connect(provider, &AiProvider::replyReceived, context, [complete](const QString &reply)
+            { complete(reply, {}); });
+    connect(provider, &AiProvider::errorOccurred, context, [complete](const QString &error)
+            { complete({}, error); });
+    QTimer::singleShot(15000, provider, [complete]
+                       { complete({}, "AI 提交说明请求超时"); });
+    provider->chat(AiCommitMessageHelper::buildPromptFromDiff(diff));
+}

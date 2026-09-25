@@ -28,6 +28,7 @@ class HomePageBackupPage : public QWidget
   protected:
     void resizeEvent(QResizeEvent *event) override;
     void hideEvent(QHideEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
   private:
     struct ViewState
@@ -61,6 +62,7 @@ class HomePageBackupPage : public QWidget
     bool m_loading{false};
     bool m_editing{false};
     bool m_refreshPending{false};
+    bool m_refreshNeeded{false};
     quint64 m_refreshGeneration{0};
     QString selectedCommit() const;
     void updateActions();

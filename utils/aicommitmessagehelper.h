@@ -14,11 +14,6 @@ QString buildDiffSummaryPrompt(const QString &diffText);
 
 QString diffSummarySystemPrompt();
 
-QString generateCommitMessageSync(const QString &diffText,
-                                  int timeoutMs = 15000,
-                                  QString *errorMessage = nullptr,
-                                  const QString &settingsFile = {});
-
 } // namespace AiCommitMessageHelper
 
 #endif // AICOMMITMESSAGEHELPER_H

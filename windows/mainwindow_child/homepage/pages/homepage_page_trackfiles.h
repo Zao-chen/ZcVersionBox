@@ -39,4 +39,5 @@ class BackupUiActions : public QObject
     QString target() const { return m_menuId.isEmpty() ? m_currentId : m_menuId; }
     void addLocal(bool directory);
     void importRemote();
+    void chooseImport(const PreparedImport &prepared);
 };

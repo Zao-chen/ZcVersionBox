@@ -1,449 +1,424 @@
 #include "backupservice.h"
-#include "gitcommand.h"
-#include "utils/aicommitmessagehelper.h"
-#include "utils/backuprestorehelper.h"
-#include "utils/fileutils.h"
-#include <QDateTime>
-#include <QDirIterator>
-#include <QFile>
+#include "aiconfighelper.h"
+#include "aigateway.h"
+#include "backup_engine.h"
+#include <QDir>
+#include <QFileInfo>
+#include <QPointer>
+#include <QQueue>
 #include <QSettings>
-#include <QTimeZone>
-#include <QUrl>
-#include <QUuid>
+#include <QThread>
+#include <QTimer>
+#include <algorithm>
+#include <optional>
 
-namespace
+class BackupService::Private
 {
-bool removePath(const QString &path)
-{
-    const QFileInfo info(path);
-    return !info.exists() || (info.isDir() ? QDir(path).removeRecursively() : QFile::remove(path));
-}
-bool copyPath(const QString &source, const QString &target)
-{
-    return QFileInfo(source).isDir() ? FileUtils::copyDirectory(source, target) : QFile::copy(source, target);
-}
-QPair<int, qint64> pathStats(const QString &path)
-{
-    const QFileInfo info(path);
-    if (!info.exists())
-        return {};
-    if (info.isFile())
-        return {1, info.size()};
-    QPair<int, qint64> stats;
-    QDirIterator it(path, QDir::Files | QDir::Hidden | QDir::Readable | QDir::NoSymLinks, QDirIterator::Subdirectories);
-    while (it.hasNext())
+  public:
+    struct Job
     {
-        it.next();
-        ++stats.first;
-        stats.second += it.fileInfo().size();
-    }
-    return stats;
-}
-QFileInfo importEntry(const QString &path)
-{
-    for (const auto &entry : QDir(path).entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot, QDir::Name))
-        if (entry.fileName() != ".git")
-            return entry;
-    return {};
-}
-OperationResult missing() { return OperationResult::fail("操作失败", "本地备份仓库不存在"); }
-} // namespace
+        BackupTaskId task;
+        QString id;
+        quint64 generation;
+        QPointer<QObject> context;
+        std::shared_ptr<std::atomic_bool> cancelled{std::make_shared<std::atomic_bool>(false)};
+        std::function<void(const std::shared_ptr<Job> &)> start;
+    };
+    using JobPtr = std::shared_ptr<Job>;
+    BackupService *owner;
+    AppPaths paths;
+    BackupDependencies dependencies;
+    QPointer<AiGateway> gateway;
+    QThread thread;
+    QObject *worker{new QObject};
+    std::unique_ptr<BackupEngine> engine;
+    QMap<QString, BackupRecord> cache;
+    QQueue<JobPtr> queue;
+    JobPtr active;
+    BackupTaskId sequence{0};
+    bool loaded{false}, stopping{false};
+    QPointer<QObject> aiContext;
+    std::function<void()> cancelAi;
 
-BackupService::BackupService(const AppPaths &paths, QObject *parent, CommitMessageGenerator generator)
-    : QObject(parent), m_paths(paths), m_generateMessage(std::move(generator))
-{
-    if (!m_generateMessage)
-        m_generateMessage = [](const QString &diff, const QString &settingsFile)
+    Private(BackupService *service, AppPaths p, AiGateway *ai, BackupDependencies deps)
+        : owner(service), paths(std::move(p)), dependencies(std::move(deps)),
+          gateway(ai ? ai : new AiGateway(service)), engine(std::make_unique<BackupEngine>(paths, dependencies))
+    {
+        worker->moveToThread(&thread);
+        QObject::connect(&thread, &QThread::finished, worker, &QObject::deleteLater);
+        thread.setObjectName("BackupWorker");
+        thread.start();
+    }
+    ~Private()
+    {
+        stopping = true;
+        if (active)
+            active->cancelled->store(true);
+        for (const auto &job : queue)
+            job->cancelled->store(true);
+        if (aiContext)
+            delete aiContext.data();
+        cancelAi = {};
+        // The engine rolls back any prepared backup before releasing its process lock.
+        QMetaObject::invokeMethod(worker, [this]
+                                  { engine.reset(); }, Qt::BlockingQueuedConnection);
+        thread.quit();
+        thread.wait();
+    }
+    BackupTaskId schedule(const QString &id, QObject *context, std::function<void(const JobPtr &)> start)
+    {
+        auto job = std::make_shared<Job>();
+        job->task = ++sequence;
+        job->id = id;
+        job->generation = owner->repositoryGeneration(id);
+        job->context = context ? context : owner;
+        job->start = std::move(start);
+        queue.enqueue(job);
+        QTimer::singleShot(0, owner, [this]
+                           { next(); });
+        return job->task;
+    }
+    void next()
+    {
+        if (active || stopping || queue.isEmpty())
+            return;
+        active = queue.dequeue();
+        emit owner->busyChanged(true);
+        emit owner->taskStarted(active->task, active->id);
+        active->start(active);
+    }
+    OperationResult begin(const JobPtr &job)
+    {
+        if (job->cancelled->load())
+            return OperationResult::warn("操作已取消", {});
+        auto result = engine->begin(job->cancelled);
+        if (!result.success)
+            return result;
+        if (!job->id.isEmpty())
         {
-            return AiCommitMessageHelper::generateCommitMessageSync(diff, 15000, nullptr, settingsFile);
-        };
-}
-QString BackupService::sourcePath(const QString &id) const { return QUrl::fromPercentEncoding(id.toUtf8()); }
-QString BackupService::repoPath(const QString &id) const { return QDir(m_paths.backupRoot).filePath(id); }
-bool BackupService::contains(const QString &id) const
-{
-    return !id.isEmpty() && id != "." && id != ".." && !id.contains('/') && !id.contains('\\') && QDir(repoPath(id)).exists();
-}
+            const auto records = engine->records();
+            auto found = std::find_if(records.cbegin(), records.cend(), [&](const BackupRecord &r)
+                                      { return r.id == job->id; });
+            if (found == records.cend() || found->generation != job->generation)
+                return OperationResult::warn("操作已取消", "追踪对象已删除或重建，请重新打开此页面后再试");
+        }
+        return result;
+    }
+    static bool same(const BackupRecord &a, const BackupRecord &b)
+    {
+        return a.sourcePath == b.sourcePath && a.generation == b.generation && a.state == b.state &&
+               a.stateDetail == b.stateDetail && a.lastCommit == b.lastCommit && a.pendingCommit == b.pendingCommit &&
+               a.fingerprint == b.fingerprint && a.operation == b.operation && a.recoveryPaths == b.recoveryPaths;
+    }
+    void publish(const QVector<BackupRecord> &records)
+    {
+        const auto previous = cache;
+        cache.clear();
+        for (auto r : records)
+        {
+            if (!r.operation.isEmpty())
+            {
+                r.state = BackupSyncState::NeedsAttention;
+                r.stateDetail = "上次操作未完整确认，自动备份已暂停。保留副本：" + r.recoveryPaths.join("、");
+            }
+            cache.insert(r.id, r);
+        }
+        bool changed = previous.size() != cache.size();
+        for (const auto &old : previous)
+            if (!cache.contains(old.id) || cache[old.id].generation != old.generation)
+                emit owner->repositoryInvalidated(old.id);
+        for (const auto &r : cache)
+            if (!previous.contains(r.id) || !same(previous[r.id], r))
+            {
+                changed = true;
+                emit owner->repositoryChanged(r.id);
+            }
+        if (changed)
+            emit owner->trackedItemsChanged();
+    }
+    void done(const JobPtr &job, const OperationResult &result)
+    {
+        if (stopping)
+            return;
+        if (!loaded && result.success)
+        {
+            loaded = true;
+            emit owner->ready();
+        }
+        emit owner->taskFinished(job->task, job->id, result);
+        active.reset();
+        emit owner->busyChanged(false);
+        QTimer::singleShot(0, owner, [this]
+                           { next(); });
+    }
+    template <class T>
+    BackupTaskId submit(const QString &id, QObject *context, Reply<T> callback,
+                        std::function<BackupResult<T>(BackupEngine &)> action, bool notify = false)
+    {
+        return schedule(id, context, [this, action = std::move(action), callback = std::move(callback), notify](const JobPtr &job)
+                        { QMetaObject::invokeMethod(worker, [this, job, action, callback, notify]
+                                                    {
+                BackupResult<T> reply;
+                reply.result = begin(job);
+                if (reply.result.success)
+                {
+                    const auto warning = reply.result.warning;
+                    reply = action(*engine);
+                    if (!warning.isEmpty()) reply.result.warning = warning + (reply.result.warning.isEmpty() ? QString() : '\n' + reply.result.warning);
+                }
+                const auto records = engine->records();
+                engine->end();
+                QMetaObject::invokeMethod(owner, [this, job, reply, records, callback, notify]
+                {
+                    publish(records);
+                    if (notify && reply.result.success && !job->id.isEmpty()) emit owner->repositoryChanged(job->id);
+                    done(job, reply.result);
+                    if (job->context && callback) callback(reply);
+                }, Qt::QueuedConnection); }, Qt::QueuedConnection); });
+    }
+    BackupTaskId mutate(const QString &id, QObject *context, Completion callback,
+                        std::function<OperationResult(BackupEngine &)> action, bool notify = true)
+    {
+        return submit<bool>(id, context, [callback](const BackupResult<bool> &reply)
+                            { if (callback) callback(reply.result); }, [action](BackupEngine &e)
+                            { return BackupResult<bool>{action(e), false}; }, notify);
+    }
+    void finishBackup(const JobPtr &job, const std::shared_ptr<PendingBackup> &work, const QString &message, Completion callback)
+    {
+        cancelAi = {};
+        if (aiContext)
+            aiContext->deleteLater();
+        aiContext.clear();
+        QMetaObject::invokeMethod(worker, [this, job, work, message, callback]
+                                  {
+            const auto result = engine->finishBackup(work, message, job->cancelled->load());
+            const auto records = engine->records();
+            engine->end();
+            QMetaObject::invokeMethod(owner, [this, job, result, records, callback]
+            {
+                publish(records);
+                done(job, result);
+                if (job->context && callback) callback(result);
+            }, Qt::QueuedConnection); }, Qt::QueuedConnection);
+    }
+    BackupTaskId submitBackup(const QString &id, QObject *context, Completion callback, bool changedOnly, std::optional<RestoreRequest> resolution = {})
+    {
+        return schedule(id, context, [this, id, callback, changedOnly, resolution](const JobPtr &job)
+                        { QMetaObject::invokeMethod(worker, [this, id, job, callback, changedOnly, resolution]
+                                                    {
+                BackupResult<std::shared_ptr<PendingBackup>> prepared;
+                prepared.result = begin(job);
+                if (prepared.result.success) prepared = engine->prepareBackup(id, changedOnly, resolution ? &*resolution : nullptr);
+                AiConfigHelper::RuntimeConfig config;
+                bool useAi = false;
+                if (prepared.value && prepared.value->changed && !prepared.value->diff.isEmpty())
+                {
+                    QSettings settings(paths.settingsFile, QSettings::IniFormat);
+                    useAi = settings.value("AI/Enabled", settings.value("AI/AutoCommitMessage", false)).toBool() &&
+                            AiConfigHelper::loadRuntimeConfig(config, nullptr, paths.settingsFile);
+                }
+                const auto records = engine->records();
+                if (!prepared.value) engine->end();
+                QMetaObject::invokeMethod(owner, [this, job, callback, prepared, records, useAi, config]
+                {
+                    if (!prepared.value)
+                    {
+                        publish(records);
+                        done(job, prepared.result);
+                        if (job->context && callback) callback(prepared.result);
+                        return;
+                    }
+                    if (!useAi || !gateway || job->cancelled->load())
+                    {
+                        finishBackup(job, prepared.value, {}, callback);
+                        return;
+                    }
+                    aiContext = new QObject(owner);
+                    const auto completed = std::make_shared<bool>(false);
+                    const QPointer<BackupService> guard(owner);
+                    const QPointer<QObject> context(aiContext);
+                    const auto complete = [this, guard, context, job, work = prepared.value, callback, completed](const QString &message)
+                    {
+                        if (!guard || !context || *completed || stopping) return;
+                        *completed = true;
+                        finishBackup(job, work, message, callback);
+                    };
+                    cancelAi = [complete] { complete({}); };
+                    QTimer::singleShot(dependencies.aiTimeoutMs, aiContext, [complete] { complete({}); });
+                    gateway->generateCommitMessage(config, prepared.value->diff, aiContext,
+                        [complete](const QString &message, const QString &) { complete(message); });
+                }, Qt::QueuedConnection); }, Qt::QueuedConnection); });
+    }
+};
+
+BackupService::BackupService(const AppPaths &paths, QObject *parent, AiGateway *gateway, BackupDependencies dependencies)
+    : QObject(parent), d(std::make_unique<Private>(this, paths, gateway, std::move(dependencies))) { reload(); }
+BackupService::~BackupService() = default;
+const AppPaths &BackupService::paths() const { return d->paths; }
 QVector<TrackedItem> BackupService::trackedItems() const
 {
     QVector<TrackedItem> items;
-    for (const auto &id : QDir(m_paths.backupRoot).entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
-    {
-        if (id.startsWith("_import_tmp_"))
-            continue;
-        const auto source = sourcePath(id);
-        items.push_back({id, source, QFileInfo(source).fileName()});
-    }
+    for (const auto &r : d->cache)
+        items.append(r.item());
+    std::sort(items.begin(), items.end(), [](const TrackedItem &a, const TrackedItem &b)
+              { return a.sourcePath < b.sourcePath; });
     return items;
 }
-OperationResult BackupService::addLocal(const QString &source)
+QString BackupService::sourcePath(const QString &id) const { return d->cache.value(id).sourcePath; }
+QString BackupService::repoPath(const QString &id) const { return contains(id) ? QDir(d->paths.backupRoot).filePath("items/" + id + "/repository") : QString(); }
+QString BackupService::idForSource(const QString &source) const
 {
-    if (!QFileInfo::exists(source))
-        return OperationResult::fail("添加失败", "源文件或文件夹不存在");
-    const auto id = QString::fromUtf8(QUrl::toPercentEncoding(source));
-    const auto repo = repoPath(id);
-    const auto target = QDir(repo).filePath(QFileInfo(source).fileName());
-    ++m_generations[id];
-    emit repositoryInvalidated(id);
-    if (!QDir().mkpath(repo))
-        return OperationResult::fail("添加失败", "无法创建备份仓库");
-    if (QFileInfo(source).isFile())
-        QFile::remove(target);
-    if (!copyPath(source, target))
-        return OperationResult::fail("添加失败", "复制源文件失败");
-    auto git = runGit(repo, {"init"});
-    if (!git.success())
-        return OperationResult::fail("初始化失败", git.error);
-    runGit(repo, {"config", "user.name", "ZcVersionBox"});
-    runGit(repo, {"config", "user.email", "backup@zcversionbox.local"});
-    git = runGit(repo, {"add", "."});
-    if (!git.success())
-        return OperationResult::fail("添加失败", git.error);
-    git = runGit(repo, {"commit", "-m", "Initial backup"});
-    emit trackedItemsChanged();
-    if (!git.success())
-        return OperationResult::fail("提交失败", git.error);
-    return OperationResult::ok("添加成功", "已将文件添加至版本控制");
-}
-OperationResult BackupService::backup(const QString &id)
-{
-    if (!contains(id))
-        return missing();
-    const auto generation = repositoryGeneration(id);
-    const auto source = sourcePath(id);
-    if (!QFileInfo::exists(source))
-        return OperationResult::fail("自动备份失败", "源文件或文件夹不存在");
-    const auto target = QDir(repoPath(id)).filePath(QFileInfo(source).fileName());
-    if (!removePath(target) || !copyPath(source, target))
-        return OperationResult::fail("自动备份失败", "复制文件失败，请检查权限");
-    auto git = runGit(repoPath(id), {"add", "."});
-    if (!git.success())
-        return OperationResult::fail("自动备份失败", git.error);
-    git = runGit(repoPath(id), {"diff", "--cached", "--quiet"});
-    if (!git.started || !git.finished)
-        return OperationResult::fail("自动备份失败", git.error);
-    if (git.exitCode == 0)
-        return OperationResult::ok({});
-    QString message;
-    QSettings settings(m_paths.settingsFile, QSettings::IniFormat);
-    if (settings.value("AI/Enabled", settings.value("AI/AutoCommitMessage", false)).toBool())
+    const auto path = QDir::fromNativeSeparators(QDir::cleanPath(QFileInfo(source).absoluteFilePath()));
+    for (const auto &r : d->cache)
     {
-        auto diff = runGit(repoPath(id), {"diff", "--cached", "--unified=0"});
-        if (diff.success() && !diff.output.trimmed().isEmpty())
-            message = m_generateMessage(diff.output.trimmed(), m_paths.settingsFile);
+#ifdef Q_OS_WIN
+        if (r.sourcePath.compare(path, Qt::CaseInsensitive) == 0)
+            return r.id;
+#else
+        if (r.sourcePath == path)
+            return r.id;
+#endif
     }
-    // The synchronous AI helper processes events while waiting. A deleted or rebuilt
-    // repository is a different context, even when it uses the same source path.
-    if (!contains(id) || generation != repositoryGeneration(id))
-        return OperationResult::fail("自动备份已取消", "备份仓库已删除或重建");
-    if (message.isEmpty())
-        message = "Auto backup - " + QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
-    git = runGit(repoPath(id), {"commit", "-m", message});
-    if (!git.success())
-        return OperationResult::fail("自动备份失败", git.error);
-    emit repositoryChanged(id);
-    return OperationResult::ok({});
+    return {};
 }
-OperationResult BackupService::statistics(const QString &id, BackupStats &stats) const
+bool BackupService::contains(const QString &id) const { return d->cache.contains(id); }
+bool BackupService::isReady() const { return d->loaded; }
+bool BackupService::isBusy() const { return d->active || !d->queue.isEmpty(); }
+quint64 BackupService::repositoryGeneration(const QString &id) const { return contains(id) ? d->cache.value(id).generation : 0; }
+BackupSyncState BackupService::syncState(const QString &id) const { return contains(id) ? d->cache[id].state : BackupSyncState::NeedsAttention; }
+QString BackupService::pendingCommit(const QString &id) const { return d->cache.value(id).pendingCommit; }
+BackupTaskId BackupService::reload(QObject *c, Completion f)
 {
-    stats = {};
-    if (!contains(id))
-        return missing();
-    const QFileInfo source(sourcePath(id));
-    stats.sourceState = !source.exists() ? "缺失" : source.isDir() ? "文件夹"
-                                                                   : "文件";
-    const auto snapshot = pathStats(QDir(repoPath(id)).filePath(source.fileName()));
-    stats.fileCount = snapshot.first;
-    stats.fileSize = snapshot.second;
-    stats.cacheSize = pathStats(repoPath(id) + "/.git/objects").second;
-    auto git = runGit(repoPath(id), {"rev-list", "--count", "HEAD"});
-    if (git.success())
-        stats.versionCount = git.output.trimmed().toInt();
-    git = runGit(repoPath(id), {"remote", "get-url", "origin"});
-    if (git.success())
-        stats.remoteUrl = git.output.trimmed();
-    return OperationResult::ok({});
+    return d->mutate({}, c, [this, f](const OperationResult &result)
+                     {
+        if (!result.success || !result.warning.isEmpty()) emit notification(result);
+        if (f) f(result); }, [](BackupEngine &e)
+                     { return e.reload(); }, false);
 }
-OperationResult BackupService::history(const QString &id, QVector<Revision> &revisions) const
+BackupTaskId BackupService::addLocal(const QString &p, QObject *c, Completion f)
 {
-    revisions.clear();
-    if (!contains(id))
-        return missing();
-    const auto git = runGit(repoPath(id), {"log", "-z", "--format=%h%x00%ct%x00%s"});
-    if (!git.success())
-        return OperationResult::fail("打开备份失败", git.error);
-    // NUL-delimited triples preserve empty subjects and subjects containing
-    // spaces. Keep %h and Git's existing ordering; this is presentation data.
-    const auto fields = git.output.split(QChar('\0'), Qt::KeepEmptyParts);
-    for (qsizetype i = 0; i + 2 < fields.size(); i += 3)
+    return d->mutate({}, c, std::move(f), [p](BackupEngine &e)
+                     { return e.addLocal(p); });
+}
+BackupTaskId BackupService::backup(const QString &id, QObject *c, Completion f, bool changedOnly) { return d->submitBackup(id, c, std::move(f), changedOnly); }
+BackupTaskId BackupService::observe(const QString &id, QObject *c, Reply<bool> f)
+{
+    return d->submit<bool>(id, c, std::move(f), [id](BackupEngine &e)
+                           { return e.changed(id); });
+}
+BackupTaskId BackupService::statistics(const QString &id, QObject *c, Reply<BackupStats> f)
+{
+    return d->submit<BackupStats>(id, c, std::move(f), [id](BackupEngine &e)
+                                  { return e.statistics(id); });
+}
+BackupTaskId BackupService::history(const QString &id, QObject *c, Reply<QVector<Revision>> f)
+{
+    return d->submit<QVector<Revision>>(id, c, std::move(f), [id](BackupEngine &e)
+                                        { return e.history(id); });
+}
+BackupTaskId BackupService::diff(const QString &id, const QString &commit, QObject *c, Reply<DiffData> f)
+{
+    return d->submit<DiffData>(id, c, std::move(f), [id, commit](BackupEngine &e)
+                               { return e.diff(id, commit); });
+}
+BackupTaskId BackupService::diffText(const QString &id, const DiffData &data, const QString &file, QObject *c, Reply<QString> f)
+{
+    return d->submit<QString>(id, c, std::move(f), [id, data, file](BackupEngine &e)
+                              { return e.diffText(id, data, file); });
+}
+BackupTaskId BackupService::preview(const QString &id, const QString &commit, QObject *c, Completion f)
+{
+    return d->mutate(id, c, std::move(f), [id, commit](BackupEngine &e)
+                     { return e.preview(id, commit); }, false);
+}
+BackupTaskId BackupService::prepareRestore(const QString &id, const QString &commit, QObject *c, Reply<RestoreRequest> f)
+{
+    return d->submit<RestoreRequest>(id, c, std::move(f), [id, commit](BackupEngine &e)
+                                     { return e.prepareRestore(id, commit, false); });
+}
+BackupTaskId BackupService::restore(const RestoreRequest &r, QObject *c, Completion f)
+{
+    return d->mutate(r.id, c, std::move(f), [r](BackupEngine &e)
+                     { return e.restore(r); });
+}
+BackupTaskId BackupService::preparePullResolution(const QString &id, QObject *c, Reply<RestoreRequest> f)
+{
+    return d->submit<RestoreRequest>(id, c, std::move(f), [id](BackupEngine &e)
+                                     { return e.prepareRestore(id, {}, true); });
+}
+BackupTaskId BackupService::resolvePull(const RestoreRequest &r, bool apply, QObject *c, Completion f)
+{
+    if (apply)
+        return restore(r, c, std::move(f));
+    return d->submitBackup(r.id, c, std::move(f), false, r);
+}
+BackupTaskId BackupService::editMessage(const QString &id, const QString &commit, const QString &message, QObject *c, Completion f)
+{
+    return d->mutate(id, c, std::move(f), [id, commit, message](BackupEngine &e)
+                     { return e.editMessage(id, commit, message); });
+}
+BackupTaskId BackupService::setRemote(const QString &id, const QString &url, QObject *c, Completion f)
+{
+    return d->mutate(id, c, std::move(f), [id, url](BackupEngine &e)
+                     { return e.setRemote(id, url); });
+}
+BackupTaskId BackupService::removeRemote(const QString &id, QObject *c, Completion f)
+{
+    return d->mutate(id, c, std::move(f), [id](BackupEngine &e)
+                     { return e.removeRemote(id); });
+}
+BackupTaskId BackupService::synchronize(const QString &id, bool push, QObject *c, Completion f)
+{
+    return d->mutate(id, c, std::move(f), [id, push](BackupEngine &e)
+                     { return e.synchronize(id, push); });
+}
+BackupTaskId BackupService::removeBackup(const QString &id, QObject *c, Completion f)
+{
+    return d->mutate(id, c, std::move(f), [id](BackupEngine &e)
+                     { return e.removeBackup(id); });
+}
+BackupTaskId BackupService::rebuild(const QString &id, QObject *c, Completion f)
+{
+    return d->mutate(id, c, std::move(f), [id](BackupEngine &e)
+                     { return e.rebuild(id); });
+}
+BackupTaskId BackupService::checkRemote(const QString &url, QObject *c, Completion f)
+{
+    return d->mutate({}, c, std::move(f), [url](BackupEngine &e)
+                     { return e.checkRemote(url); }, false);
+}
+BackupTaskId BackupService::prepareImport(const QString &url, QObject *c, Reply<PreparedImport> f)
+{
+    return d->submit<PreparedImport>({}, c, std::move(f), [url](BackupEngine &e)
+                                     { return e.prepareImport(url); });
+}
+BackupTaskId BackupService::finishImport(const QString &session, const QString &entry, const QString &target, bool replace, QObject *c, Completion f)
+{
+    return d->mutate({}, c, std::move(f), [session, entry, target, replace](BackupEngine &e)
+                     { return e.finishImport(session, entry, target, replace); });
+}
+BackupTaskId BackupService::cancelImport(const QString &session, QObject *c, Completion f)
+{
+    return d->mutate({}, c, std::move(f), [session](BackupEngine &e)
+                     { return e.cancelImport(session); }, false);
+}
+BackupTaskId BackupService::recheck(const QString &id, QObject *c, Completion f)
+{
+    return d->mutate(id, c, std::move(f), [id](BackupEngine &e)
+                     { return e.recheck(id); });
+}
+void BackupService::cancel(BackupTaskId task)
+{
+    if (d->active && d->active->task == task)
     {
-        bool valid = false;
-        const auto timestamp = fields[i + 1].toLongLong(&valid);
-        if (fields[i].isEmpty() || !valid)
-            return OperationResult::fail("打开备份失败", "无法读取提交记录");
-        revisions.push_back({fields[i], fields[i + 2], QDateTime::fromSecsSinceEpoch(timestamp, QTimeZone::UTC)});
-    }
-    return OperationResult::ok({});
-}
-OperationResult BackupService::diff(const QString &id, const QString &commit, DiffData &data) const
-{
-    data = {};
-    if (!contains(id))
-        return missing();
-    auto git = runGit(repoPath(id), {"rev-parse", "--verify", commit + "^{commit}"});
-    if (!git.success())
-        return OperationResult::fail("打开对比失败", git.error);
-    data.newCommit = git.output.trimmed();
-    git = runGit(repoPath(id), {"rev-parse", data.newCommit + "^"});
-    data.oldCommit = git.success() ? git.output.trimmed() : "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-    git = runGit(repoPath(id), {"diff", "--numstat", "-z", data.oldCommit, data.newCommit});
-    if (!git.success())
-        return OperationResult::fail("打开对比失败", git.error);
-    QMap<QString, QString> stats;
-    const auto records = git.output.split(QChar('\0'), Qt::KeepEmptyParts);
-    for (int i = 0; i < records.size(); ++i)
-    {
-        const auto firstTab = records[i].indexOf('\t');
-        const auto secondTab = records[i].indexOf('\t', firstTab + 1);
-        if (firstTab < 0 || secondTab < 0)
-            continue;
-        const auto added = records[i].left(firstTab);
-        const auto removed = records[i].mid(firstTab + 1, secondTab - firstTab - 1);
-        auto path = records[i].mid(secondTab + 1);
-        // Renames/copies use an empty path followed by old and new NUL-delimited paths.
-        if (path.isEmpty() && i + 2 < records.size())
+        d->active->cancelled->store(true);
+        if (d->cancelAi)
         {
-            i += 2;
-            path = records[i];
+            auto cancel = d->cancelAi;
+            cancel();
         }
-        stats[path] = added == "-" || removed == "-" ? QStringLiteral("二进制") : QString("+%1 / -%2").arg(added, removed);
     }
-    git = runGit(repoPath(id), {"diff", "--name-status", "-z", data.oldCommit, data.newCommit});
-    if (!git.success())
-        return OperationResult::fail("打开对比失败", git.error);
-    const auto paths = git.output.split(QChar('\0'), Qt::KeepEmptyParts);
-    for (int i = 0; i + 1 < paths.size();)
-    {
-        const auto status = paths[i++];
-        auto path = paths[i++];
-        if ((status.startsWith('R') || status.startsWith('C')) && i < paths.size())
-            path = paths[i++];
-        if (!status.isEmpty() && !path.isEmpty())
-            data.files.push_back({status, path, stats.value(path, "-")});
-    }
-    return OperationResult::ok({});
-}
-OperationResult BackupService::diffText(const QString &id, const DiffData &data, const QString &file, QString &text) const
-{
-    if (!contains(id))
-        return missing();
-    QStringList args{"diff", "--no-color", file.isEmpty() ? "--unified=20" : "--unified=80", data.oldCommit, data.newCommit};
-    if (!file.isEmpty())
-        args << "--" << file;
-    const auto git = runGit(repoPath(id), args);
-    text = git.output;
-    return git.success() ? OperationResult::ok({}) : OperationResult::fail("加载对比失败", git.error);
-}
-OperationResult BackupService::preview(const QString &id, const QString &commit)
-{
-    if (!contains(id))
-        return missing();
-    auto git = runGit(repoPath(id), {"checkout", "-f", commit});
-    if (!git.success())
-        return OperationResult::fail("查看失败", git.error);
-    const auto target = QDir::tempPath() + "/ZcBox_Preview_" + commit + "_" + id;
-    const bool copied = removePath(target) && FileUtils::copyDirectory(repoPath(id), target);
-    if (copied)
-        FileUtils::setReadOnlyRecursive(target);
-    git = runGit(repoPath(id), {"checkout", "-f", "master"});
-    if (!copied)
-        return OperationResult::fail("查看失败", "复制预览文件失败");
-    auto result = OperationResult::ok({});
-    result.path = target;
-    if (!git.success())
-        result.warning = "恢复工作分支失败，请手动执行 git checkout -f master";
-    return result;
-}
-OperationResult BackupService::restore(const QString &id, const QString &commit)
-{
-    if (!contains(id))
-        return missing();
-    const auto restored = BackupRestoreHelper::restoreFromGitRevision(repoPath(id), commit, sourcePath(id));
-    if (!restored.success)
-        return OperationResult::fail("还原失败", restored.errorMessage);
-    auto result = OperationResult::ok("还原成功", "已恢复到版本 " + commit);
-    result.warning = restored.warningMessage;
-    if (!result.warning.isEmpty())
-    {
-        result.title = "还原完成，但需处理";
-        result.duration = 6000;
-    }
-    emit repositoryChanged(id);
-    return result;
-}
-OperationResult BackupService::editMessage(const QString &id, const QString &commit, const QString &message)
-{
-    if (!contains(id))
-        return missing();
-    if (message.isEmpty())
-        return OperationResult::fail("错误", "提交说明不能为空");
-    auto git = runGit(repoPath(id), {"rev-parse", "HEAD"});
-    if (!git.success())
-        return OperationResult::fail("保存失败", git.error);
-    // Keep the current application's comparison rule. Changing history rewriting is a separate task.
-    if (commit != git.output.trimmed())
-        return OperationResult::fail("无法编辑", "只能编辑最新的提交说明");
-    git = runGit(repoPath(id), {"commit", "--amend", "-m", message});
-    if (!git.success())
-        return OperationResult::fail("保存失败", git.error);
-    emit repositoryChanged(id);
-    return OperationResult::ok("已保存", "提交说明已更新");
-}
-OperationResult BackupService::setRemote(const QString &id, const QString &url)
-{
-    if (!contains(id))
-        return missing();
-    if (url.trimmed().isEmpty())
-        return OperationResult::fail("云端地址保存失败", "云端地址不能为空");
-    const bool exists = runGit(repoPath(id), {"remote", "get-url", "origin"}).success();
-    const auto git = runGit(repoPath(id), {"remote", exists ? "set-url" : "add", "origin", url.trimmed()});
-    if (!git.success())
-        return OperationResult::fail("云端地址保存失败", git.error);
-    emit repositoryChanged(id);
-    return OperationResult::ok("云端地址已保存", url.trimmed(), 2000);
-}
-OperationResult BackupService::removeRemote(const QString &id)
-{
-    if (!contains(id))
-        return missing();
-    if (runGit(repoPath(id), {"remote", "get-url", "origin"}).success())
-    {
-        const auto git = runGit(repoPath(id), {"remote", "remove", "origin"});
-        if (!git.success())
-            return OperationResult::fail("关闭云端同步失败", git.error);
-    }
-    emit repositoryChanged(id);
-    return OperationResult::ok("已关闭云端同步", {}, 2000);
-}
-OperationResult BackupService::synchronize(const QString &id, bool push)
-{
-    if (!contains(id))
-        return missing();
-    const auto git = runGit(repoPath(id), {push ? "push" : "pull", "origin", "master"});
-    if (!git.success())
-        return OperationResult::fail(push ? "上传失败" : "同步失败", git.error);
-    emit repositoryChanged(id);
-    return OperationResult::ok(push ? "上传完成" : "已同步", push ? "本地更改已上传到云端" : "已从云端获取最新内容", 2000);
-}
-OperationResult BackupService::removeBackup(const QString &id)
-{
-    if (!contains(id))
-        return missing();
-    ++m_generations[id];
-    emit repositoryInvalidated(id);
-    if (!QDir(repoPath(id)).removeRecursively())
-        return OperationResult::fail("删除备份失败", "删除备份目录失败，请检查权限或文件占用");
-    emit trackedItemsChanged();
-    return OperationResult::ok("已删除备份", QFileInfo(sourcePath(id)).fileName(), 2000);
-}
-OperationResult BackupService::rebuild(const QString &id)
-{
-    if (!contains(id))
-        return missing();
-    const auto remote = runGit(repoPath(id), {"remote", "get-url", "origin"});
-    ++m_generations[id];
-    emit repositoryInvalidated(id);
-    if (!removePath(repoPath(id) + "/.git"))
-        return OperationResult::fail("重建失败", "无法删除旧的 .git 目录");
-    auto git = runGit(repoPath(id), {"init"});
-    if (!git.success())
-        return OperationResult::fail("重建失败", git.error);
-    runGit(repoPath(id), {"config", "user.name", "ZcVersionBox"});
-    runGit(repoPath(id), {"config", "user.email", "backup@zcversionbox.local"});
-    git = runGit(repoPath(id), {"add", "."});
-    if (!git.success())
-        return OperationResult::fail("重建失败", git.error);
-    git = runGit(repoPath(id), {"commit", "-m", "Initial backup"});
-    if (!git.success())
-        return OperationResult::fail("重建失败", git.error);
-    auto result = OperationResult::ok("重建完成", "仓库已重建，历史已清除");
-    if (remote.success() && !remote.output.trimmed().isEmpty())
-    {
-        git = runGit(repoPath(id), {"remote", "add", "origin", remote.output.trimmed()});
-        if (!git.success())
-            result.warning = "仓库已重建，但云端地址恢复失败，请手动重新配置";
-        else if (!runGit(repoPath(id), {"push", "--force", "origin", "master"}).success())
-            result.warning = "仓库已重建，但强制推送失败，请检查网络和云端地址";
-        else
-            result.message += "，云端已同步";
-    }
-    if (!result.warning.isEmpty())
-        result.title = "重建完成（部分）";
-    emit repositoryChanged(id);
-    return result;
-}
-OperationResult BackupService::checkRemote(const QString &url) const
-{
-    if (url.trimmed().isEmpty())
-        return OperationResult::fail("检查失败", "请先输入云端仓库地址");
-    const auto git = runGit({}, {"ls-remote", "--heads", url.trimmed()});
-    return git.success() ? OperationResult::ok("检查成功", "仓库地址可访问", 2000) : OperationResult::fail("检查失败", git.error);
-}
-PreparedImport BackupService::prepareImport(const QString &url)
-{
-    if (url.trimmed().isEmpty())
-        return {OperationResult::fail("导入失败", "云端仓库地址不能为空")};
-    if (!QDir().mkpath(m_paths.backupRoot))
-        return {OperationResult::fail("导入失败", "无法创建备份目录")};
-    const auto temp = QDir(m_paths.backupRoot).filePath("_import_tmp_" + QUuid::createUuid().toString(QUuid::WithoutBraces));
-    m_imports.append(temp);
-    const auto git = runGit({}, {"clone", url.trimmed(), temp});
-    if (!git.success())
-    {
-        cancelImport(temp);
-        return {OperationResult::fail("导入失败", git.error)};
-    }
-    const auto entry = importEntry(temp);
-    if (!entry.exists())
-    {
-        cancelImport(temp);
-        return {OperationResult::fail("导入失败", "仓库中未找到可导入内容")};
-    }
-    return {OperationResult::ok({}), temp, entry.fileName(), entry.isDir()};
-}
-bool BackupService::ownsImport(const QString &path) const { return m_imports.contains(path); }
-void BackupService::cancelImport(const QString &temporaryRepo)
-{
-    if (ownsImport(temporaryRepo))
-    {
-        QDir(temporaryRepo).removeRecursively();
-        m_imports.removeAll(temporaryRepo);
-    }
-}
-OperationResult BackupService::finishImport(const QString &temporaryRepo, const QString &target)
-{
-    if (!ownsImport(temporaryRepo) || target.isEmpty())
-        return OperationResult::fail("导入失败", "导入上下文无效");
-    const auto entry = importEntry(temporaryRepo);
-    const auto id = QString::fromUtf8(QUrl::toPercentEncoding(target));
-    if (contains(id))
-    {
-        cancelImport(temporaryRepo);
-        return OperationResult::fail("导入失败", "该位置已存在追踪记录，请更换位置");
-    }
-    const auto name = QFileInfo(target).fileName();
-    if (name != entry.fileName() && !QDir(temporaryRepo).rename(entry.fileName(), name))
-        return OperationResult::fail("导入失败", "重命名导入内容失败");
-    if (!QDir().rename(temporaryRepo, repoPath(id)))
-        return OperationResult::fail("导入失败", "无法写入备份仓库");
-    ++m_generations[id];
-    emit repositoryInvalidated(id);
-    m_imports.removeAll(temporaryRepo);
-    if (!QDir().mkpath(QFileInfo(target).absolutePath()) || !removePath(target) || !copyPath(repoPath(id) + "/" + name, target))
-    {
-        emit trackedItemsChanged();
-        return OperationResult::fail("导入失败", "复制导入内容失败，请检查权限");
-    }
-    emit trackedItemsChanged();
-    return OperationResult::ok("导入成功", "云端备份已加入追踪");
+    for (const auto &job : d->queue)
+        if (job->task == task)
+            job->cancelled->store(true);
 }

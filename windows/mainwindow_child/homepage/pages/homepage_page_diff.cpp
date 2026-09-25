@@ -169,6 +169,7 @@ void HomePageDiffPage::deactivate()
 {
     rememberState();
     ++m_generation;
+    ++m_fileGeneration;
     m_active = false;
     if (m_loading)
     {
@@ -190,22 +191,31 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
     ui->content->clear();
     ui->analysis->clear();
     m_model.clear();
-    const auto result = m_service->diff(id, commit, m_diff);
-    m_valid = result.success;
-    if (!result.success)
+    m_hasAnalysis = false;
+    ui->rangeLabel->setText("正在读取版本差异…");
+    updateLoadingState();
+    const auto generation = m_generation;
+    const auto repositoryGeneration = m_repositoryGeneration;
+    m_service->diff(id, commit, this, [this, id, generation, repositoryGeneration](const BackupResult<DiffData> &reply)
+                    {
+    if (!m_active || generation != m_generation || id != m_id || repositoryGeneration != m_service->repositoryGeneration(id))
+        return;
+    m_valid = reply.result.success;
+    if (!reply.result.success)
     {
-        emit notification(result);
+        emit notification(reply.result);
         ui->rangeLabel->setText("无法打开版本对比");
         m_hasAnalysis = false;
         updateLoadingState();
         return;
     }
+    m_diff = reply.value;
     auto state = m_states.value(id + '\n' + m_diff.newCommit);
     if (state.generation != m_repositoryGeneration)
         state = {};
     m_fileScrolls = state.scrolls;
-    ui->rangeLabel->setText(QString("%1 → %2 · %3 个变更文件").arg(m_diff.oldCommit.left(7), m_diff.newCommit.left(7)).arg(m_diff.files.size()));
-    ui->rangeLabel->setToolTip(m_diff.oldCommit + " → " + m_diff.newCommit);
+    ui->rangeLabel->setText(QString("%1 → %2 · %3 个变更文件").arg(m_diff.oldCommit.isEmpty() ? "初始版本" : m_diff.oldCommit.left(8), m_diff.newCommit.left(8)).arg(m_diff.files.size()));
+    ui->rangeLabel->setToolTip((m_diff.oldCommit.isEmpty() ? "初始版本" : m_diff.oldCommit) + " → " + m_diff.newCommit);
     int selected = 0;
     for (const auto &file : m_diff.files)
     {
@@ -229,7 +239,7 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
     m_analysisStatus = m_hasAnalysis ? "分析完成" : QString();
     m_expander->setExpanded(m_hasAnalysis && state.expanded);
     updateLoadingState();
-    updateResponsiveLayout();
+    updateResponsiveLayout(); });
 }
 void HomePageDiffPage::loadFile()
 {
@@ -242,21 +252,26 @@ void HomePageDiffPage::loadFile()
     ui->filePath->setText(m_currentFile);
     ui->filePath->setCursorPosition(0);
     ui->filePath->setToolTip(m_currentFile);
-    QString text;
-    const auto result = m_service->diffText(m_id, m_diff, m_currentFile, text);
-    if (!result.success)
-        emit notification(result);
-    // Preserve the original patch, including metadata, binary markers and tabs.
-    ui->content->setPlainText(text);
     const auto scroll = m_fileScrolls.value(m_currentFile);
     const auto generation = ++m_fileGeneration;
+    const auto id = m_id;
+    const auto repositoryGeneration = m_repositoryGeneration;
+    ui->content->clear();
+    m_service->diffText(id, m_diff, m_currentFile, this, [this, id, scroll, generation, repositoryGeneration](const BackupResult<QString> &reply)
+                        {
+    if (!m_active || generation != m_fileGeneration || id != m_id || repositoryGeneration != m_service->repositoryGeneration(id))
+        return;
+    if (!reply.result.success)
+        emit notification(reply.result);
+    // Preserve the original patch, including metadata, binary markers and tabs.
+    ui->content->setPlainText(reply.value);
     QTimer::singleShot(0, this, [this, scroll, generation]
                        {
         if (generation == m_fileGeneration)
         {
             ui->content->horizontalScrollBar()->setValue(scroll.x());
             ui->content->verticalScrollBar()->setValue(scroll.y());
-        } });
+        } }); });
 }
 void HomePageDiffPage::refreshTheme()
 {
@@ -268,18 +283,6 @@ void HomePageDiffPage::analyze()
 {
     if (!m_active || !m_valid || m_loading)
         return;
-    QString diff;
-    const auto result = m_service->diffText(m_id, m_diff, {}, diff);
-    if (!result.success)
-    {
-        emit notification(result);
-        return;
-    }
-    if (diff.trimmed().isEmpty())
-    {
-        emit notification(OperationResult::fail("AI 分析失败", "当前版本对比没有可分析的变更"));
-        return;
-    }
     AiConfigHelper::RuntimeConfig config;
     QString error;
     if (!m_settings->runtimeConfig(config, error))
@@ -296,7 +299,19 @@ void HomePageDiffPage::analyze()
     m_expander->setExpanded(false);
     updateLoadingState();
     QPointer<HomePageDiffPage> guard(this);
-    m_gateway->summarize(config, diff, this, [guard, generation, id, repositoryGeneration](const QString &summary, const QString &error)
+    m_service->diffText(id, m_diff, {}, this, [guard, generation, id, repositoryGeneration, config](const BackupResult<QString> &reply)
+                        {
+        if (!guard || !guard->m_active || generation != guard->m_generation || id != guard->m_id ||
+            repositoryGeneration != guard->m_service->repositoryGeneration(id))
+            return;
+        if (!reply.result.success || reply.value.trimmed().isEmpty())
+        {
+            guard->m_loading = false;
+            guard->updateLoadingState();
+            emit guard->notification(reply.result.success ? OperationResult::fail("AI 分析失败", "当前版本对比没有可分析的变更") : reply.result);
+            return;
+        }
+        guard->m_gateway->summarize(config, reply.value, guard, [guard, generation, id, repositoryGeneration](const QString &summary, const QString &error)
                          {
         if (!guard || generation != guard->m_generation)
             return;
@@ -312,7 +327,7 @@ void HomePageDiffPage::analyze()
         guard->updateLoadingState();
         guard->m_expander->setExpanded(true);
         if (!error.isEmpty())
-            emit guard->notification(OperationResult::fail("AI 分析失败", error)); });
+            emit guard->notification(OperationResult::fail("AI 分析失败", error)); }); });
 }
 void HomePageDiffPage::updateLoadingState()
 {
