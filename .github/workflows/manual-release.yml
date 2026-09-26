@@ -1,4 +1,4 @@
-name: Manual release (Windows + macOS)
+name: Manual release (Windows + macOS + Linux)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
         description: Release tag (example v1.0.0)
         required: true
       osx_arch:
-        description: 'macOS architectures; SDK currently supports arm64 only'
+        description: 'macOS application and SDK architectures (arm64 release target)'
         default: arm64
         required: true
 
@@ -36,8 +36,16 @@ jobs:
           tag: ${{ inputs.tag_name }}
           architectures: ${{ inputs.osx_arch }}
 
+  build_linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-linux
+        with:
+          tag: ${{ inputs.tag_name }}
+
   release:
-    needs: [build_windows, build_macos]
+    needs: [build_windows, build_macos, build_linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4

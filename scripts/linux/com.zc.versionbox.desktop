@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ZcVersionBox
+Comment=Local file version history and recovery
+Comment[zh_CN]=本地文件版本记录与恢复
+Exec=zcversionbox
+Icon=zcversionbox
+Terminal=false
+Categories=Utility;Archiving;
+StartupNotify=true
+StartupWMClass=ZcVersionBox

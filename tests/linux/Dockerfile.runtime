@@ -1,0 +1,12 @@
+ARG UBUNTU_IMAGE=ubuntu:24.04
+FROM ${UBUNTU_IMAGE}
+ENV DEBIAN_FRONTEND=noninteractive LANG=C.UTF-8
+ARG UBUNTU_APT_MIRROR=http://archive.ubuntu.com/ubuntu
+RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec \
+    sed -i -E "s#http://(archive|security).ubuntu.com/ubuntu#${UBUNTU_APT_MIRROR}#g" {} +
+# No Qt kit, compiler or project sources: application dependencies come from the DEB.
+RUN apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 update && \
+    apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 install -y --no-install-recommends \
+    ca-certificates binutils xvfb xauth openbox weston dbus-x11 desktop-file-utils fonts-noto-cjk && \
+    useradd --create-home --uid 1100 tester
+WORKDIR /work

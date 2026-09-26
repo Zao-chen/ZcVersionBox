@@ -1,11 +1,11 @@
 name: Build and package macOS
-description: Qt 6.8.3 / macOS 12.0 release with AI SDK architecture validation
+description: Qt 6.8.3 / macOS 12.0 release with the pinned source AI SDK
 inputs:
   tag:
     description: Release tag
     required: true
   architectures:
-    description: Required architectures (the bundled AI SDK contains arm64)
+    description: Architectures for the application and source AI SDK (arm64 release target)
     default: arm64
 runs:
   using: composite
@@ -16,7 +16,7 @@ runs:
         version: '6.8.3'
         target: desktop
         arch: clang_64
-        modules: qtsvg
+        archives: qtbase qtsvg
         cache: true
     - name: Configure a clean Release build
       shell: bash

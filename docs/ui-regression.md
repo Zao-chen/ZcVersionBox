@@ -1,6 +1,6 @@
 # 回归验证
 
-备份核心和页面分别由 `zc_backup_tests`、`zc_tests` 驱动，CTest 注册为 `backup_core`、`regression`。两套测试使用独立临时目录、隔离 Git 配置、本地 bare 远程和模拟 AI，不读取真实备份或凭据，不访问外部 Git/AI 服务，不写右键菜单或自启动设置。
+备份核心和页面分别由 `zc_backup_tests`、`zc_tests` 驱动，CTest 注册为 `backup_core`、`regression`。两套测试使用独立临时目录、隔离 Git 配置、本地 bare 远程和模拟 AI，不读取真实备份或凭据，不访问外部 Git/AI 服务。Linux 桌面入口测试将 XDG 路径注入临时目录，不写用户实际的右键菜单或自启动设置。
 
 ## 覆盖范围
 
@@ -31,6 +31,9 @@
 | 异步页面与编辑 | 切换对象、重建、删除重加后的旧响应失效；编辑期间延后刷新，失败反馈和回填 |
 | 设置、主题与通知 | 设置搜索/返回、即时保存、服务商/Key/URL 的请求失效；Diff 原文/滚动保持，Spinner、Expander、Popover 与焦点回归 |
 | 页面渲染 | 浅深色、1080×740/760×520、窄窗口、超长路径、空态、加载和通知；无整页横向滚动 |
+| Linux 文件语义 | 大小写不同的文件并存、仅大小写改名、执行位触发原生事件与备份、恢复 `100644/100755`、扫描期间 chmod、真实不可读目录、旧指纹刷新无空提交 |
+| Linux 桌面入口 | 原子注册、重复启停、保留不属于应用的文件、目录写入失败不保存启用状态、多选本地 URI 及特殊字符、localhost 归一化、拒绝远程 URI |
+| 无托盘及运行库 | 关闭窗口退出、Xvfb/XCB 与 headless Weston/Wayland 窗口暴露和截图、安装后的系统图标解析、SVG 和 TLS 插件 |
 
 通知复制测试会保存并恢复剪贴板格式。只有测试窗口短暂显示以验证焦点；正常应用不用于回归。大列表使用展示模型 fixture，业务测试始终使用合法的隔离仓库和记录。
 
@@ -99,9 +102,15 @@ $env:ZC_TEST_SCREENSHOTS = Join-Path $PWD 'build/backup-core/screenshots'
 5. 查看 `largeProjectMonitorBoundsEventStorms` 的计数输出：空闲期间无额外扫描，风暴期间不扩张任务队列，全局最多一个尚未完成的自动备份。此用例保留完整备份安全检查，耗时也包含这些检查。
 6. 在 macOS 执行相同隔离用例并保留日志，再验收平台行为。当前功能分支仅本地提交；验收通过前不推送或合并。
 
-## 本次验证边界
+## Linux 兼容升级的验证
 
-2026-09-26 在 Windows 11 / Qt 6.8.3 / MSVC 2022 x64 Release 上复用 `build/backup-core` 增量构建 `zc_backup_tests`、`zc_tests`、`ZcVersionBox`，均成功。
+2026-09-26 的 Linux 移植使用 ZcAILib 0.2.0 固定源码、Qt 6.8.3 和普通用户的 Linux 文件系统。Ubuntu 22.04 构建的同一 `.deb` 在无 Qt 开发环境的 Ubuntu 22.04 和 24.04 容器各运行 `regression`（29 passed）及 `backup_core`（84 passed），均无失败或跳过。两个系统的 XCB 和 Wayland 各通过 `platformRuntimeSmoke`、`closingWithoutTrayExitsWindow`，并验证安装、升级和 purge 保留用户目录。日志、安装步骤、构建方式及真实 GNOME 待验收项见 [Linux 兼容说明](linux-compatibility.md)。
+
+Windows 复用 `build/backup-core`，应用与两个测试程序增量构建成功；`regression` 为 28 passed / 1 Linux-only skipped，`backup_core` 为 79 passed / 5 Linux-only skipped。后续 URI 边界修正单独运行 `nautilusSelectionPreservesPaths`。未因文档或脚本调整重复无关业务测试。
+
+## BackupMonitor 重构的历史验证
+
+以下记录为 Linux 移植前的 BackupMonitor 重构验收范围。2026-09-26 在 Windows 11 / Qt 6.8.3 / MSVC 2022 x64 Release 上复用 `build/backup-core` 增量构建 `zc_backup_tests`、`zc_tests`、`ZcVersionBox`，均成功。
 
 | 实际执行范围 | 结果 | 日志 |
 | --- | --- | --- |
@@ -114,6 +123,6 @@ Qt Test 的 passed 计数包含初始化和清理。未运行 `regression` 的�
 
 构建期间 windeployqt 提示当前 shell 未设置 `VCINSTALLDIR`，构建及测试正常完成；本轮没有制作或验证安装包。UI 的 offscreen 插件产生字体目录及 `propagateSizeHints` 提示，相关函数断言全部通过。
 
-未启动读取真实备份的正常应用，未安装、推送或合并。现有 macOS CI 在手动发布工作流中配置同一套构建和 CTest，目标为 arm64、最低部署版本 12.0，并归档两份测试日志。本轮没有 macOS 执行环境，未运行该平台构建或触发远端工作流，不能据此宣称 macOS 已通过验收。Linux 监听后端随 efsw 纳入，但整套应用仍受现有 Windows/macOS AI SDK 限制，未验证 Linux 构建。后续需补齐实际平台验证、大小写规则和可执行权限回归。
+该次重构未启动读取真实备份的正常应用，未安装、推送或合并；仅包含 Windows 执行结果。后续 Linux 移植已补齐源码 SDK、大小写与执行位回归及安装包验证，见上节。macOS CI 目标为 arm64、最低部署版本 12.0，但尚无本轮实际运行结果，不能据此宣称 macOS 已通过验收。
 
 以下仍需对应平台或隔离账户验证：真实远程认证与网络故障、Explorer/Finder 入口、自启动、托盘、安装/卸载、原生文件选择框和多显示器 DPI。当前流程不承诺自动崩溃重放，Ignore 产品设计和大目录增量扫描独立跟进，详见 [备份架构](backup-architecture.md)。

@@ -4,12 +4,15 @@
 
 - Qt 6.8.3：Widgets、Network、Svg；运行回归测试还需要 Qt Test。
 - Windows：Visual Studio 2022 的 MSVC x64 工具链。
-- macOS：Xcode Command Line Tools，最低部署版本 12.0；仓库自带的 AI SDK 仅支持 arm64。
+- macOS：Xcode Command Line Tools，最低部署版本 12.0；本轮发布目标为 arm64。
+- Linux：Ubuntu 22.04/24.04 x86_64、GCC；打包还需要 Qt WaylandClient、`file`、`dpkg-dev`、`patchelf` 和 `desktop-file-utils`。Qt 和系统开发库清单见 `tests/linux/Dockerfile`。
 - CMake 3.27 或更新版本、Git 2.29 或更新版本。使用 Ninja 生成器时另需 Ninja。
 
-Qlementine v1.4.2 源码已固定纳入 `3rdparty/qlementine`，提交为 `13f72eb8b53bafd9ac24e5562d8ddc28d5440469`，通过静态库链接，配置阶段不下载依赖。来源、MIT 许可证和字体许可证见其 `UPSTREAM.md`、`LICENSE`、`LICENSES`。`ZcAILib` 保留为仓库内的预编译 AI SDK，不使用项目父目录中的依赖。
+Qlementine v1.4.2 源码已固定纳入 `3rdparty/qlementine`，提交为 `13f72eb8b53bafd9ac24e5562d8ddc28d5440469`，通过静态库链接，配置阶段不下载依赖。来源、MIT 许可证和字体许可证见其 `UPSTREAM.md`、`LICENSE`、`LICENSES`。ZcAILib 0.2.0 的源码快照位于 `3rdparty/ZcAILib`，固定提交见其 `UPSTREAM.md`；三平台均构建共享 SDK，嵌入时关闭 SDK 示例、测试、静态库和独立安装规则，不再使用旧预编译文件。
 
-文件监听使用静态链接的 efsw 1.7.2，源码固定在 `3rdparty/efsw`，不增加运行时 DLL 或构建时下载。提交、MIT 许可证及 Windows 事件去重补丁见其 `UPSTREAM.md`、`LICENSE`。监听库支持 Windows、macOS、Linux；当前整套应用的 Linux 构建仍受现有 AI SDK 平台范围限制。
+文件监听使用静态链接的 efsw 1.7.2，源码固定在 `3rdparty/efsw`，不增加运行时 DLL 或构建时下载。提交、MIT 许可证、Windows 事件去重补丁和 Linux `IN_ATTRIB` 补丁见其 `UPSTREAM.md`、`LICENSE`。
+
+默认使用仓库快照进行离线构建。联调本机 SDK 时可显式传入 `-DZCVERSIONBOX_AI_SDK_SOURCE_DIR=P:/Qt/Project/ZcAILib`；不会自动读取项目父目录。独立 SDK 的共享库、静态库、安装后 `find_package(ZcAiLib 0.2 CONFIG REQUIRED)` 和模拟 HTTP 测试由 SDK 仓库构建，应用链接 `ZcAiLib::ZcAiLib`。
 
 ## 构建与测试
 
@@ -42,9 +45,22 @@ cmake --build build/release --parallel 4
 ctest --test-dir build/release --output-on-failure
 ```
 
-CMake 会用 `lipo` 验证 AI SDK 包含全部指定架构。没有匹配 SDK 时，不能仅修改 `CMAKE_OSX_ARCHITECTURES` 就生成 x86_64 或通用包。应用包内 SDK 文件名为 `libZcAiLib.1.dylib`，与其加载标识一致。
+SDK 与应用使用相同工具链和 `CMAKE_OSX_ARCHITECTURES` 从源码编译。打包时用 `lipo` 验证全部指定架构；本轮没有执行 macOS 构建，arm64 的真实结果仍待平台验证。应用包内 SDK 文件名为 `libZcAiLib.1.dylib`，与其加载标识一致。
 
-只构建应用可设置 `-DBUILD_TESTING=OFF`。发布使用 Release；当前仓库提供的 AI SDK 二进制也是 Release。
+Linux（CMake 3.27+、Qt 6.8.3 和系统开发库已安装）：
+
+```bash
+cmake -S . -B build/linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.8.3/gcc_64" -DBUILD_TESTING=ON \
+  -DZCVERSIONBOX_DEPLOY_LINUX=ON -DCMAKE_INSTALL_LIBDIR=lib
+cmake --build build/linux --parallel 4
+ctest --test-dir build/linux --output-on-failure
+bash tests/linux/run-desktop-smoke.sh build/linux/tests/zc_tests build/native-smoke
+```
+
+原生界面验证还需要 Xvfb、Openbox、Weston、D-Bus 和中文字体，只运行隔离测试程序。不可读目录测试必须由普通用户在 Linux 文件系统上运行，不能用 root 或 Windows 绑定目录替代。可复现 Docker 步骤见 [Linux 兼容说明](docs/linux-compatibility.md)。
+
+只构建应用可设置 `-DBUILD_TESTING=OFF`。发布使用 Release；`ZCVERSIONBOX_DEPLOY_LINUX` 默认关闭，仅打包时开启。
 
 ## 打包
 
@@ -62,9 +78,16 @@ CMake 会用 `lipo` 验证 AI SDK 包含全部指定架构。没有匹配 SDK �
 bash scripts/package-macos.sh build/release dist/macos v0.1.0 arm64
 ```
 
+```bash
+# 必须在 Ubuntu 22.04 上构建，产生的同一包也用于 Ubuntu 24.04。
+bash scripts/package-linux.sh build/linux dist/linux v0.1.0
+```
+
 Windows 显式复制 `ZcAiLib.dll`，并要求部署 `vc_redist.x64.exe`；安装器在首次启动应用前安装 Visual C++ 运行库。使用可运行目录时，也需要先安装该运行库。macOS 显式复制 `libZcAiLib.1.dylib` 后再部署 Qt。脚本包含依赖检查、许可证复制；macOS 还执行 bundle 路径检查、架构校验和 ad-hoc 签名。签名不等同于 Developer ID 公证。
 
-三套手动发布工作流共用平台构建 action，固定 Qt 6.8.3、MSVC 2022、macOS arm64/12.0，测试通过后生成安装包。发布资产只取 `pkg-*`，测试日志单独上传。
+Linux 使用 Qt 部署 API 和 CPack DEB；应用、SDK、Qt、ICU 和插件位于 `/opt/zcversionbox`，入口位于 `/usr/bin` 和 `/usr/share`，运行库使用相对 RPATH。包声明 Git、证书、OpenSSL 和系统库依赖，显式部署 XCB、Wayland、SVG、TLS。Qt/ICU 许可证快照见 `3rdparty/qt-licenses`。打包不包含测试或 Qt Test，也不写用户目录。
+
+三平台 CI 和四套手动发布工作流共用平台构建 action，固定 Qt 6.8.3、MSVC 2022、macOS arm64/12.0、Ubuntu 22.04；Linux 还在干净的 Ubuntu 22.04/24.04 容器安装同一 `.deb`、运行隔离回归并验证升级和卸载保留用户数据。CI 只上传构建产物；手动发布工作流测试通过后才发布。发布资产只取 `pkg-*`，测试日志单独上传。本轮只进行本地提交和打包，验收前不推送、合并或触发发布。
 
 ## 修改 UI
 
@@ -79,7 +102,7 @@ windows/mainwindow_child/aboutpage/          关于页面
 GlobalConstants.h                           原有默认路径常量
 utils/                                      备份、监控、设置、AI 与文件辅助
 3rdparty/qlementine/                         固定版本的 Qlementine 源码
-3rdparty/ZcAILib/                            保留的 AI SDK
+3rdparty/ZcAILib/                            固定版本的 AI SDK 源码快照
 tests/                                      临时仓库与模拟 AI 的 Qt Test
 scripts/                                    共用打包脚本
 ```

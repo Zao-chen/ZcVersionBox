@@ -43,7 +43,7 @@ AI 提交说明异步请求，默认 15 秒超时后使用普通自动说明。�
 
 ## 事件、检查与服务调度
 
-默认变化安静 500 ms 后检查，连续事件最多合并 5 s。每个条目在完整检查完成 30 s 后再次检查，启动、源快照变化和恢复正常追踪时立即检查。事件只表明需要复查，完整指纹仍包含路径、大小、修改时间及 SHA-256。扫描器拥有独立 `BackupFiles` 和取消标记，不调用 Git，不拿存储锁，也不改变服务忙态。
+默认变化安静 500 ms 后检查，连续事件最多合并 5 s。每个条目在完整检查完成 30 s 后再次检查，启动、源快照变化和恢复正常追踪时立即检查。事件只表明需要复查，完整指纹包含路径、大小、修改时间及 SHA-256；Linux 还包含 Git 可执行模式。扫描器拥有独立 `BackupFiles` 和取消标记，不调用 Git，不拿存储锁，也不改变服务忙态。
 
 `observationTargets()` 返回 ID、源路径/类型、仓库代次、同步状态、成功指纹和仅存在内存中的版本号。版本在记录变化时递增，未变化的重载不递增。扫描请求携带快照版本、唯一令牌和变化版本；过期或取消的结果不能申请备份。扫描及备份期间的新事件保留为下一次检查，完成回调不清除后来产生的变化。备份实际执行前仍由引擎重读持久状态和源内容，只有成功事务推进基线。
 
@@ -68,11 +68,11 @@ Windows/macOS 使用 efsw 递归原生监听，并合并被祖先覆盖的监听
 | [libuv](https://docs.libuv.org/en/v1.x/fs_event.html) | 成熟且跨平台；文件事件只是整个异步 I/O 库的一部分，递归标志只支持 Windows/macOS，Linux 仍需调用方管理目录。 |
 | [fswatch/libfswatch](https://github.com/emcrisostomo/fswatch/blob/master/README.md) | 支持多平台和递归；上游 Windows 推荐 MSYS2/MinGW，CMake 支持非正式，与当前 MSVC 工具链的集成成本较高。 |
 
-efsw 固定提交、档案 SHA-256、许可证及本地补丁见 [UPSTREAM.md](../3rdparty/efsw/UPSTREAM.md)。上游 1.7.2 提交日期为 2026-08-29。保留一个 Windows 小补丁：移除通过 `FileInfo` 打开变更文件进行大小/时间去重的两处代码，交由应用合并事件。该临时文件句柄会使并发 QSaveFile 替换失败；元数据去重也会掩盖同大小、同时间的内容变化。其他上游源码不改动。
+efsw 固定提交、档案 SHA-256、许可证及本地补丁见 [UPSTREAM.md](../3rdparty/efsw/UPSTREAM.md)。上游 1.7.2 提交日期为 2026-08-29。Windows 补丁移除通过 `FileInfo` 打开变更文件进行大小/时间去重的两处代码，交由应用合并事件。该临时文件句柄会使并发 QSaveFile 替换失败；元数据去重也会掩盖同大小、同时间的内容变化。Linux 补丁为 inotify 增加 `IN_ATTRIB`，转发为修改提示，以发现单独的执行权限变化。
 
 Windows 目录监听使用共享删除，并避免持有子目录句柄，否则父目录仍不能改名。指纹读取也允许共享删除，隔离测试使用 `ReplaceFileW` 验证读者存活期间的原子替换。Windows 的 `MoveFileEx`/QSaveFile 替换和祖先目录改名仍可能被正在读取的子文件短暂阻止；事件监听不能改变这项文件系统限制。扫描取消、退避和周期校验负责恢复检查，不承诺所有编辑器在并发读写时都能完成原子保存。
 
-监听层支持 Windows、macOS、Linux；当前整套应用仍只有 Windows/macOS 的预编译 AI SDK，Linux 应用构建不是本次已完成的平台移植。
+监听层支持 Windows、macOS、Linux；应用的 ZcAILib 0.2.0 已统一为源码构建。Ubuntu 22.04/24.04 的构建、原生事件和安装包验证见 [Linux 兼容说明](linux-compatibility.md)。
 
 ## 存储与身份
 
@@ -89,6 +89,8 @@ Backup/
 ```
 
 JSON 记录使用 `format: 1`，保存 `sourcePath`、`repositoryPath`、`directory`、`generation`、`state`、`lastCommit`、`fingerprint`、`pendingCommit`、`operation`、`recoveryPaths`。仓库内路径是相对路径，整个仓库用 `.`。本地添加通常映射为源的文件名或目录名；导入保留原提交路径，本地目标改名不改变映射。
+
+Linux 的文件指纹在原有大小、时间、SHA-256 后追加 `100644` / `100755`，读取前后校验所有者执行位，Git 操作显式启用 `core.filemode=true`。旧指纹仍可读取，通过正常备份事务刷新；Git 树未变化时不会产生空提交。记录版本和数据路径不变，`RemotePending` / `NeedsAttention` 仍禁止自动写入。恢复按 Git 可执行模式处理，不承诺恢复原始完整 POSIX 权限、ACL 或所有者。
 
 UUID 随机生成，不再把源路径编码为目录名。完整 OID 用于业务身份，短哈希只展示。`lastCommit` 是最后确认的仓库基线；`fingerprint` 仅在成功同步源内容后推进。拉取只改变非受管理路径时推进仓库基线，但不推进源指纹。
 
@@ -163,5 +165,5 @@ pull 与备份串行，要求工作区和暂存区干净。使用实际分支和
 - 大目录已有事件合并和 30 秒完整校验；进一步的增量指纹缓存需依据性能数据独立评估。
 - 符号链接、目录联接和 Git 子模块尚不支持；空目录等仍受普通 Git 能力约束。
 - 部分路径比较目前仅区分 Windows 与其他平台，macOS 需按磁盘实际的大小写规则补齐实现与回归。
-- 文件复制保留权限，但源指纹尚未包含权限；仅修改脚本可执行位不会触发自动备份，需要补充实现与跨平台测试。
-- Windows 隔离测试不替代 macOS CI、真实平台集成或远程认证环境验证。
+- Linux 已覆盖执行位变化与恢复；macOS 的执行位观察和不同文件系统上的权限规则仍需平台回归。
+- Windows/Linux 隔离测试不替代 macOS CI、真实 GNOME 集成或远程认证环境验证。

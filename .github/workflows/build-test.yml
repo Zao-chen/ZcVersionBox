@@ -1,0 +1,31 @@
+name: Desktop build and package verification
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-windows
+        with:
+          tag: v0.1.0
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-macos
+        with:
+          tag: v0.1.0
+          architectures: arm64
+  linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-linux
+        with:
+          tag: v0.1.0

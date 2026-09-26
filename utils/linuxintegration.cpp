@@ -94,9 +94,13 @@ OperationResult LinuxIntegration::nautilusSelection(const QByteArray &uris, QStr
         const auto encoded = entry.trimmed();
         if (encoded.isEmpty())
             continue;
-        const auto url = QUrl::fromEncoded(encoded, QUrl::StrictMode);
+        auto url = QUrl::fromEncoded(encoded, QUrl::StrictMode);
+        // QUrl otherwise maps localhost to //localhost/path, which is not the
+        // selected local path on Linux. Normalize the local authority first.
+        if (url.host() == "localhost")
+            url.setHost({});
         const auto path = url.toLocalFile();
-        if (!url.isValid() || !url.isLocalFile() || (!url.host().isEmpty() && url.host() != "localhost") ||
+        if (!url.isValid() || !url.isLocalFile() || !url.host().isEmpty() || !url.userInfo().isEmpty() || url.port() != -1 ||
             url.hasQuery() || url.hasFragment() || !QDir::isAbsolutePath(path) || path.contains(QChar(0)))
             return OperationResult::fail("添加失败", "请选择本地文件或文件夹，远程文件位置暂不支持");
         if (!selected.contains(path))

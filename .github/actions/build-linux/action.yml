@@ -1,0 +1,75 @@
+name: Build and package Linux
+description: Ubuntu 22.04 / Qt 6.8.3 with X11, Wayland and clean 22.04/24.04 package verification
+inputs:
+  tag:
+    description: Release tag
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: seanmiddleditch/gha-setup-ninja@v5
+    - name: Build and desktop dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential git libgl1-mesa-dev libegl1-mesa-dev \
+          libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \
+          libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-randr0 \
+          libxcb-shape0 libxcb-xfixes0 libxcb-sync1 libxcb-xinerama0 \
+          libx11-xcb-dev libfontconfig1-dev libdbus-1-dev libssl-dev libwayland-dev \
+          libglib2.0-dev patchelf xvfb xauth openbox weston dbus-x11 desktop-file-utils \
+          dpkg-dev fakeroot file fonts-noto-cjk
+    - uses: jurplel/install-qt-action@v4
+      with:
+        version: '6.8.3'
+        target: desktop
+        arch: linux_gcc_64
+        archives: qtbase qtsvg qtwayland icu
+        cache: true
+    - name: Configure, build and test
+      shell: bash
+      run: |
+        test ! -e build/release || { echo 'Use a clean build/release directory'; exit 1; }
+        cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release \
+          -DBUILD_TESTING=ON -DZCVERSIONBOX_DEPLOY_LINUX=ON -DCMAKE_INSTALL_LIBDIR=lib \
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+        cmake --build build/release --parallel 4
+        ctest --test-dir build/release --output-on-failure
+        bash tests/linux/run-desktop-smoke.sh build/release/tests/zc_tests build/native-smoke
+    - name: Package
+      shell: bash
+      env:
+        PACKAGE_TAG: ${{ inputs.tag }}
+      run: |
+        bash scripts/package-linux.sh build/release dist/linux "$PACKAGE_TAG"
+        bash tests/linux/package-validation.sh build/release build/validation
+    - name: Install, upgrade, test and remove the same DEB on Ubuntu 22.04 and 24.04
+      shell: bash
+      env:
+        PACKAGE_TAG: ${{ inputs.tag }}
+      run: |
+        for ubuntu in 22.04 24.04; do
+          docker build -f tests/linux/Dockerfile.runtime --build-arg "UBUNTU_IMAGE=ubuntu:$ubuntu" \
+            -t "zcversionbox-runtime:$ubuntu" tests/linux
+          mkdir -p "build/runtime-$ubuntu"
+          docker run --rm -v "$PWD/dist/linux:/packages:ro" \
+            -v "$PWD/build/validation:/validation:ro" -v "$PWD/tests/linux:/scripts:ro" \
+            -v "$PWD/build/runtime-$ubuntu:/results" "zcversionbox-runtime:$ubuntu" \
+            bash /scripts/verify-package.sh "/packages/ZcVersionBox-$PACKAGE_TAG-linux-amd64.deb" \
+            /validation/validation.tar.gz /results
+        done
+    - uses: actions/upload-artifact@v4
+      with:
+        name: pkg-linux-deb
+        path: dist/linux/ZcVersionBox-*.deb
+        if-no-files-found: error
+    - uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: tests-linux
+        path: |
+          build/release/Testing/Temporary/LastTest.log
+          build/release/tests/regression.txt
+          build/release/tests/backup_core.txt
+          build/native-smoke/
+          build/runtime-*/

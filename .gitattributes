@@ -4,3 +4,6 @@
 *.cmake text eol=lf
 *.cmake.in text eol=lf
 *.desktop text eol=lf
+scripts/linux/zcversionbox text eol=lf
+tests/linux/Dockerfile* text eol=lf
+3rdparty/qt-licenses/*.txt text eol=lf

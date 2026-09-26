@@ -16,7 +16,7 @@ runs:
         version: '6.8.3'
         target: desktop
         arch: win64_msvc2022_64
-        modules: qtsvg
+        archives: qtbase qtsvg
         cache: true
     - name: Configure a clean Release build
       shell: pwsh

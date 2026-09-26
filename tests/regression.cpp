@@ -182,6 +182,10 @@ class Regression : public QObject
         QStringList paths;
         QVERIFY(LinuxIntegration::nautilusSelection(uris, paths).success);
         QCOMPARE(paths, QStringList({first, second}));
+        auto localAuthority = QUrl::fromLocalFile(first);
+        localAuthority.setHost("localhost");
+        QVERIFY(LinuxIntegration::nautilusSelection(uris + localAuthority.toEncoded() + '\n', paths).success);
+        QCOMPARE(paths, QStringList({first, second}));
         TestBackupService service(pathsIn(dir));
         for (const auto &path : paths)
             QVERIFY(service.addLocal(path).success);
@@ -191,6 +195,8 @@ class Regression : public QObject
         QVERIFY(!LinuxIntegration::nautilusSelection(uris + "sftp://host/private", paths).success);
         QVERIFY(paths.isEmpty());
         QVERIFY(!LinuxIntegration::nautilusSelection("file://server/share", paths).success);
+        QVERIFY(!LinuxIntegration::nautilusSelection("file://user@localhost/private", paths).success);
+        QVERIFY(!LinuxIntegration::nautilusSelection("file://localhost:22/private", paths).success);
         QVERIFY(!LinuxIntegration::nautilusSelection(QUrl::fromLocalFile(first).toEncoded() + "?query=1", paths).success);
         QVERIFY(!LinuxIntegration::nautilusSelection("file:///tmp/%00", paths).success);
         QVERIFY(!LinuxIntegration::nautilusSelection({}, paths).success);
@@ -246,6 +252,15 @@ class Regression : public QObject
             QCOMPARE(QGuiApplication::platformName(), expected);
         QVERIFY(QSslSocket::supportsSsl());
         QVERIFY(QImageReader::supportedImageFormats().contains("svg"));
+        const auto expectedIcon = qEnvironmentVariable("ZCVERSIONBOX_EXPECTED_ICON");
+        if (!expectedIcon.isEmpty())
+        {
+            const auto originalTheme = QIcon::themeName();
+            QIcon::setThemeName("hicolor");
+            const auto desktopIcon = QIcon::fromTheme(expectedIcon).pixmap(64);
+            QIcon::setThemeName(originalTheme);
+            QVERIFY2(!desktopIcon.isNull(), "Installed desktop icon must resolve through the system theme");
+        }
         TestDirectory dir;
         FakeAi ai;
         TestBackupService service(pathsIn(dir));
