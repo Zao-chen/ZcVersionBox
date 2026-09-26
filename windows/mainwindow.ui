@@ -226,7 +226,7 @@
       <widget class="QWidget" name="sidebar">
        <property name="minimumSize">
         <size>
-         <width>200</width>
+         <width>0</width>
          <height>0</height>
         </size>
        </property>
@@ -236,7 +236,16 @@
          <height>16777215</height>
         </size>
        </property>
-       <layout class="QVBoxLayout" name="sidebarLayout" stretch="1,0">
+       <widget class="QWidget" name="sidebarContent">
+        <property name="geometry">
+         <rect>
+          <x>0</x>
+          <y>0</y>
+          <width>224</width>
+          <height>740</height>
+         </rect>
+        </property>
+        <layout class="QVBoxLayout" name="sidebarLayout" stretch="1,0">
         <property name="leftMargin">
          <number>12</number>
         </property>
@@ -744,7 +753,8 @@
         </item>
        </layout>
       </widget>
-      <widget class="QWidget" name="content">
+     </widget>
+     <widget class="QWidget" name="content">
        <property name="minimumSize">
         <size>
          <width>0</width>

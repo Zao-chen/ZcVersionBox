@@ -24,6 +24,8 @@
 #include <QShowEvent>
 #include <QSystemTrayIcon>
 #include <QTimer>
+#include <QVariantAnimation>
+#include <oclero/qlementine/style/QlementineStyle.hpp>
 #include <algorithm>
 #include <type_traits>
 #include <QWKWidgets/widgetwindowagent.h>
@@ -84,6 +86,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     setMinimumSize(760, 520);
     UiStyle::surface(ui->titleBar, UiStyle::Surface::Sidebar);
     UiStyle::surface(ui->sidebar, UiStyle::Surface::Sidebar);
+    UiStyle::surface(ui->sidebarContent, UiStyle::Surface::Sidebar);
     UiStyle::surface(ui->content, UiStyle::Surface::Canvas);
     UiStyle::surface(ui->sidebarList, UiStyle::Surface::Sidebar);
     UiStyle::text(ui->contextTitle, UiStyle::FontRole::Object);
@@ -141,12 +144,45 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     ui->windowSplitter->setCollapsible(0, true);
     ui->windowSplitter->setCollapsible(1, false);
     ui->windowSplitter->setSizes({224, 856});
+    ui->sidebar->setMinimumWidth(200);
+    ui->sidebar->setMaximumWidth(280);
+    ui->sidebar->installEventFilter(this);
     ui->header->installEventFilter(this);
     ui->contextTitle->installEventFilter(this);
     connect(ui->windowSplitter, &QSplitter::splitterMoved, this, [this]
             {
         if (ui->sidebar->width() >= 200)
             m_sidebarWidth = ui->sidebar->width();
+        updateHeaderLayout(); });
+    ui->sidebarLayout->setContentsMargins(0, 0, 0, 0);
+    m_sidebarAnimation = new QVariantAnimation(this);
+    m_sidebarAnimation->setEasingCurve(QEasingCurve::OutCubic);
+    connect(m_sidebarAnimation, &QVariantAnimation::valueChanged, this, [this](const QVariant &value)
+            {
+        const int w = value.toInt();
+        ui->sidebar->setFixedWidth(w);
+        const int total = ui->windowSplitter->width();
+        ui->windowSplitter->setSizes({w, qMax(0, total - w)}); });
+    connect(m_sidebarAnimation, &QVariantAnimation::finished, this, [this]
+            {
+        const bool collapsed = (m_sidebarTargetWidth == 0);
+        const int total = ui->windowSplitter->width();
+        if (collapsed)
+        {
+            ui->sidebar->setVisible(false);
+            ui->sidebar->setMinimumWidth(200);
+            ui->sidebar->setMaximumWidth(280);
+            ui->windowSplitter->setSizes({0, total});
+        }
+        else
+        {
+            ui->sidebar->setVisible(true);
+            ui->sidebar->setMinimumWidth(200);
+            ui->sidebar->setMaximumWidth(280);
+            ui->windowSplitter->setSizes({m_sidebarWidth, qMax(0, total - m_sidebarWidth)});
+            ui->sidebarContent->setGeometry(0, 0, m_sidebarWidth, ui->sidebar->height());
+        }
+        m_sidebarTargetWidth = -1;
         updateHeaderLayout(); });
     m_actions = new BackupUiActions(backups, this);
     m_backupModel = new BackupListModel(this);
@@ -177,7 +213,10 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     addAction(m_actions->addAction());
     connect(m_actions->addAction(), &QAction::triggered, this, [this]
             {
-        auto *anchor = ui->sidebar->isVisible() ? ui->addSidebarButton : ui->collapseButton;
+        const bool sidebarVisible = (m_sidebarAnimation && m_sidebarAnimation->state() == QAbstractAnimation::Running)
+                                        ? (m_sidebarTargetWidth > 0)
+                                        : (ui->sidebar->isVisible() && ui->sidebar->width() > 0);
+        auto *anchor = sidebarVisible ? ui->addSidebarButton : ui->collapseButton;
         m_actions->addMenu()->popup(anchor->mapToGlobal(QPoint(0, anchor->height()))); });
 
     m_notifications = new NotificationBar(ui->content);
@@ -330,13 +369,77 @@ void MainWindow::toggleSidebar()
 {
     if (isSettingsPage(m_route.page))
         return;
-    const bool show = !ui->sidebar->isVisible() || ui->sidebar->width() == 0;
-    if (!show && ui->sidebar->width() >= 200)
+    const bool isRunning = m_sidebarAnimation && m_sidebarAnimation->state() == QAbstractAnimation::Running;
+    const bool show = isRunning ? (m_sidebarTargetWidth == 0) : (!ui->sidebar->isVisible() || ui->sidebar->width() == 0);
+    animateSidebar(show);
+}
+void MainWindow::animateSidebar(bool show)
+{
+    if (isSettingsPage(m_route.page))
+        return;
+
+    const bool isRunning = m_sidebarAnimation && m_sidebarAnimation->state() == QAbstractAnimation::Running;
+    if (!show && !isRunning && ui->sidebar->isVisible() && ui->sidebar->width() >= 200)
         m_sidebarWidth = ui->sidebar->width();
-    ui->sidebar->setVisible(show);
-    if (show)
-        ui->windowSplitter->setSizes({m_sidebarWidth, width() - m_sidebarWidth});
-    updateHeaderLayout();
+
+    const auto *qlementineStyle = qobject_cast<const oclero::qlementine::QlementineStyle *>(this->style());
+    const bool animations = qlementineStyle ? qlementineStyle->animationsEnabled() : true;
+    const int baseDuration = (animations && isVisible()) ? this->style()->styleHint(QStyle::SH_Widget_Animation_Duration) : 0;
+
+    if (baseDuration <= 0)
+    {
+        if (isRunning)
+            m_sidebarAnimation->stop();
+        m_sidebarTargetWidth = -1;
+        ui->sidebar->setMinimumWidth(200);
+        ui->sidebar->setMaximumWidth(280);
+        ui->sidebar->setVisible(show);
+        const int total = ui->windowSplitter->width();
+        if (show)
+        {
+            ui->sidebarContent->setGeometry(0, 0, m_sidebarWidth, ui->sidebar->height());
+            ui->windowSplitter->setSizes({m_sidebarWidth, qMax(0, total - m_sidebarWidth)});
+        }
+        else
+        {
+            ui->windowSplitter->setSizes({0, total});
+        }
+        updateHeaderLayout();
+        return;
+    }
+
+    const int targetWidth = show ? m_sidebarWidth : 0;
+    if (!isRunning && ui->sidebar->isVisible() == show && ui->sidebar->width() == targetWidth)
+        return;
+
+    ui->sidebar->setMinimumWidth(0);
+    int currentWidth = 0;
+    if (isRunning)
+    {
+        currentWidth = m_sidebarAnimation->currentValue().toInt();
+        m_sidebarAnimation->stop();
+    }
+    else
+    {
+        currentWidth = show ? 0 : ui->sidebar->width();
+        if (show)
+        {
+            ui->sidebar->setFixedWidth(0);
+            ui->sidebar->setVisible(true);
+            const int total = ui->windowSplitter->width();
+            ui->windowSplitter->setSizes({0, total});
+            ui->sidebarContent->setGeometry(-m_sidebarWidth, 0, m_sidebarWidth, ui->sidebar->height());
+        }
+    }
+
+    m_sidebarTargetWidth = targetWidth;
+    const int distance = qAbs(targetWidth - currentWidth);
+    const int animDuration = qMax(40, static_cast<int>(baseDuration * (double(distance) / qMax(1, m_sidebarWidth))));
+
+    m_sidebarAnimation->setDuration(animDuration);
+    m_sidebarAnimation->setStartValue(currentWidth);
+    m_sidebarAnimation->setEndValue(targetWidth);
+    m_sidebarAnimation->start();
 }
 void MainWindow::openSettings()
 {
@@ -469,22 +572,43 @@ void MainWindow::displayRoute(const Route &route)
     const bool wasSettingsMode = isSettingsPage(m_route.page);
     if (settingsMode && !wasSettingsMode)
     {
+        if (m_sidebarAnimation && m_sidebarAnimation->state() == QAbstractAnimation::Running)
+            m_sidebarAnimation->stop();
         m_applicationRoute = m_route;
         auto *focus = QApplication::focusWidget();
         m_applicationFocus = focus && isAncestorOf(focus) ? focus : nullptr;
-        m_applicationSidebarVisible = !ui->sidebar->isHidden() && ui->sidebar->width() > 0;
+        bool isSidebarVisible = !ui->sidebar->isHidden() && ui->sidebar->width() > 0;
+        if (m_sidebarTargetWidth >= 0)
+            isSidebarVisible = (m_sidebarTargetWidth > 0);
+        m_applicationSidebarVisible = isSidebarVisible;
         if (ui->sidebar->width() >= 200)
             m_sidebarWidth = ui->sidebar->width();
+        m_sidebarTargetWidth = -1;
+        ui->sidebar->setMinimumWidth(200);
+        ui->sidebar->setMaximumWidth(280);
         ui->windowSplitter->setCollapsible(0, false);
         ui->sidebar->show();
+        ui->sidebarContent->setGeometry(0, 0, m_sidebarWidth, ui->sidebar->height());
         ui->windowSplitter->setSizes({m_sidebarWidth, width() - m_sidebarWidth});
     }
     else if (!settingsMode && wasSettingsMode)
     {
+        if (m_sidebarAnimation && m_sidebarAnimation->state() == QAbstractAnimation::Running)
+            m_sidebarAnimation->stop();
+        m_sidebarTargetWidth = -1;
+        ui->sidebar->setMinimumWidth(200);
+        ui->sidebar->setMaximumWidth(280);
         ui->windowSplitter->setCollapsible(0, true);
         ui->sidebar->setVisible(m_applicationSidebarVisible);
         if (m_applicationSidebarVisible)
+        {
+            ui->sidebarContent->setGeometry(0, 0, m_sidebarWidth, ui->sidebar->height());
             ui->windowSplitter->setSizes({m_sidebarWidth, width() - m_sidebarWidth});
+        }
+        else
+        {
+            ui->windowSplitter->setSizes({0, width()});
+        }
     }
     // Explicit navigation/back/forward takes precedence over a search filter.
     if (!settingsMode || (!(route == m_route) && !matchesSettings(route.page, ui->settingsSearch->text())))
@@ -571,16 +695,29 @@ void MainWindow::displayRoute(const Route &route)
 }
 void MainWindow::updateHeaderLayout()
 {
+    static bool updating = false;
+    if (updating)
+        return;
+    updating = true;
     const bool compact = ui->content->width() < 640;
     for (auto *button : m_toolbarButtons)
         button->setToolButtonStyle(compact || button->defaultAction()->property("iconOnly").toBool() ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
     ui->tabsLayout->setContentsMargins(compact ? 16 : 24, 0, compact ? 16 : 24, 8);
     ui->contextTitle->setText(ui->contextTitle->fontMetrics().elidedText(m_contextTitle, Qt::ElideRight, qMax(0, ui->contextTitle->width())));
+    updating = false;
 }
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
     if ((watched == ui->header || watched == ui->contextTitle) && event->type() == QEvent::Resize)
         updateHeaderLayout();
+
+    if (watched == ui->sidebar && event->type() == QEvent::Resize)
+    {
+        const int w = ui->sidebar->width();
+        const int contentW = qMax(w, m_sidebarWidth);
+        const int x = w < m_sidebarWidth ? (w - m_sidebarWidth) : 0;
+        ui->sidebarContent->setGeometry(x, 0, contentW, ui->sidebar->height());
+    }
 
     if (event->type() == QEvent::MouseButtonPress)
     {

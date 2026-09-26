@@ -575,7 +575,7 @@ class Regression : public QObject
         QVERIFY(!selected.isEmpty());
         backupFilter->setText("设置导航");
         window.findChild<QToolButton *>("collapseButton")->click();
-        QVERIFY(!sidebar->isVisible());
+        QTRY_VERIFY(!sidebar->isVisible());
         QTest::keySequence(&window, QKeySequence("Ctrl+,"));
         QTRY_COMPARE(pages->currentWidget(), window.findChild<SettingPage *>());
         QCOMPARE(sidebarStack->currentWidget()->objectName(), QString("settingsSidebar"));
@@ -1676,10 +1676,10 @@ class Regression : public QObject
         QCOMPARE(dashboard->findChild<QScrollArea *>("scroll")->horizontalScrollBar()->maximum(), 0);
         capture("long-path");
         window.findChild<QToolButton *>("collapseButton")->click();
-        QVERIFY(!window.findChild<QWidget *>("sidebar")->isVisible());
+        QTRY_VERIFY(!window.findChild<QWidget *>("sidebar")->isVisible());
         capture("sidebar-collapsed");
         window.findChild<QToolButton *>("collapseButton")->click();
-        QVERIFY(window.findChild<QWidget *>("sidebar")->isVisible());
+        QTRY_VERIFY(window.findChild<QWidget *>("sidebar")->isVisible());
         window.findChild<QAction *>("pinAction")->trigger();
         QVERIFY(window.windowFlags().testFlag(Qt::WindowStaysOnTopHint));
         window.findChild<QAction *>("pinAction")->trigger();

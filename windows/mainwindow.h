@@ -26,6 +26,7 @@ class BackupFilterModel;
 class BackupUiActions;
 class QSystemTrayIcon;
 class QToolButton;
+class QVariantAnimation;
 
 class MainWindow : public QMainWindow
 {
@@ -69,11 +70,14 @@ class MainWindow : public QMainWindow
     QList<QToolButton *> m_toolbarButtons;
     QString m_contextTitle;
     int m_sidebarWidth{224};
+    int m_sidebarTargetWidth{-1};
+    QVariantAnimation *m_sidebarAnimation{nullptr};
     void displayRoute(const Route &route);
     void syncBackups();
     void syncSidebarSelection();
     void restoreWindow();
     void toggleSidebar();
+    void animateSidebar(bool show);
     void openSettings();
     void returnToApplication();
     void updateSettingsSearch();
