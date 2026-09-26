@@ -134,7 +134,8 @@ void BackupItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &op
         painter->setPen(colors.secondary);
         painter->drawRoundedRect(QRectF(row).adjusted(.5, .5, -.5, -.5), 6, 6);
     }
-    const auto content = row.adjusted(12, 6, -36, -6);
+    const int leftPadding = m_sidebar ? 8 : 12;
+    const auto content = row.adjusted(leftPadding, 6, -36, -6);
     const auto mainFont = UiStyle::font(m_sidebar ? UiStyle::FontRole::Sidebar : UiStyle::FontRole::Body);
     const auto captionFont = UiStyle::font(UiStyle::FontRole::Caption);
     const int mainHeight = QFontMetrics(mainFont).height();
