@@ -104,6 +104,14 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     m_windowAgent->setSystemButton(QWK::WindowAgentBase::Minimize, ui->minimizeButton);
     m_windowAgent->setSystemButton(QWK::WindowAgentBase::Maximize, ui->maximizeButton);
     m_windowAgent->setSystemButton(QWK::WindowAgentBase::Close, ui->closeButton);
+    connect(ui->minimizeButton, &QToolButton::clicked, this, &QWidget::showMinimized);
+    connect(ui->maximizeButton, &QToolButton::clicked, this, [this] {
+        if (isMaximized())
+            showNormal();
+        else
+            showMaximized();
+    });
+    connect(ui->closeButton, &QToolButton::clicked, this, &QWidget::close);
 #else
     ui->minimizeButton->hide();
     ui->maximizeButton->hide();
