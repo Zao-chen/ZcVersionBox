@@ -210,23 +210,6 @@ OperationResult BackupEngine::addLocal(const QString &source)
     m_generations[r.id] = r.generation;
     return OperationResult::ok("添加成功", "已将文件添加至版本控制");
 }
-BackupResult<bool> BackupEngine::changed(const QString &id)
-{
-    auto r = require(id);
-    if (!r.result.success)
-        return {r.result};
-    if (r.value.state == BackupSyncState::Tracking)
-    {
-        r = require(id, true);
-        if (!r.result.success)
-            return {r.result};
-    }
-    SourceFingerprint now;
-    const auto result = m_dependencies.files->fingerprint(r.value.sourcePath, r.value.directory, now);
-    if (!result.success)
-        return {result};
-    return {OperationResult::ok({}), now != r.value.fingerprint && r.value.state == BackupSyncState::Tracking};
-}
 BackupResult<std::shared_ptr<PendingBackup>> BackupEngine::prepareBackup(const QString &id, bool changedOnly, const RestoreRequest *resolution)
 {
     auto checked = require(id, true, resolution != nullptr);

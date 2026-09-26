@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.27)
 # Set this before project() initializes the Apple toolchain.
 if(CMAKE_HOST_APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum supported macOS")
@@ -45,6 +45,20 @@ set(QWINDOWKIT_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(QWINDOWKIT_INSTALL OFF CACHE BOOL "" FORCE)
 add_subdirectory(3rdparty/qwindowkit EXCLUDE_FROM_ALL)
 
+# Scope the upstream's generic option names to this dependency.
+function(zc_add_file_watcher)
+    set(BUILD_SHARED_LIBS OFF)
+    set(BUILD_STATIC_LIBS OFF)
+    set(BUILD_TEST_APP OFF)
+    set(EFSW_INSTALL OFF)
+    set(VERBOSE OFF)
+    set(CMAKE_AUTOMOC OFF)
+    set(CMAKE_AUTOUIC OFF)
+    set(CMAKE_AUTORCC OFF)
+    add_subdirectory(3rdparty/efsw EXCLUDE_FROM_ALL)
+endfunction()
+zc_add_file_watcher()
+
 add_library(ZcAiLib SHARED IMPORTED GLOBAL)
 set_target_properties(ZcAiLib PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/include"
@@ -79,6 +93,10 @@ add_library(zc_services STATIC
     utils/backupmonitor.h utils/backupmonitor.cpp
     utils/backupmonitor_types.h
     utils/backupmonitor_scheduler.h utils/backupmonitor_scheduler.cpp
+    utils/backupmonitor_scanner.h utils/backupmonitor_scanner.cpp
+    utils/backupmonitor_watcher.h utils/backupmonitor_watcher.cpp
+    utils/backupmonitor_directorywatcher.h utils/backupmonitor_directorywatcher.cpp
+    utils/backupmonitor_catalog.h utils/backupmonitor_catalog.cpp
     utils/backup_types.h utils/backup_dependencies.h
     utils/backup_catalog.h utils/backup_catalog.cpp
     utils/backup_files.h utils/backup_files.cpp
@@ -90,6 +108,7 @@ add_library(zc_services STATIC
     utils/aicommitmessagehelper.h utils/aicommitmessagehelper.cpp)
 target_include_directories(zc_services PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(zc_services PUBLIC Qt6::Core Qt6::Network ZcAiLib)
+target_link_libraries(zc_services PRIVATE efsw)
 if(APPLE)
     target_sources(zc_services PRIVATE macos/macos_services.h macos/macos_services.mm)
     target_link_libraries(zc_services PUBLIC "-framework AppKit")

@@ -4,6 +4,8 @@
 #include <atomic>
 #include <memory>
 
+class QFile;
+
 struct BackupSelectionPolicy
 {
     static bool observes(const QString &absolutePath);
@@ -21,7 +23,10 @@ class BackupFiles
     virtual OperationResult copy(const QString &source, const QString &target) const;
     virtual OperationResult rename(const QString &source, const QString &target) const;
     virtual OperationResult remove(const QString &path) const;
-    OperationResult fingerprint(const QString &path, bool directory, SourceFingerprint &result, bool observation = true) const;
+    // Optionally collect observed directories in the same background walk.
+    // Native directory watches also cover changes to the files they contain.
+    OperationResult fingerprint(const QString &path, bool directory, SourceFingerprint &result, bool observation = true,
+                                QStringList *visitedPaths = nullptr) const;
     OperationResult capture(const QString &source, bool directory, const QString &target, SourceFingerprint &observed) const;
     OperationResult readOnly(const QString &path) const;
     static bool isLink(const QString &path);
@@ -29,6 +34,7 @@ class BackupFiles
     static bool isGitMetadataPath(const QString &path);
     static bool overlaps(const QString &first, const QString &second);
     static bool exists(const QString &path);
+    static bool openForFingerprint(QFile &file);
 };
 
 // An in-memory undo list for same-volume renames, with no persistent replay protocol.

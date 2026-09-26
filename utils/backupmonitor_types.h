@@ -34,3 +34,5 @@ struct BackupScanResult
     OperationResult result;
     QStringList watchPaths;
 };
+Q_DECLARE_METATYPE(BackupScanRequest)
+Q_DECLARE_METATYPE(BackupScanResult)

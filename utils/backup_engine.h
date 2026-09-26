@@ -45,7 +45,6 @@ class BackupEngine
     BackupResult<PreparedImport> prepareImport(const QString &url);
     OperationResult finishImport(const QString &session, const QString &entry, const QString &target, bool replaceExisting);
     OperationResult cancelImport(const QString &session);
-    BackupResult<bool> changed(const QString &id);
     OperationResult recheck(const QString &id);
 
   private:

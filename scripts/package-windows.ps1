@@ -25,6 +25,8 @@ $forbidden = Get-ChildItem -LiteralPath $payload -Recurse -File | Where-Object {
 if ($forbidden) { throw "Unexpected runtime in package: $($forbidden.Name -join ', ')" }
 $licenses = New-Item -ItemType Directory -Path (Join-Path $payload 'licenses')
 Copy-Item -LiteralPath "$projectRoot/3rdparty/qlementine/LICENSE" -Destination (Join-Path $licenses.FullName 'Qlementine.txt')
+Copy-Item -LiteralPath "$projectRoot/3rdparty/efsw/LICENSE" -Destination (Join-Path $licenses.FullName 'efsw.txt')
+Copy-Item -LiteralPath "$projectRoot/3rdparty/efsw/UPSTREAM.md" -Destination (Join-Path $licenses.FullName 'efsw-upstream.md')
 Copy-Item -LiteralPath "$projectRoot/3rdparty/qlementine/UPSTREAM.md" -Destination $licenses.FullName
 Get-ChildItem -LiteralPath "$projectRoot/3rdparty/qlementine/LICENSES" -File |
     ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination $licenses.FullName }

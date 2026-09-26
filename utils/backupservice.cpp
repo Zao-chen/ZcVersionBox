@@ -346,11 +346,6 @@ BackupTaskId BackupService::addLocal(const QString &p, QObject *c, Completion f)
                      { return e.addLocal(p); });
 }
 BackupTaskId BackupService::backup(const QString &id, QObject *c, Completion f, BackupRequestOptions options) { return d->submitBackup(id, c, std::move(f), options); }
-BackupTaskId BackupService::observe(const QString &id, QObject *c, Reply<bool> f)
-{
-    return d->submit<bool>(id, c, std::move(f), [id](BackupEngine &e)
-                           { return e.changed(id); });
-}
 BackupTaskId BackupService::statistics(const QString &id, QObject *c, Reply<BackupStats> f)
 {
     return d->submit<BackupStats>(id, c, std::move(f), [id](BackupEngine &e)

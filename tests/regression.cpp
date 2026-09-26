@@ -289,7 +289,7 @@ class Regression : public QObject
         writeFile(source, "initial");
         QVERIFY(service.addLocal(source).success);
         BackupMonitor monitor(&service);
-        monitor.reconcile();
+        monitor.start();
         QCOMPARE(monitor.trackedCount(), 1);
         {
             HomePage page(&service);
@@ -300,12 +300,10 @@ class Regression : public QObject
         writeFile(source, "modified and larger");
         monitor.reconcile();
         monitor.scanNow();
-        settle(service);
-        settle(service);
+        settle(monitor, service);
         QCOMPARE(runGit(service.repoPath(encoded(source)), {"rev-list", "--count", "HEAD"}).output.trimmed(), QString("2"));
         monitor.scanNow();
-        settle(service);
-        settle(service);
+        settle(monitor, service);
         QCOMPARE(runGit(service.repoPath(encoded(source)), {"rev-list", "--count", "HEAD"}).output.trimmed(), QString("2"));
         QVERIFY(service.removeBackup(encoded(source)).success);
         QCOMPARE(monitor.trackedCount(), 0);
@@ -329,15 +327,15 @@ class Regression : public QObject
         QVERIFY(!runGit(repo, {"cat-file", "-e", "HEAD:project/ignored.log"}).success());
         QCOMPARE(readFile(repo + "/project/ignored.log"), QByteArray("ignored"));
         BackupMonitor monitor(&service);
-        monitor.reconcile();
+        monitor.start();
         writeFile(source + "/build/output.bin", "changed build only");
         monitor.scanNow();
-        settle(service);
+        settle(monitor, service);
         QCOMPARE(head(service, id), initial);
         QCOMPARE(readFile(repo + "/project/build/output.bin"), QByteArray("initial build"));
         writeFile(source + "/visible.txt", "two, normal change");
         monitor.scanNow();
-        settle(service);
+        settle(monitor, service);
         QVERIFY(head(service, id) != initial);
         QCOMPARE(readFile(repo + "/project/build/output.bin"), QByteArray("changed build only"));
         QCOMPARE(runGit(repo, {"show", "HEAD:project/build/output.bin"}).output, QString("changed build only"));

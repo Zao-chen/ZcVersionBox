@@ -6,6 +6,11 @@
 #include <QTemporaryDir>
 #include <filesystem>
 #include <functional>
+#ifdef Q_OS_WIN
+#include <fcntl.h>
+#include <io.h>
+#include <qt_windows.h>
+#endif
 
 namespace
 {
@@ -164,9 +169,40 @@ OperationResult BackupFiles::remove(const QString &path) const
     QFile::setPermissions(path, QFile::permissions(path) | QFileDevice::WriteOwner);
     return QFile::remove(path) ? OperationResult::ok({}) : failed("无法删除文件", path);
 }
-OperationResult BackupFiles::fingerprint(const QString &path, bool directory, SourceFingerprint &result, bool observation) const
+bool BackupFiles::openForFingerprint(QFile &file)
+{
+#ifdef Q_OS_WIN
+    // Qt 6's normal QFile reader denies deletion on Windows. A background hash
+    // must not prevent an editor's atomic save or a restore's source replacement.
+    auto path = QDir::toNativeSeparators(QFileInfo(file.fileName()).absoluteFilePath());
+    if (!path.startsWith(QStringLiteral("\\\\?\\")))
+        path = path.startsWith(QStringLiteral("\\\\")) ? QStringLiteral("\\\\?\\UNC\\") + path.mid(2) : QStringLiteral("\\\\?\\") + path;
+    const auto handle = CreateFileW(reinterpret_cast<const wchar_t *>(path.utf16()), GENERIC_READ,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                                    FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        return false;
+    const int descriptor = _open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDONLY | _O_BINARY);
+    if (descriptor < 0)
+    {
+        CloseHandle(handle);
+        return false;
+    }
+    if (file.open(descriptor, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle))
+        return true;
+    _close(descriptor);
+    return false;
+#else
+    return file.open(QIODevice::ReadOnly);
+#endif
+}
+
+OperationResult BackupFiles::fingerprint(const QString &path, bool directory, SourceFingerprint &result, bool observation,
+                                         QStringList *visitedPaths) const
 {
     result.clear();
+    if (visitedPaths)
+        visitedPaths->clear();
     const QFileInfo root(path);
     if (hasLinkedAncestor(path) || !root.exists() || root.isDir() != directory || (!directory && !root.isFile()) || !root.isReadable())
         return failed("源不存在、不可读或类型已改变", path);
@@ -181,6 +217,8 @@ OperationResult BackupFiles::fingerprint(const QString &path, bool directory, So
             return failed("无法读取完整源内容", current);
         if (info.isDir())
         {
+            if (visitedPaths)
+                visitedPaths->append(current);
             const auto listed = children(current);
             if (!listed.result.success)
                 return listed.result;
@@ -202,7 +240,7 @@ OperationResult BackupFiles::fingerprint(const QString &path, bool directory, So
                 return failed("不支持的文件类型", current);
             QFile file(current);
             QCryptographicHash hash(QCryptographicHash::Sha256);
-            if (!file.open(QIODevice::ReadOnly))
+            if (!openForFingerprint(file))
                 return failed("文件读取失败", current);
             while (!file.atEnd())
             {

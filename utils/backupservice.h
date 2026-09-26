@@ -32,7 +32,6 @@ class BackupService : public QObject
     BackupTaskId reload(QObject *context = nullptr, Completion callback = {}, BackupReloadOptions options = {});
     BackupTaskId addLocal(const QString &source, QObject *context, Completion callback = {});
     BackupTaskId backup(const QString &id, QObject *context, Completion callback = {}, BackupRequestOptions options = {});
-    BackupTaskId observe(const QString &id, QObject *context, Reply<bool> callback);
     BackupTaskId statistics(const QString &id, QObject *context, Reply<BackupStats> callback);
     BackupTaskId history(const QString &id, QObject *context, Reply<QVector<Revision>> callback);
     BackupTaskId diff(const QString &id, const QString &commit, QObject *context, Reply<DiffData> callback);
