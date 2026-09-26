@@ -7,6 +7,7 @@
 #include <QLockFile>
 #include <QProcess>
 #include <QSaveFile>
+#include <QScopeGuard>
 #include <QSemaphore>
 #include <QSettings>
 #include <QSignalSpy>
@@ -306,6 +307,181 @@ class BackupCoreRegression : public QObject
         monitor.stop();
         QTRY_COMPARE(monitor.state(), BackupMonitor::State::Stopped);
     }
+    void sourceWatchesSharePathsAndFilterUnrelatedChanges()
+    {
+        TestDirectory dir;
+        const auto root = dir.path() + "/source";
+        writeFile(root + "/one.txt", "one");
+        writeFile(root + "/two.txt", "two");
+        writeFile(root + "/build/output", "ignored");
+        BackupObservationTarget first{"one", root + "/one.txt", false, 1, 1};
+        BackupObservationTarget second{"two", root + "/two.txt", false, 1, 2};
+        BackupObservationTarget directory{"directory", root, true, 1, 3};
+        BackupSourceWatcher watcher;
+        QSignalSpy changed(&watcher, &BackupSourceWatcher::sourceChanged);
+        watcher.setTargets({first, second, directory});
+        watcher.updatePaths(directory.id, {root}, true);
+        QTRY_VERIFY(!watcher.isRegistering());
+        QCOMPARE(watcher.watchedPathCount(), 2); // The shared directory and its parent.
+        writeFile(dir.path() + "/unrelated.txt", "unrelated");
+        writeFile(root + "/build/output", "still ignored");
+        QTest::qWait(1200); // Also allows a native FSEvents batch to arrive on macOS.
+        QCOMPARE(changed.size(), 0);
+        writeFile(first.sourcePath, "changed one");
+        const auto hasChanged = [&](const QString &id)
+        {
+            return std::any_of(changed.cbegin(), changed.cend(), [&](const QList<QVariant> &event)
+                               { return event.first().toString() == id; });
+        };
+        QTRY_VERIFY(hasChanged(first.id) && hasChanged(directory.id));
+        QVERIFY(!hasChanged(second.id));
+        watcher.setTargets({second});
+        QTRY_VERIFY(!watcher.isRegistering());
+        QCOMPARE(watcher.watchedPathCount(), 1);
+        changed.clear();
+        QVERIFY(replaceFileAtomically(second.sourcePath, "changed two"));
+        QTRY_VERIFY(hasChanged(second.id));
+        QVERIFY(!hasChanged(first.id));
+        watcher.clear();
+        changed.clear();
+        writeFile(second.sourcePath, "after stop");
+        QTest::qWait(100);
+        QCOMPARE(changed.size(), 0);
+    }
+    void missingEventsAreRecoveredAtThePeriodicDeadline()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/source.txt";
+        writeFile(source, "one\n");
+        CHECK_OK(service.addLocal(source));
+        const auto id = service.idForSource(source);
+        qint64 now = 0;
+        BackupMonitorDependencies dependencies;
+        dependencies.clock = [&]
+        { return now; };
+        // Successfully registered coverage that supplies no events models a
+        // silently missed notification, separately from registration failure.
+        dependencies.addWatchPaths = [](BackupDirectoryWatcher &, const QStringList &)
+        { return QStringList{}; };
+        BackupMonitor monitor(&service, nullptr, {}, dependencies);
+        QSignalSpy scans(&monitor, &BackupMonitor::scanStarted), backups(&monitor, &BackupMonitor::backupRequested);
+        monitor.start();
+        settle(monitor, service);
+        now = 500;
+        monitor.reconcile();
+        settle(monitor, service); // Finish the registration coverage check.
+        const auto initialScans = scans.size();
+        const auto modified = QFileInfo(source).lastModified();
+        writeFile(source, "two\n");
+        QFile file(source);
+        QVERIFY(file.open(QIODevice::ReadWrite));
+        QVERIFY(file.setFileTime(modified, QFileDevice::FileModificationTime));
+        file.close();
+        now = 30499;
+        monitor.reconcile();
+        settle(monitor, service);
+        QCOMPARE(scans.size(), initialScans);
+        QCOMPARE(backups.size(), 0);
+        now = 30500;
+        monitor.reconcile();
+        settle(monitor, service);
+        QCOMPARE(backups.size(), 1);
+        QCOMPARE(readFile(service.repoPath(id) + "/source.txt"), QByteArray("two\n"));
+    }
+    void monitorCancelsQueuedBackupWhenPullPausesTarget()
+    {
+        RemoteFixture fixture;
+        const auto baseline = record(*fixture.service, fixture.id).fingerprint;
+        const auto pulled = fixture.commitRemote("remote version\n");
+        writeFile(fixture.source, "local edit\n");
+        BackupMonitor monitor(fixture.service.get());
+        QSignalSpy requests(&monitor, &BackupMonitor::backupRequested), notifications(&monitor, &BackupMonitor::notification);
+        QSignalSpy finished(fixture.service.get(), &BackupService::taskFinished);
+        bool pulling = false;
+        connect(&monitor, &BackupMonitor::backupRequested, this, [&]
+                {
+            if (!pulling)
+            {
+                pulling = true;
+                fixture.service->BackupService::synchronize(fixture.id, false, this);
+            } });
+        monitor.start();
+        QTRY_COMPARE_WITH_TIMEOUT(fixture.service->syncState(fixture.id), BackupSyncState::RemotePending, 15000);
+        settle(monitor, *fixture.service);
+        QCOMPARE(requests.size(), 1);
+        QCOMPARE(notifications.size(), 0);
+        QVERIFY(std::any_of(finished.cbegin(), finished.cend(), [](const QList<QVariant> &event)
+                            { return qvariant_cast<OperationResult>(event[2]).cancelled; }));
+        QCOMPARE(head(*fixture.service, fixture.id), pulled);
+        QCOMPARE(record(*fixture.service, fixture.id).fingerprint, baseline);
+        QCOMPARE(readFile(fixture.source), QByteArray("local edit\n"));
+        monitor.scanNow();
+        settle(monitor, *fixture.service);
+        QCOMPARE(requests.size(), 1);
+    }
+    void largeProjectMonitorBoundsEventStorms()
+    {
+        TestDirectory dir;
+        const auto source = dir.path() + "/large-source";
+        for (int directory = 0; directory < 100; ++directory)
+            for (int file = 0; file < 100; ++file)
+                writeFile(source + QString("/dir-%1/file-%2.txt").arg(directory).arg(file), "initial\n");
+        TestBackupService service(pathsIn(dir));
+        std::optional<OperationResult> added;
+        service.BackupService::addLocal(source, this, [&](const OperationResult &result)
+                                        { added = result; });
+        QTRY_VERIFY_WITH_TIMEOUT(added.has_value(), 90000);
+        CHECK_OK(*added);
+        const auto id = service.idForSource(source);
+        QCOMPARE(record(service, id).fingerprint.size(), 10000);
+        const auto gate = std::make_shared<ScanGate>();
+        gate->hold.store(false);
+        BackupMonitorDependencies dependencies;
+        dependencies.scanFiles = [gate]
+        { return std::make_unique<HeldScanFiles>(gate); };
+        BackupMonitor monitor(&service, nullptr, {}, dependencies);
+        QSignalSpy scans(&monitor, &BackupMonitor::scanStarted), requests(&monitor, &BackupMonitor::backupRequested);
+        QSignalSpy notifications(&monitor, &BackupMonitor::notification);
+        int pending = 0, maximumPending = 0;
+        connect(&monitor, &BackupMonitor::backupRequested, this, [&](const QString &)
+                { maximumPending = std::max(maximumPending, ++pending); });
+        connect(&service, &BackupService::taskFinished, this, [&](BackupTaskId, const QString &item, const OperationResult &)
+                { if (item == id && pending) --pending; });
+        monitor.start();
+        settle(monitor, service);
+        QTest::qWait(1600);
+        settle(monitor, service);
+        const auto idleScans = scans.size();
+        QTest::qWait(2100);
+        QCOMPARE(scans.size(), idleScans);
+        QCOMPARE(requests.size(), 0);
+        gate->hold.store(true);
+        writeFile(source + "/dir-0/file-0.txt", "first event\n");
+        QTRY_VERIFY_WITH_TIMEOUT(gate->entered.available() > 0, 10000);
+        const auto stormScans = scans.size();
+        auto writes = std::async(std::launch::async, [source]
+                                 {
+            for (int i = 0; i < 2000; ++i)
+                writeFile(source + QString("/dir-%1/file-%2.txt").arg(i % 100).arg(i / 100), "storm-" + QByteArray::number(i)); });
+        QTRY_VERIFY_WITH_TIMEOUT(writes.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready, 30000);
+        writes.get();
+        QTest::qWait(1200);
+        QCOMPARE(scans.size(), stormScans);
+        QCOMPARE(requests.size(), 0);
+        QElapsedTimer drainTime;
+        drainTime.start();
+        gate->resume.release();
+        QTRY_VERIFY_WITH_TIMEOUT(requests.size() > 0 && monitor.isIdle() && !service.isBusy(), 180000);
+        QTest::qWait(1200);
+        settle(monitor, service);
+        QCOMPARE(readFile(service.repoPath(id) + "/large-source/dir-99/file-19.txt"), QByteArray("storm-1999"));
+        QCOMPARE(maximumPending, 1);
+        QVERIFY(requests.size() <= 2);
+        QCOMPARE(notifications.size(), 0);
+        qInfo("10000 files: idle scans in 2.1 s = 0; 2000 writes: scan starts = %lld, backup requests = %lld, maximum pending = %d, drain = %lld ms",
+              qlonglong(scans.size() - idleScans), qlonglong(requests.size()), maximumPending, qlonglong(drainTime.elapsed()));
+    }
     void monitorStopRestartDrainsTheOldScan()
     {
         TestDirectory dir;
@@ -395,6 +571,92 @@ class BackupCoreRegression : public QObject
         QTRY_VERIFY_WITH_TIMEOUT(!service.contains(id), 10000);
         QCOMPARE(monitor.trackedCount(), 0);
         QCOMPARE(readFile(source), QByteArray("external add"));
+    }
+    void catalogChangesDuringReloadAreCoalesced()
+    {
+        TestDirectory dir;
+        const auto paths = pathsIn(dir);
+        const auto gate = std::make_shared<ScanGate>();
+        gate->hold.store(false);
+        BackupDependencies dependencies;
+        dependencies.git = [gate](const QString &repo, const QStringList &args, const GitOptions &options)
+        {
+            if (gate->hold.exchange(false))
+            {
+                gate->entered.release();
+                gate->resume.acquire();
+            }
+            return runGit(repo, args, options);
+        };
+        TestBackupService service(paths, nullptr, nullptr, dependencies);
+        const auto source = dir.path() + "/source.txt";
+        writeFile(source, "source");
+        CHECK_OK(service.addLocal(source));
+        const auto target = service.observationTargets().first();
+        auto external = record(service, target.id);
+        BackupMonitorOptions options;
+        options.quietPeriodMs = 25;
+        options.maximumCoalesceMs = 100;
+        options.scanIntervalMs = options.auditIntervalMs = 60000;
+        BackupMonitor monitor(&service, nullptr, options);
+        monitor.start();
+        settle(monitor, service);
+        QTest::qWait(200);
+        settle(monitor, service);
+        QSignalSpy reloads(&service, &BackupService::reloadFinished);
+        const auto releaseOnFailure = qScopeGuard([&]
+                                                  { gate->resume.release(); });
+        gate->hold.store(true);
+        service.BackupService::reload(this);
+        QTRY_VERIFY(gate->entered.available() > 0);
+        BackupCatalog catalog(paths);
+        for (int i = 0; i < 10; ++i)
+        {
+            external.stateDetail = QString::number(i);
+            CHECK_OK(catalog.save(external));
+            QCoreApplication::processEvents();
+        }
+        QTest::qWait(1200);
+        QCOMPARE(reloads.size(), 0);
+        gate->resume.release();
+        QTRY_COMPARE_WITH_TIMEOUT(reloads.size(), 2, 10000);
+        settle(monitor, service);
+        QTest::qWait(1200);
+        settle(monitor, service);
+        QCOMPARE(reloads.size(), 2);
+        QVERIFY(service.observationTargets().first().version > target.version);
+        QCOMPARE(record(service, target.id).fingerprint, target.fingerprint);
+    }
+    void periodicMonitorAuditFindsExternalGitChanges()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/source.txt";
+        writeFile(source, "local\n");
+        CHECK_OK(service.addLocal(source));
+        const auto target = service.observationTargets().first();
+        qint64 now = 0;
+        BackupMonitorDependencies dependencies;
+        dependencies.clock = [&]
+        { return now; };
+        BackupMonitor monitor(&service, nullptr, {}, dependencies);
+        monitor.start();
+        settle(monitor, service);
+        const auto repo = service.repoPath(target.id);
+        writeFile(repo + "/source.txt", "external\n");
+        git(repo, {"add", "--all"});
+        git(repo, {"commit", "-m", "external edit"});
+        QTest::qWait(100);
+        now = 29999;
+        monitor.reconcile();
+        settle(monitor, service);
+        QCOMPARE(service.syncState(target.id), BackupSyncState::Tracking);
+        now = 30000;
+        monitor.reconcile();
+        settle(monitor, service);
+        QCOMPARE(service.syncState(target.id), BackupSyncState::NeedsAttention);
+        QCOMPARE(record(service, target.id).fingerprint, target.fingerprint);
+        QCOMPARE(readFile(source), QByteArray("local\n"));
     }
     void removingATargetCancelsItsScanAndAllowsReaddingIt()
     {
@@ -621,6 +883,31 @@ class BackupCoreRegression : public QObject
         scheduler.clear();
         QVERIFY(!scheduler.hasWork());
     }
+    void monitorSchedulerCancellationDoesNotBackOff()
+    {
+        qint64 now = 0;
+        BackupMonitorScheduler scheduler([&]
+                                         { return now; });
+        BackupObservationTarget target{"one", "/source", false, 1, 1};
+        scheduler.reconcile({target});
+        const auto scan = scheduler.takeScan();
+        QVERIFY(scan);
+        scheduler.completeScan({*scan, BackupScanStatus::Changed, OperationResult::ok({})});
+        const auto backup = scheduler.takeBackup();
+        QVERIFY(backup);
+        QVERIFY(!scheduler.completeBackup(*backup, OperationResult::cancel("cancelled")));
+        QCOMPARE(scheduler.nextDeadline(), now);
+        const auto again = scheduler.takeScan();
+        QVERIFY(again);
+        scheduler.clear();
+        scheduler.reconcile({target});
+        const auto restarted = scheduler.takeScan();
+        QVERIFY(restarted);
+        QVERIFY(restarted->token != again->token);
+        QVERIFY(!scheduler.completeScan({*again, BackupScanStatus::Changed, OperationResult::ok({})}));
+        QVERIFY(!scheduler.takeBackup());
+        QVERIFY(scheduler.completeScan({*restarted, BackupScanStatus::Unchanged, OperationResult::ok({})}));
+    }
     void backgroundServiceTasksAreFairAndBusyDoesNotFlicker()
     {
         TestDirectory dir;
@@ -646,6 +933,21 @@ class BackupCoreRegression : public QObject
         QCOMPARE(busy.size(), 2);
         QCOMPARE(busy[0][0].toBool(), true);
         QCOMPARE(busy[1][0].toBool(), false);
+    }
+    void foregroundWorkBeforeBackgroundArrivesDoesNotConsumeItsQuota()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        for (int i = 0; i < 8; ++i)
+            service.BackupService::reload(this, {}, {BackupTaskPriority::Foreground, false});
+        settle(service);
+        QSignalSpy started(&service, &BackupService::taskStarted);
+        const auto background = service.BackupService::reload(this, {}, {BackupTaskPriority::Background, false});
+        const auto foreground = service.BackupService::reload(this, {}, {BackupTaskPriority::Foreground, false});
+        settle(service);
+        QCOMPARE(started.size(), 2);
+        QCOMPARE(started[0][0].toULongLong(), foreground);
+        QCOMPARE(started[1][0].toULongLong(), background);
     }
     void observationSnapshotsChangeOnlyWhenRecordsChange()
     {

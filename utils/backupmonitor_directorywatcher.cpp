@@ -66,24 +66,24 @@ class BackupDirectoryWatcher::Private : public efsw::FileWatchListener
         {
             const auto translate = [&](const QString &nativePath)
             {
-                return BackupDirectoryWatcher::pathKey(QDir(found->path).filePath(QDir(found->canonical).relativeFilePath(nativePath)));
+                return QDir::fromNativeSeparators(QDir::cleanPath(QDir(found->path).filePath(QDir(found->canonical).relativeFilePath(nativePath))));
             };
             const auto path = missed ? found->path : translate(filename);
             const auto oldPath = oldFilename.isEmpty() ? QString() : translate(oldFilename);
             const auto accepted = [&](const QString &candidate)
             {
-                return acceptedDirectories.contains(candidate) ||
+                return acceptedDirectories.contains(BackupDirectoryWatcher::pathKey(candidate)) ||
                        acceptedDirectories.contains(BackupDirectoryWatcher::pathKey(QFileInfo(candidate).absolutePath()));
             };
             if (!missed && !accepted(path) && (oldPath.isEmpty() || !accepted(oldPath)))
                 return;
             batch.paths.insert(path);
             if (removed)
-                batch.removed.insert(path);
+                batch.removed.insert(BackupDirectoryWatcher::pathKey(path));
             if (!oldFilename.isEmpty())
             {
                 batch.paths.insert(oldPath);
-                batch.removed.insert(oldPath);
+                batch.removed.insert(BackupDirectoryWatcher::pathKey(oldPath));
             }
             if (missed || batch.paths.size() > 256)
             {

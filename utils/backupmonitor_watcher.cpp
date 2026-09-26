@@ -128,12 +128,15 @@ void BackupSourceWatcher::changed(const QStringList &paths)
             const auto root = key(target->sourcePath);
             const auto childPrefix = eventPath.endsWith('/') ? eventPath : eventPath + '/';
             const auto rootPrefix = root.endsWith('/') ? root : root + '/';
+            // Normalize only ownership keys. Selection keeps the spelling used
+            // by the source and native event, including the legacy build rule.
+            const auto policyPath = QDir(target->sourcePath).filePath(QDir(root).relativeFilePath(path));
             // Ancestor events locate a deleted/recreated source. For an existing
             // source, unrelated siblings and excluded build/.git traffic do not
             // invalidate the content check.
             if (root == eventPath || root.startsWith(childPrefix) ||
                 (target->directory && eventPath.startsWith(rootPrefix) &&
-                 BackupSelectionPolicy::observes(eventPath) && !BackupFiles::isGitMetadataPath(eventPath)))
+                 BackupSelectionPolicy::observes(policyPath) && !BackupFiles::isGitMetadataPath(policyPath)))
                 ids.insert(id);
         }
     }
@@ -172,6 +175,7 @@ void BackupSourceWatcher::rearm()
 
 void BackupSourceWatcher::registerBatch()
 {
+    const auto epoch = m_epoch;
     QStringList pending;
     for (auto it = m_owners.cbegin(); it != m_owners.cend() && pending.size() < m_batchSize; ++it)
         if (!m_registered.contains(it.key()) && !m_failed.contains(it.key()))
@@ -184,6 +188,8 @@ void BackupSourceWatcher::registerBatch()
     if (!pending.isEmpty())
     {
         const auto rejected = m_addPaths ? m_addPaths(m_watcher, pending) : m_watcher.addPaths(pending);
+        if (epoch != m_epoch)
+            return;
         const QSet<QString> failed(rejected.cbegin(), rejected.cend());
         for (const auto &path : pending)
         {
@@ -195,6 +201,8 @@ void BackupSourceWatcher::registerBatch()
                     {
                         m_reported.insert(id);
                         emit registrationFailed(id, path);
+                        if (epoch != m_epoch)
+                            return;
                     }
             }
             else
@@ -213,11 +221,14 @@ void BackupSourceWatcher::registerBatch()
             m_reported.remove(id);
             // Covers the interval between enumeration and installing the watches.
             emit coverageEstablished(id);
+            if (epoch != m_epoch)
+                return;
         }
 }
 
 void BackupSourceWatcher::clear()
 {
+    ++m_epoch;
     m_batch.stop();
     m_rearm.stop();
     m_watcher.clear();

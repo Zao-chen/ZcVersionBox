@@ -67,7 +67,7 @@ BackupResult<QStringList> BackupFiles::children(const QString &path) const
     while (!error && it != end)
     {
         if (cancellation && cancellation->load())
-            return {failed("操作已取消", path)};
+            return {OperationResult::cancel("操作已取消", path)};
 #ifdef Q_OS_WIN
         result.append(QDir::fromNativeSeparators(QString::fromStdWString(it->path().wstring())));
 #else
@@ -94,7 +94,7 @@ bool BackupFiles::overlaps(const QString &first, const QString &second)
 OperationResult BackupFiles::copy(const QString &source, const QString &target) const
 {
     if (cancellation && cancellation->load())
-        return failed("操作已取消", source);
+        return OperationResult::cancel("操作已取消", source);
     if (hasLinkedAncestor(source) || hasLinkedAncestor(target))
         return failed("不支持复制符号链接或目录联接，未遍历链接目标", source);
     const QFileInfo info(source);
@@ -128,7 +128,7 @@ OperationResult BackupFiles::copy(const QString &source, const QString &target) 
     while (!input.atEnd())
     {
         if (cancellation && cancellation->load())
-            return failed("操作已取消", source);
+            return OperationResult::cancel("操作已取消", source);
         const auto bytes = input.read(1024 * 1024);
         if (input.error() != QFile::NoError || output.write(bytes) != bytes.size())
             return failed("读取或写入失败", source);
@@ -209,7 +209,7 @@ OperationResult BackupFiles::fingerprint(const QString &path, bool directory, So
     std::function<OperationResult(const QString &, const QString &)> scan = [&](const QString &current, const QString &relative)
     {
         if (cancellation && cancellation->load())
-            return failed("操作已取消", current);
+            return OperationResult::cancel("操作已取消", current);
         const QFileInfo info(current);
         if (isLink(current))
             return observation ? OperationResult::ok({}) : failed("不支持符号链接或目录联接", current);
@@ -245,7 +245,7 @@ OperationResult BackupFiles::fingerprint(const QString &path, bool directory, So
             while (!file.atEnd())
             {
                 if (cancellation && cancellation->load())
-                    return failed("操作已取消", current);
+                    return OperationResult::cancel("操作已取消", current);
                 const auto bytes = file.read(1024 * 1024);
                 if (file.error() != QFile::NoError)
                     return failed("文件读取失败", current);

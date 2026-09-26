@@ -109,7 +109,7 @@ class BackupService::Private
     OperationResult begin(const JobPtr &job)
     {
         if (job->cancelled->load())
-            return OperationResult::warn("操作已取消", {});
+            return OperationResult::cancel("操作已取消");
         auto result = engine->begin(job->cancelled);
         if (!result.success)
             return result;
@@ -119,7 +119,7 @@ class BackupService::Private
             auto found = std::find_if(records.cbegin(), records.cend(), [&](const BackupRecord &r)
                                       { return r.id == job->id; });
             if (found == records.cend() || found->generation != job->generation)
-                return OperationResult::warn("操作已取消", "追踪对象已删除或重建，请重新打开此页面后再试");
+                return OperationResult::cancel("操作已取消", "追踪对象已删除或重建，请重新打开此页面后再试");
         }
         return result;
     }
@@ -172,7 +172,9 @@ class BackupService::Private
             emit owner->ready();
         }
         emit owner->taskFinished(job->task, job->id, result);
-        foregroundStreak = job->priority == BackupTaskPriority::Background ? 0 : std::min(foregroundStreak + 1, 8);
+        foregroundStreak = job->priority == BackupTaskPriority::Background || backgroundQueue.isEmpty()
+                               ? 0
+                               : std::min(foregroundStreak + 1, 8);
         active.reset();
         publishBusy();
         QTimer::singleShot(0, owner, [this]

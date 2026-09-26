@@ -55,7 +55,7 @@ class BackupMonitor : public QObject
     QTimer m_wakeup;
     State m_state{State::Stopped};
     quint64 m_epoch{0};
-    bool m_restartRequested{false}, m_catalogDirty{false};
+    bool m_restartRequested{false}, m_catalogDirty{false}, m_destroying{false};
     qint64 m_firstCatalogChange{0}, m_lastCatalogChange{0}, m_nextAudit{0}, m_auditRetryAt{0};
     int m_auditFailures{0};
     BackupTaskId m_backupTask{0}, m_reloadTask{0};

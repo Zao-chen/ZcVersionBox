@@ -29,6 +29,7 @@ class BackupSourceWatcher : public QObject
     BackupDirectoryWatcher m_watcher;
     QTimer m_batch, m_rearm;
     int m_batchSize;
+    quint64 m_epoch{0};
     AddPaths m_addPaths;
     QMap<QString, BackupObservationTarget> m_targets;
     QHash<QString, QSet<QString>> m_paths, m_owners;

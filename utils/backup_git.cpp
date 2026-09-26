@@ -19,6 +19,8 @@ GitResult GitRepository::run(const QStringList &args, const QByteArray &input, b
 }
 OperationResult GitRepository::outcome(const GitResult &r, const QString &title)
 {
+    if (r.cancelled)
+        return OperationResult::cancel("操作已取消", r.error);
     return r.success() ? OperationResult::ok({}) : OperationResult::fail(title, r.error);
 }
 OperationResult GitRepository::validate() const

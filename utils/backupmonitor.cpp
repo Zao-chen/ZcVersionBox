@@ -50,7 +50,11 @@ BackupMonitor::BackupMonitor(BackupService *service, QObject *parent, BackupMoni
             report("catalog-watch", OperationResult::warn("备份清单监听不可用", "将继续通过周期审计检查变化：" + path)); });
 }
 
-BackupMonitor::~BackupMonitor() { stop(); }
+BackupMonitor::~BackupMonitor()
+{
+    m_destroying = true;
+    stop();
+}
 
 void BackupMonitor::setState(State state)
 {
@@ -62,7 +66,7 @@ void BackupMonitor::setState(State state)
 
 void BackupMonitor::start()
 {
-    if (!m_service || m_state == State::Running)
+    if (m_destroying || !m_service || m_state == State::Running)
         return;
     if (m_state == State::Stopping)
     {
@@ -137,7 +141,8 @@ void BackupMonitor::reconcile()
     m_catalog.setTargets(targets);
     if (m_scanRequest && !m_scheduler.isCurrent(*m_scanRequest))
         m_scanner.cancel();
-    if (m_backupRequest && !m_scheduler.sameRepository(*m_backupRequest))
+    if (m_backupRequest && (!m_scheduler.sameRepository(*m_backupRequest) ||
+                            m_service->syncState(m_backupRequest->target.id) != BackupSyncState::Tracking))
         m_service->cancel(m_backupTask);
     pump();
 }
@@ -240,6 +245,11 @@ qint64 BackupMonitor::auditDeadline() const
 
 void BackupMonitor::audited(const OperationResult &result, bool notify)
 {
+    if (result.cancelled)
+    {
+        m_nextAudit = m_clock() + m_options.auditIntervalMs;
+        return;
+    }
     if (result.success)
     {
         m_auditFailures = 0;
@@ -258,6 +268,8 @@ void BackupMonitor::audited(const OperationResult &result, bool notify)
 
 void BackupMonitor::report(const QString &id, const OperationResult &result, bool notify)
 {
+    if (result.cancelled)
+        return;
     if (result.success && result.warning.isEmpty())
     {
         m_errors.remove(id);

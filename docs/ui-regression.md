@@ -7,6 +7,11 @@
 | 场景 | 回归证据 |
 | --- | --- |
 | 默认文件范围 | 重构前先运行行为基线：build 单独变化不触发；其他变化触发时复制 build；隐藏文件处理、Git ignore 与副本/提交区别保持 |
+| 监控调度 | 注入时钟验证 500 ms 静默、5 s 最大合并、30 s 完整校验；执行中再次变化、失效快照、轮转、单扫描/单自动备份上限、退避和取消 |
+| 原生文件事件 | 临时目录中的嵌套写入、原子保存、新目录、源目录改名及重建、共享监听、无关/build 事件过滤；登记失败和静默遗漏均由完整校验补偿 |
+| 监控生命周期 | 默认停止、幂等启动/停止、停止后重启、取消 AI 等待、保留手工任务、删除重加旧结果失效、服务与监控分别销毁 |
+| 服务调度和目录 | 同级 FIFO、前台优先、后台等待期间每 8 个前台任务让行；加载状态共享、加载中多个变化合为一次重载、30 s 外部 Git 审计、200 次原子记录保存 |
+| 一万文件 | 100 个目录、10,000 个文件；真实空闲扫描次数、扫描阻塞期间 2,000 次写入、后续自动备份请求数和最大未完成请求数 |
 | 文件、目录、中文、空格、二进制 | 真实临时 Git 仓库，历史、初始 Diff、预览、源恢复与 HEAD 断言 |
 | pull 持久暂停 | 排队备份、源继续编辑、重启、修改地址、重复 pull、取消确认均不能覆盖拉取版本 |
 | 两种解决方式 | 应用到源不额外提交；保留源创建普通后继版本，远端提交保持祖先关系；相同内容不产生空提交 |
@@ -40,6 +45,34 @@
 git diff --check
 ```
 
+BackupMonitor 重构的约定范围是 `backup_core` 整组，以及 `regression` 中相关测试函数：
+
+```powershell
+& 'S:/Qt/Tools/CMake_64/bin/cmake.exe' --build build/backup-core --config Release --target zc_backup_tests zc_tests ZcVersionBox --parallel 4
+& 'S:/Qt/Tools/CMake_64/bin/ctest.exe' --test-dir build/backup-core -C Release -R '^backup_core$' --output-on-failure
+$env:PATH = 'S:/Qt/6.8.3/msvc2022_64/bin;' + $env:PATH
+$env:QT_QPA_PLATFORM = 'offscreen'
+$env:QT_QPA_PLATFORM_PLUGIN_PATH = 'S:/Qt/6.8.3/msvc2022_64/plugins/platforms'
+& ./build/backup-core/Release/zc_tests.exe monitorSurvivesPageRefresh defaultFileSelectionKeepsBuildAndGitIgnoreSemantics automaticAiMessagesAndDeletedContext pullStateActionsRespectConfirmation confirmationsRespectObjectContext asyncControlsAndThemePreserveContext -o ./build/backup-core/monitor-ui-regression.txt,txt
+```
+
+`backup_core` 包含一万文件的完整备份事务，CTest 超时为 600 秒；小范围调试可指定 Qt Test 函数，避免每次运行压力用例。所有时间窗口策略用注入时钟验证；真实文件事件测试只缩短合并时间，不将平台事件延迟当作严格定时保证。原子保存测试在 Windows 使用 `ReplaceFileW`，其他平台使用 QSaveFile；另有持续 QSaveFile 清单保存测试，覆盖监听对应用自有记录的影响。
+
+macOS 在已有 Qt 6.8.3 / arm64 构建目录运行同组 `ctest -R '^backup_core$'`，文件事件及压力用例不以平台条件跳过。可单独验收监听行为：
+
+```bash
+cmake --build build/release --target zc_backup_tests zc_tests --parallel 4
+QT_QPA_PLATFORM=offscreen ./build/release/zc_backup_tests \
+  sourceEventsHandleAtomicSavesNewDirectoriesAndRecreation \
+  sourceWatchesSharePathsAndFilterUnrelatedChanges \
+  rejectedSourceWatchesFallBackToPeriodicContentChecks \
+  missingEventsAreRecoveredAtThePeriodicDeadline \
+  catalogWatchesAllowAtomicRecordReplacement \
+  catalogChangesDuringReloadAreCoalesced \
+  monitorStopRestartDrainsTheOldScan \
+  largeProjectMonitorBoundsEventStorms -o build/release/monitor-macos.txt,txt
+```
+
 CTest 使用 offscreen 平台运行 UI 回归，显式设置 Qt 插件路径并保留文本结果：
 
 - `build/backup-core/tests/regression.txt`
@@ -57,12 +90,30 @@ $env:ZC_TEST_SCREENSHOTS = Join-Path $PWD 'build/backup-core/screenshots'
 
 不同 UI 测试进程应依次运行，避免焦点和剪贴板相互干扰。`QT_SCALE_FACTOR=1.5` 或 `2` 可用于额外 DPI 检查，不改变系统显示设置。
 
+## BackupMonitor 验收步骤
+
+1. 在 `feature/backup-monitor-refactor` 上运行上述约定范围，查看 `backup_core.txt` 和 `monitor-ui-regression.txt`；失败时使用日志中的函数名单独复现。
+2. 以 `sourceEventsHandleAtomicSavesNewDirectoriesAndRecreation` 核对嵌套修改、原子保存、新增目录、源改名及原路径重建；对照仓库内容，旧源目录的内容应保持。
+3. 以 `monitorStopRestartDrainsTheOldScan`、`monitorStopCancelsItsBackupButKeepsManualWork` 和 `monitorCancelsQueuedBackupWhenPullPausesTarget` 核对停止、重启、AI 取消和暂停；迟到结果不能推进旧基线。
+4. 以 `missingEventsAreRecoveredAtThePeriodicDeadline`、`periodicMonitorAuditFindsExternalGitChanges` 核对事件遗漏后的 30 s 完整校验和外部 Git 审计。
+5. 查看 `largeProjectMonitorBoundsEventStorms` 的计数输出：空闲期间无额外扫描，风暴期间不扩张任务队列，全局最多一个尚未完成的自动备份。此用例保留完整备份安全检查，耗时也包含这些检查。
+6. 在 macOS 执行相同隔离用例并保留日志，再验收平台行为。当前功能分支仅本地提交；验收通过前不推送或合并。
+
 ## 本次验证边界
 
-2026-09-25 实际执行 Windows / Qt 6.8.3 / MSVC 2022 x64 Release 完整构建、全部隔离 CTest 和 `git diff --check`，均通过。`zc_tests` 为 23 passed，`zc_backup_tests` 为 55 passed，均为 0 failed、0 skipped；Qt Test 计数包含初始化和清理。两套 CTest 并行执行总用时 116.06 秒，详细结果保留在上述日志。
+2026-09-26 在 Windows 11 / Qt 6.8.3 / MSVC 2022 x64 Release 上复用 `build/backup-core` 增量构建 `zc_backup_tests`、`zc_tests`、`ZcVersionBox`，均成功。
 
-旧 UI 阶段的安装包哈希和本地构建记录已从当前验证说明中移除，避免被误认为本次产物。
+| 实际执行范围 | 结果 | 日志 |
+| --- | --- | --- |
+| `backup_core` 整组 | 79 passed、0 failed、0 skipped；CTest 300.12 s | `build/backup-core/tests/backup_core.txt` |
+| 上述 6 个 UI 回归函数 | 8 passed、0 failed、0 skipped；22.035 s | `build/backup-core/monitor-ui-regression.txt` |
+| 一万文件 / 2,000 次写入 | 空闲 2.1 s 内 0 次额外扫描；风暴产生 2 次扫描、1 个自动备份，最多 1 个未完成备份 | `backup_core.txt` 中的 `largeProjectMonitorBoundsEventStorms` 输出 |
+| 差异及依赖来源检查 | `git diff --check` 通过；上游源码比对仅 Windows 回调文件有记录在案的修改，另新增 `UPSTREAM.md` | 本地差异及 `3rdparty/efsw/UPSTREAM.md` |
 
-未启动读取真实备份的正常应用，未安装或发布。现有 macOS CI 在手动发布工作流中配置了同一套构建和 CTest，目标为 arm64、最低部署版本 12.0，并同时归档两份测试日志。本轮没有执行 macOS 构建或触发该工作流；这些配置不代表 macOS 已通过验收。后续需增加独立的 Windows/macOS PR 构建测试，并补齐大小写规则和可执行权限的专项回归。
+Qt Test 的 passed 计数包含初始化和清理。未运行 `regression` 的无关函数。压力用例从释放扫描到完整备份及后续校验结束为 115.448 s，包含复用引擎的完整复制、SHA-256 和事务安全检查；该数字不是事件监听延迟或吞吐承诺。500 ms、5 s、30 s 的期限另由注入时钟的确定性测试验证。
+
+构建期间 windeployqt 提示当前 shell 未设置 `VCINSTALLDIR`，构建及测试正常完成；本轮没有制作或验证安装包。UI 的 offscreen 插件产生字体目录及 `propagateSizeHints` 提示，相关函数断言全部通过。
+
+未启动读取真实备份的正常应用，未安装、推送或合并。现有 macOS CI 在手动发布工作流中配置同一套构建和 CTest，目标为 arm64、最低部署版本 12.0，并归档两份测试日志。本轮没有 macOS 执行环境，未运行该平台构建或触发远端工作流，不能据此宣称 macOS 已通过验收。Linux 监听后端随 efsw 纳入，但整套应用仍受现有 Windows/macOS AI SDK 限制，未验证 Linux 构建。后续需补齐实际平台验证、大小写规则和可执行权限回归。
 
 以下仍需对应平台或隔离账户验证：真实远程认证与网络故障、Explorer/Finder 入口、自启动、托盘、安装/卸载、原生文件选择框和多显示器 DPI。当前流程不承诺自动崩溃重放，Ignore 产品设计和大目录增量扫描独立跟进，详见 [备份架构](backup-architecture.md)。

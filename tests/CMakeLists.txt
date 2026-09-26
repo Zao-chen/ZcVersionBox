@@ -23,3 +23,5 @@ endfunction()
 
 zc_add_regression(zc_tests regression.cpp regression zc_ui ../res.qrc)
 zc_add_regression(zc_backup_tests backup_core.cpp backup_core zc_services)
+# Includes the isolated 10,000-file source and complete backup safety checks.
+set_tests_properties(backup_core PROPERTIES TIMEOUT 600)

@@ -178,6 +178,15 @@ bool BackupMonitorScheduler::completeBackup(const BackupScanRequest &request, co
     m_backup.reset();
     if (!sameRepository(request))
         return false;
+    if (result.cancelled)
+    {
+        if (isCurrent(request))
+        {
+            auto &entry = m_entries[request.target.id];
+            entry.dirty = entry.immediate = true;
+        }
+        return false;
+    }
     // publish() precedes the completion. A successful write (or a durable pause)
     // changes the snapshot; do not overwrite the freshly reconciled entry.
     if (!isCurrent(request))
