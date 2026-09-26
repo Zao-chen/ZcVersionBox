@@ -1545,6 +1545,8 @@ class Regression : public QObject
                 QVERIFY(window.isVisible());
                 QCOMPARE(window.size(), QSize(1080, 740));
                 capture(QString("page-%1-%2").arg(theme).arg(i));
+                const bool isSettings = routes[i].page == PageId::GeneralSettings || routes[i].page == PageId::AiSettings || routes[i].page == PageId::About;
+                QCOMPARE(window.findChild<QToolButton *>("collapseButton")->isVisible(), !isSettings);
                 if (routes[i].page == PageId::History)
                 {
                     auto *table = window.findChild<HomePageBackupPage *>()->findChild<QTableView *>("table");

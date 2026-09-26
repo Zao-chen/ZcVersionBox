@@ -641,6 +641,7 @@ void MainWindow::displayRoute(const Route &route)
     ui->sidebarStack->setCurrentWidget(settingsMode ? ui->settingsSidebar : ui->applicationSidebar);
     ui->header->setVisible(!settingsMode);
     ui->settingsButton->setVisible(!settingsMode);
+    ui->collapseButton->setVisible(!settingsMode);
     m_actions->addAction()->setEnabled(!settingsMode);
     m_actions->setCurrentBackup(route.backupId);
     QWidget *page = m_list;
