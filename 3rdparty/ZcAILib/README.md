@@ -64,6 +64,9 @@ target_link_libraries(YourApp PRIVATE ZcAiLib::ZcAiLib)
 Add the install prefix to `CMAKE_PREFIX_PATH`. The package is relocatable and
 exports the same `AiProvider.h` spelling as a source build. The example can run
 from a Qt-enabled developer environment; deploy Qt separately when distributing it.
+On Linux with Qt outside the system library directories, add its `lib` directory
+to `LD_LIBRARY_PATH` when running an installed SDK consumer. Application bundles
+can place Qt beside the SDK; its installed runpath is `$ORIGIN`.
 
 CTest exercises shared and static transports against a loopback HTTP fixture
 (models, chat, fragmented UTF-8 SSE, HTTP/JSON errors), checks a TLS backend, and

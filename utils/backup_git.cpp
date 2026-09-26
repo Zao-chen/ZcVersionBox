@@ -13,6 +13,8 @@ GitResult GitRepository::run(const QStringList &args, const QByteArray &input, b
     QStringList command{"--no-pager", "--literal-pathspecs", "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "core.quotePath=false"};
 #ifdef Q_OS_WIN
     command << "-c" << "core.longpaths=true";
+#elif defined(Q_OS_LINUX)
+    command << "-c" << "core.filemode=true";
 #endif
     command += args;
     return m_runner(m_path, command, {timeoutMs, input, cancellable ? m_cancel : nullptr});

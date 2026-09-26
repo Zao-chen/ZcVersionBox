@@ -262,12 +262,6 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
             {
         ui->settingsSearch->setFocus(Qt::ShortcutFocusReason);
         ui->settingsSearch->selectAll(); });
-    connect(new QShortcut(QKeySequence(Qt::Key_Escape), ui->settingsSidebar), &QShortcut::activated, this, [this]
-            {
-        if (!ui->settingsSearch->text().isEmpty())
-            ui->settingsSearch->clear();
-        else
-            returnToApplication(); });
     connect(ui->backupsButton, &QToolButton::clicked, this, [this]
             {
         navigate({});
@@ -280,7 +274,18 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
             { navigate({PageId::History, m_route.backupId}); });
     connect(m_diff, &HomePageDiffPage::titleChanged, ui->diffTitleLabel, &QLabel::setText);
     connect(new QShortcut(QKeySequence(Qt::Key_Escape), this), &QShortcut::activated, this, [this]
-            { if (m_route.page == PageId::Diff) navigate({PageId::History, m_route.backupId}); });
+            {
+        // A single window shortcut avoids ambiguous Escape registrations when
+        // the settings sidebar and the main window are both visible.
+        if (isSettingsPage(m_route.page))
+        {
+            if (!ui->settingsSearch->text().isEmpty())
+                ui->settingsSearch->clear();
+            else
+                returnToApplication();
+        }
+        else if (m_route.page == PageId::Diff)
+            navigate({PageId::History, m_route.backupId}); });
     connect(ui->settingsSearch, &QLineEdit::textChanged, this, &MainWindow::updateSettingsSearch);
     connect(ui->clearSettingsSearchButton, &QPushButton::clicked, ui->settingsSearch, &QLineEdit::clear);
     connect(ui->collapseButton, &QToolButton::clicked, this, &MainWindow::toggleSidebar);
@@ -787,13 +792,17 @@ void MainWindow::restoreWindow()
 }
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    if (m_tray)
+    if (m_tray && QSystemTrayIcon::isSystemTrayAvailable())
     {
         hide();
         event->ignore();
     }
     else
+    {
         QMainWindow::closeEvent(event);
+        if (m_tray)
+            QCoreApplication::quit();
+    }
 }
 void MainWindow::changeEvent(QEvent *event)
 {

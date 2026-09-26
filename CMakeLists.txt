@@ -73,6 +73,7 @@ add_subdirectory("${ZCVERSIONBOX_AI_SDK_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR
 add_library(zc_services STATIC
     GlobalConstants.h
     utils/apppaths.h utils/operationresult.h
+    utils/linuxintegration.h utils/linuxintegration.cpp
     utils/gitcommand.h utils/gitcommand.cpp
     utils/backupservice.h utils/backupservice.cpp
     utils/backupmonitor.h utils/backupmonitor.cpp

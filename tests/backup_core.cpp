@@ -199,6 +199,137 @@ class BackupCoreRegression : public QObject
         qputenv("GIT_CONFIG_GLOBAL", (m_environment.path() + "/gitconfig").toUtf8());
         QVERIFY(runGit({}, {"--version"}).success());
     }
+    void linuxCaseSensitiveNamesAndRename()
+    {
+#ifdef Q_OS_LINUX
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/project";
+        writeFile(source + "/README", "upper");
+        writeFile(source + "/readme", "lower");
+        writeFile(source + "/Old.txt", "renamed");
+        CHECK_OK(service.addLocal(source));
+        const auto id = service.idForSource(source), initial = head(service, id);
+        QVERIFY(QFile::rename(source + "/Old.txt", source + "/old.txt"));
+        CHECK_OK(service.backup(id));
+        QVERIFY(head(service, id) != initial);
+        const auto copy = service.repoPath(id) + "/project";
+        QCOMPARE(readFile(copy + "/README"), QByteArray("upper"));
+        QCOMPARE(readFile(copy + "/readme"), QByteArray("lower"));
+        QVERIFY(!QFileInfo::exists(copy + "/Old.txt"));
+        QCOMPARE(readFile(copy + "/old.txt"), QByteArray("renamed"));
+        CHECK_OK(service.restore(id, initial));
+        QVERIFY(QFileInfo::exists(source + "/Old.txt"));
+        QVERIFY(!QFileInfo::exists(source + "/old.txt"));
+        QCOMPARE(readFile(source + "/README"), QByteArray("upper"));
+        QCOMPARE(readFile(source + "/readme"), QByteArray("lower"));
+#else
+        QSKIP("Linux case-sensitive filesystem");
+#endif
+    }
+    void linuxExecutableChangesTriggerBackupAndRestore()
+    {
+#ifdef Q_OS_LINUX
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/run.sh";
+        writeFile(source, "#!/bin/sh\nexit 0\n");
+        const auto ordinary = QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ReadGroup | QFileDevice::ReadOther;
+        QVERIFY(QFile::setPermissions(source, ordinary));
+        CHECK_OK(service.addLocal(source));
+        const auto id = service.idForSource(source), initial = head(service, id);
+        QVERIFY(git(service.repoPath(id), {"config", "core.filemode", "false"}).success());
+        BackupMonitorOptions options;
+        options.quietPeriodMs = 25;
+        options.maximumCoalesceMs = 100;
+        options.scanIntervalMs = options.auditIntervalMs = 60000;
+        BackupMonitor monitor(&service, nullptr, options);
+        monitor.start();
+        settle(monitor, service);
+        const auto modified = QFileInfo(source).lastModified();
+        QVERIFY(QFile::setPermissions(source, ordinary | QFileDevice::ExeOwner | QFileDevice::ExeGroup | QFileDevice::ExeOther));
+        QCOMPARE(QFileInfo(source).lastModified(), modified);
+        QTRY_VERIFY_WITH_TIMEOUT(head(service, id) != initial, 10000);
+        monitor.stop();
+        settle(monitor, service);
+        const auto executable = head(service, id);
+        QVERIFY(git(service.repoPath(id), {"ls-tree", "HEAD", "--", "run.sh"}).output.startsWith("100755"));
+        CHECK_OK(service.restore(id, initial));
+        QVERIFY(!QFileInfo(source).permission(QFileDevice::ExeOwner));
+        CHECK_OK(service.restore(id, executable));
+        QVERIFY(QFileInfo(source).permission(QFileDevice::ExeOwner));
+#else
+        QSKIP("Linux executable-bit tracking");
+#endif
+    }
+    void linuxPermissionRaceCancelsCapture()
+    {
+#ifdef Q_OS_LINUX
+        TestDirectory dir;
+        const auto source = dir.path() + "/script.sh";
+        writeFile(source, "content");
+        QVERIFY(QFile::setPermissions(source, QFileDevice::ReadOwner | QFileDevice::WriteOwner));
+        FaultFiles files;
+        files.afterCopy = [&](const QString &from, const QString &) {
+            if (from == source)
+                QFile::setPermissions(source, QFile::permissions(source) | QFileDevice::ExeOwner);
+        };
+        SourceFingerprint captured;
+        QVERIFY(!files.capture(source, false, dir.path() + "/snapshot", captured).success);
+#else
+        QSKIP("Linux executable-bit snapshot race");
+#endif
+    }
+    void linuxUnreadableDirectoryPreservesBackup()
+    {
+#ifdef Q_OS_LINUX
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/source", locked = source + "/locked";
+        writeFile(locked + "/important", "keep");
+        CHECK_OK(service.addLocal(source));
+        const auto id = service.idForSource(source), initial = head(service, id);
+        const auto permissions = QFile::permissions(locked);
+        const auto restorePermissions = qScopeGuard([&] { QFile::setPermissions(locked, permissions); });
+        QVERIFY(QFile::setPermissions(locked, {}));
+        if (QFileInfo(locked).isReadable())
+            QSKIP("Run this test as an unprivileged Linux user");
+        QVERIFY(!service.backup(id).success);
+        QCOMPARE(head(service, id), initial);
+        QCOMPARE(readFile(service.repoPath(id) + "/source/locked/important"), QByteArray("keep"));
+#else
+        QSKIP("Linux directory permissions");
+#endif
+    }
+    void linuxLegacyFingerprintRefreshKeepsHistory()
+    {
+#ifdef Q_OS_LINUX
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/file.txt";
+        writeFile(source, "legacy");
+        CHECK_OK(service.addLocal(source));
+        const auto id = service.idForSource(source), initial = head(service, id);
+        BackupCatalog catalog(service.paths());
+        CHECK_OK(catalog.load());
+        auto legacy = *catalog.find(id);
+        for (auto &value : legacy.fingerprint)
+            value = value.section('|', 0, 2);
+        CHECK_OK(catalog.save(legacy));
+        CHECK_OK(service.reload());
+        CHECK_OK(service.backup(id));
+        QCOMPARE(head(service, id), initial);
+        QVERIFY(record(service, id).fingerprint.first().endsWith("|100644"));
+        legacy.state = BackupSyncState::RemotePending;
+        legacy.pendingCommit = initial;
+        CHECK_OK(catalog.save(legacy));
+        CHECK_OK(service.reload());
+        QVERIFY(!service.backup(id).success);
+        QCOMPARE(record(service, id).state, BackupSyncState::RemotePending);
+#else
+        QSKIP("Linux legacy fingerprint refresh");
+#endif
+    }
     void fingerprintReaderAllowsAtomicSourceReplacement()
     {
         TestDirectory dir;

@@ -27,4 +27,8 @@ That query opens the changed file to obtain its identity; it caused concurrent
 QSaveFile record replacements to fail with ERROR_ACCESS_DENIED in the isolated
 200-save test. The application's bounded event adapter and debounce scheduler
 already coalesce events. Removing the query also avoids suppressing same-size,
-same-mtime content edits. No other upstream files are modified.
+same-mtime content edits.
+
+Linux patch: FileWatcherInotify.cpp subscribes to IN_ATTRIB and forwards it as
+Modified. Linux executable-mode changes must reach the application's fingerprint
+checks even when file contents, size and modification time remain unchanged.

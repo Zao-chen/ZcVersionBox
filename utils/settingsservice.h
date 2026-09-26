@@ -2,6 +2,7 @@
 #include "aigateway.h"
 #include "apppaths.h"
 #include "operationresult.h"
+#include "linuxintegration.h"
 #include <QMap>
 #include <QVariant>
 
@@ -9,7 +10,8 @@ class SettingsService : public QObject
 {
     Q_OBJECT
   public:
-    SettingsService(const AppPaths &paths, AiGateway *gateway, QObject *parent = nullptr);
+    SettingsService(const AppPaths &paths, AiGateway *gateway, QObject *parent = nullptr,
+                    LinuxIntegrationPaths systemPaths = LinuxIntegrationPaths::defaults());
     QString provider() const;
     void selectProvider(const QString &name);
     AiConfigHelper::RuntimeConfig config(const QString &provider) const;
@@ -30,6 +32,7 @@ class SettingsService : public QObject
   private:
     AppPaths m_paths;
     AiGateway *m_gateway;
+    LinuxIntegration m_linuxIntegration;
     quint64 m_generation{0};
     bool m_fetching{false};
     void invalidateRequest();

@@ -7,8 +7,8 @@
 #endif
 
 namespace Config = AiConfigHelper;
-SettingsService::SettingsService(const AppPaths &paths, AiGateway *gateway, QObject *parent)
-    : QObject(parent), m_paths(paths), m_gateway(gateway)
+SettingsService::SettingsService(const AppPaths &paths, AiGateway *gateway, QObject *parent, LinuxIntegrationPaths systemPaths)
+    : QObject(parent), m_paths(paths), m_gateway(gateway), m_linuxIntegration(std::move(systemPaths))
 {
     QSettings settings(paths.settingsFile, QSettings::IniFormat);
     Config::migrateLegacySettings(settings);
@@ -154,6 +154,12 @@ OperationResult SettingsService::setSystemOption(const QString &key, bool enable
         setMacServicesProviderEnabled(enabled);
     else if (!setMacAutoStartEnabled(enabled))
         return OperationResult::fail("开机自启设置失败", "无法写入用户 LaunchAgent");
+#elif defined(Q_OS_LINUX)
+    const auto result = key == "AutoStart" ? m_linuxIntegration.setAutoStart(enabled) : m_linuxIntegration.setNautilusScript(enabled);
+    if (!result.success)
+        return result;
+#else
+    return OperationResult::fail("设置失败", "当前平台尚未支持此系统入口");
 #endif
     QSettings settings(m_paths.settingsFile, QSettings::IniFormat);
     settings.setValue(key, enabled);

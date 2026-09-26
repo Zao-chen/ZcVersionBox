@@ -254,7 +254,15 @@ OperationResult BackupFiles::fingerprint(const QString &path, bool directory, So
             const QFileInfo after(current);
             if (info.size() != after.size() || info.lastModified() != after.lastModified())
                 return failed("源内容正在变化，请稍后重试", current);
-            result.insert(relative, QString::number(info.size()) + '|' + QString::number(info.lastModified().toMSecsSinceEpoch()) + '|' + QString::fromLatin1(hash.result().toHex()));
+            auto fingerprint = QString::number(info.size()) + '|' + QString::number(info.lastModified().toMSecsSinceEpoch()) + '|' + QString::fromLatin1(hash.result().toHex());
+#ifdef Q_OS_LINUX
+            // Git records the owner's executable bit (100644 / 100755).
+            // Other permission and ownership metadata are outside Git's model.
+            if (info.permission(QFileDevice::ExeOwner) != after.permission(QFileDevice::ExeOwner))
+                return failed("源文件执行权限正在变化，请稍后重试", current);
+            fingerprint += info.permission(QFileDevice::ExeOwner) ? "|100755" : "|100644";
+#endif
+            result.insert(relative, fingerprint);
         }
         return OperationResult::ok({});
     };

@@ -22,6 +22,10 @@ SettingPage::SettingPage(SettingsService *settings, ThemeController *theme, QWid
     UiStyle::text(ui->themeDescription, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->rightClickDescription, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->autoStartDescription, UiStyle::FontRole::Caption, true);
+#ifdef Q_OS_LINUX
+    ui->rightClickDescription->setText("Nautilus 文件管理器：右键 → 脚本 → 添加到 ZcVersionBox");
+    ui->autoStartDescription->setText("登录 Linux 桌面后自动启动");
+#endif
     auto *themeMode = new oclero::qlementine::SegmentedControl(this);
     themeMode->setObjectName("themeModeControl");
     themeMode->setAccessibleName("主题");

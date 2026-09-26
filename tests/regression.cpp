@@ -48,6 +48,9 @@
 #include <QTextEdit>
 #include <QTextLayout>
 #include <QTimeZone>
+#include <QSystemTrayIcon>
+#include <QSslSocket>
+#include <QImageReader>
 #include <QToolButton>
 #include <QUrl>
 #include <algorithm>
@@ -124,6 +127,137 @@ class Regression : public QObject
         QCoreApplication::setApplicationName("ZcVersionBox tests");
         QCoreApplication::setApplicationVersion("0.1.0");
         m_theme = new ThemeController(nullptr, this);
+    }
+    void desktopIntegrationFilesAreOwnedAndAtomic()
+    {
+        TestDirectory dir;
+        LinuxIntegrationPaths paths{dir.path() + "/config", dir.path() + "/data",
+                                    dir.path() + QStringLiteral("/app's 空格 $`%/ZcVersionBox")};
+        LinuxIntegration integration(paths);
+        const auto startup = paths.configHome + "/autostart/com.zc.versionbox.desktop";
+        const auto script = paths.dataHome + QStringLiteral("/nautilus/scripts/添加到 ZcVersionBox");
+        QVERIFY(integration.setAutoStart(true).success);
+        const auto original = readFile(startup);
+        QVERIFY(original.contains("[Desktop Entry]"));
+        QVERIFY(original.contains("%%"));
+        QVERIFY(original.contains("Icon=zcversionbox"));
+        QVERIFY(integration.setAutoStart(true).success);
+        QCOMPARE(readFile(startup), original);
+        QVERIFY(integration.setNautilusScript(true).success);
+        QVERIFY(readFile(script).contains("--nautilus-add"));
+        QVERIFY(readFile(script).contains(QByteArray("'\\''")));
+#ifdef Q_OS_LINUX
+        QVERIFY(QFileInfo(script).permission(QFileDevice::ExeOwner));
+        QProcess validator;
+        validator.start("desktop-file-validate", {startup});
+        QVERIFY(validator.waitForFinished());
+        QVERIFY2(validator.exitCode() == 0, validator.readAllStandardError().constData());
+#endif
+        QVERIFY(integration.setAutoStart(false).success);
+        QVERIFY(integration.setAutoStart(false).success);
+        QVERIFY(integration.setNautilusScript(false).success);
+        QVERIFY(!QFileInfo::exists(startup));
+        QVERIFY(!QFileInfo::exists(script));
+        writeFile(startup, "user-owned content");
+        QVERIFY(!integration.setAutoStart(true).success);
+        QVERIFY(!integration.setAutoStart(false).success);
+        QCOMPARE(readFile(startup), QByteArray("user-owned content"));
+        const auto blocked = dir.path() + "/blocked";
+        writeFile(blocked, "file, not a directory");
+        LinuxIntegration invalid({blocked, blocked, paths.executable});
+        QVERIFY(!invalid.setAutoStart(true).success);
+        QVERIFY(!invalid.setNautilusScript(true).success);
+        QCOMPARE(readFile(blocked), QByteArray("file, not a directory"));
+        LinuxIntegration newline({paths.configHome, paths.dataHome, paths.executable + '\n'});
+        QVERIFY(!newline.setAutoStart(true).success);
+    }
+    void nautilusSelectionPreservesPaths()
+    {
+        TestDirectory dir;
+        const auto first = dir.path() + QStringLiteral("/中文 空格'100%.txt");
+        const auto second = dir.path() + "/directory";
+        writeFile(first, "first");
+        writeFile(second + "/nested.txt", "second");
+        const auto uris = QUrl::fromLocalFile(first).toEncoded() + '\n' + QUrl::fromLocalFile(second).toEncoded() + '\n';
+        QStringList paths;
+        QVERIFY(LinuxIntegration::nautilusSelection(uris, paths).success);
+        QCOMPARE(paths, QStringList({first, second}));
+        TestBackupService service(pathsIn(dir));
+        for (const auto &path : paths)
+            QVERIFY(service.addLocal(path).success);
+        QCOMPARE(service.trackedItems().size(), 2);
+        QCOMPARE(readFile(first), QByteArray("first"));
+        QCOMPARE(readFile(second + "/nested.txt"), QByteArray("second"));
+        QVERIFY(!LinuxIntegration::nautilusSelection(uris + "sftp://host/private", paths).success);
+        QVERIFY(paths.isEmpty());
+        QVERIFY(!LinuxIntegration::nautilusSelection("file://server/share", paths).success);
+        QVERIFY(!LinuxIntegration::nautilusSelection(QUrl::fromLocalFile(first).toEncoded() + "?query=1", paths).success);
+        QVERIFY(!LinuxIntegration::nautilusSelection("file:///tmp/%00", paths).success);
+        QVERIFY(!LinuxIntegration::nautilusSelection({}, paths).success);
+#ifdef Q_OS_LINUX
+        const auto newline = dir.path() + "/name\nwith-newline";
+        QVERIFY(LinuxIntegration::nautilusSelection(QUrl::fromLocalFile(newline).toEncoded(), paths).success);
+        QCOMPARE(paths, QStringList({newline}));
+#endif
+    }
+    void linuxSystemSettingsKeepFailedState()
+    {
+#ifdef Q_OS_LINUX
+        TestDirectory dir;
+        FakeAi ai;
+        LinuxIntegrationPaths system{dir.path() + "/config", dir.path() + "/data", dir.path() + "/app"};
+        SettingsService settings(pathsIn(dir), &ai, nullptr, system);
+        QVERIFY(settings.setSystemOption("AutoStart", true).success);
+        QVERIFY(settings.value("AutoStart", false).toBool());
+        writeFile(system.configHome + "/autostart/com.zc.versionbox.desktop", "user replacement");
+        QVERIFY(!settings.setSystemOption("AutoStart", false).success);
+        QVERIFY(settings.value("AutoStart", false).toBool());
+        writeFile(system.dataHome, "blocked");
+        QVERIFY(!settings.setSystemOption("RightClickMenu", true).success);
+        QVERIFY(!settings.value("RightClickMenu", false).toBool());
+#else
+        QSKIP("Linux settings adapter");
+#endif
+    }
+    void closingWithoutTrayExitsWindow()
+    {
+        if (QSystemTrayIcon::isSystemTrayAvailable())
+            QSKIP("This scenario requires a desktop without a tray");
+        class QuitFilter : public QObject
+        {
+            bool eventFilter(QObject *, QEvent *event) override { return event->type() == QEvent::Quit; }
+        } filter;
+        qApp->installEventFilter(&filter);
+        TestDirectory dir;
+        FakeAi ai;
+        TestBackupService service(pathsIn(dir));
+        SettingsService settings(pathsIn(dir), &ai);
+        MainWindow window(&service, &settings, &ai, m_theme, true);
+        window.show();
+        QTRY_VERIFY(window.isVisible());
+        QVERIFY(window.close());
+        QVERIFY(!window.isVisible());
+        QCoreApplication::processEvents();
+    }
+    void platformRuntimeSmoke()
+    {
+        const auto expected = qEnvironmentVariable("ZCVERSIONBOX_EXPECTED_QPA");
+        if (!expected.isEmpty())
+            QCOMPARE(QGuiApplication::platformName(), expected);
+        QVERIFY(QSslSocket::supportsSsl());
+        QVERIFY(QImageReader::supportedImageFormats().contains("svg"));
+        TestDirectory dir;
+        FakeAi ai;
+        TestBackupService service(pathsIn(dir));
+        SettingsService settings(pathsIn(dir), &ai);
+        MainWindow window(&service, &settings, &ai, m_theme, false);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        const auto screenshot = window.grab();
+        QVERIFY(!screenshot.isNull());
+        const auto output = qEnvironmentVariable("ZCVERSIONBOX_SMOKE_OUTPUT");
+        if (!output.isEmpty())
+            QVERIFY(screenshot.save(output));
     }
     void typographyUsesThemeRoles()
     {
@@ -1517,7 +1651,12 @@ class Regression : public QObject
         settings.saveField("Model", "test-model");
         window.setAttribute(Qt::WA_DontShowOnScreen);
         window.show();
+#ifdef Q_OS_LINUX
+        // QWindowKit uses client-side title bars for X11 and Wayland.
+        QVERIFY(window.windowFlags().testFlag(Qt::FramelessWindowHint));
+#else
         QVERIFY(!window.windowFlags().testFlag(Qt::FramelessWindowHint));
+#endif
         auto *windowSplitter = window.findChild<QSplitter *>("windowSplitter");
         for (int sidebarWidth : {200, 280, 224})
         {
