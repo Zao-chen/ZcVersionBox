@@ -788,7 +788,7 @@
           <property name="minimumSize">
            <size>
             <width>0</width>
-            <height>48</height>
+            <height>52</height>
            </size>
           </property>
           <layout class="QHBoxLayout" name="headerLayout" stretch="1,0,0">
@@ -796,7 +796,7 @@
             <number>24</number>
            </property>
            <property name="topMargin">
-            <number>8</number>
+            <number>12</number>
            </property>
            <property name="rightMargin">
             <number>8</number>
