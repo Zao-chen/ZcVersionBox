@@ -94,10 +94,10 @@ class HistoryDelegate : public QStyledItemDelegate
         painter->fillRect(opt.rect, opt.palette.base());
         const auto row = QRect(0, opt.rect.y() + 2, m_view->viewport()->width(), opt.rect.height() - 4);
         const bool hover = m_hovered.isValid() && m_hovered.row() == index.row();
-        if (opt.state.testFlag(QStyle::State_Selected) || hover)
+        if (hover)
         {
             painter->setPen(Qt::NoPen);
-            painter->setBrush(opt.state.testFlag(QStyle::State_Selected) ? colors.selected : colors.hover);
+            painter->setBrush(colors.hover);
             painter->drawRoundedRect(row, 6, 6);
         }
         if (UiStyle::isKeyboardNavigationActive() && m_view->hasFocus() && m_view->currentIndex().row() == index.row())
@@ -117,8 +117,7 @@ class HistoryDelegate : public QStyledItemDelegate
                     {
                         painter->setPen(Qt::NoPen);
                         const bool pressed = m_actionPress && m_pressed.row() == index.row() && m_pressedAction == action;
-                        painter->setBrush(pressed ? colors.separator : opt.state.testFlag(QStyle::State_Selected) ? colors.hover
-                                                                                                                  : colors.selected);
+                        painter->setBrush(pressed ? colors.separator : colors.selected);
                         painter->drawRoundedRect(rect, 6, 6);
                     }
                     m_icons[action].paint(painter, QRect(rect.center() - QPoint(8, 8), QSize(16, 16)));
@@ -169,7 +168,6 @@ class HistoryDelegate : public QStyledItemDelegate
                         m_pressed = event->type() == QEvent::MouseButtonPress ? index.siblingAtColumn(0) : QModelIndex{};
                         m_pressedAction = action;
                         m_view->setCurrentIndex(index.siblingAtColumn(0));
-                        m_view->selectionModel()->select(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
                         m_view->setFocus(Qt::MouseFocusReason);
                         updateRow(index);
                         return true; // A painted action must not also activate the table row.
@@ -254,7 +252,7 @@ class HistoryDelegate : public QStyledItemDelegate
     }
     bool actionsVisible(const QModelIndex &index) const
     {
-        return index.isValid() && !m_editorOpen && ((m_hovered.isValid() && m_hovered.row() == index.row()) || (m_view->hasFocus() && m_view->currentIndex().row() == index.row()));
+        return index.isValid() && !m_editorOpen && ((m_hovered.isValid() && m_hovered.row() == index.row()) || (UiStyle::isKeyboardNavigationActive() && m_view->hasFocus() && m_view->currentIndex().row() == index.row()));
     }
     int hitAction(const QModelIndex &index, const QPoint &position) const
     {
@@ -301,6 +299,7 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     ui->table->setAccessibleDescription("按 Enter 对比版本，Alt+P 预览，Shift+F10 打开版本菜单，F2 编辑说明。");
     UiStyle::flatView(ui->table);
     ui->table->setEditTriggers(QAbstractItemView::EditKeyPressed);
+    ui->table->setSelectionMode(QAbstractItemView::NoSelection);
     ui->table->setSelectionBehavior(QAbstractItemView::SelectRows);
     auto *delegate = new HistoryDelegate(ui->table, [this]
                                          { m_editing = true; }, [this](const QModelIndex &index, RevisionAction action, const QPoint &position)
@@ -513,7 +512,6 @@ void HomePageBackupPage::showRevisionMenu(const RevisionContext &context, const 
     if (!index.isValid())
         return;
     ui->table->setCurrentIndex(index);
-    ui->table->selectionModel()->select(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     auto *menu = new QMenu(this);
     menu->setObjectName("revisionMenu");
     m_revisionMenu = menu;
@@ -546,8 +544,8 @@ void HomePageBackupPage::closeRevisionMenu()
 }
 QString HomePageBackupPage::selectedCommit() const
 {
-    const auto rows = ui->table->selectionModel()->selectedRows();
-    return rows.isEmpty() ? QString() : rows.first().data(CommitRole).toString();
+    const auto index = ui->table->currentIndex();
+    return index.isValid() ? index.siblingAtColumn(0).data(CommitRole).toString() : QString();
 }
 void HomePageBackupPage::updateActions()
 {
@@ -631,7 +629,7 @@ void HomePageBackupPage::refresh()
     ui->emptyLabel->setVisible(revisions.isEmpty());
     ui->table->setVisible(!revisions.isEmpty());
     if (!revisions.isEmpty())
-        ui->table->selectRow(selectedRow);
+        ui->table->setCurrentIndex(m_model.index(selectedRow, 0));
     ui->table->verticalScrollBar()->setValue(state.scroll);
     QTimer::singleShot(0, this, [this, state, request]
                        {
