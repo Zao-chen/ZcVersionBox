@@ -173,6 +173,10 @@ class HistoryDelegate : public QStyledItemDelegate
                         return true; // A painted action must not also activate the table row.
                     }
                 }
+                else if (mouse->button() == Qt::RightButton)
+                {
+                    return true;
+                }
             }
             else if (event->type() == QEvent::MouseButtonRelease)
             {
