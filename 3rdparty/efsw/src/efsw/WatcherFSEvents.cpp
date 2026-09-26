@@ -1,0 +1,280 @@
+#include <efsw/Debug.hpp>
+#include <efsw/FileSystem.hpp>
+#include <efsw/FileWatcherFSEvents.hpp>
+#include <efsw/WatcherFSEvents.hpp>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+
+#if EFSW_PLATFORM == EFSW_PLATFORM_FSEVENTS
+
+namespace efsw {
+
+WatcherFSEvents::WatcherFSEvents() : Watcher(), FWatcher( NULL ), WatcherGen( NULL ) {}
+
+WatcherFSEvents::~WatcherFSEvents() {
+	if ( NULL != DirectoryRef )
+		CFRelease( DirectoryRef );
+
+	efSAFE_DELETE( WatcherGen );
+}
+
+bool WatcherFSEvents::init() {
+	DirectoryRef =
+		CFStringCreateWithCString( kCFAllocatorDefault, Directory.c_str(), kCFStringEncodingUTF8 );
+	if ( NULL == DirectoryRef )
+		return false;
+
+	if ( !FileWatcherFSEvents::isGranular() ) {
+		WatcherGen = new WatcherGeneric( ID, Directory, Listener, FWatcher.load(), Recursive,
+										 ReportCrossDirectoryMoves );
+	}
+
+	return true;
+}
+
+bool WatcherFSEvents::handlesPath( const std::string& path ) const {
+	return path.size() > Directory.size() && 0 == path.compare( 0, Directory.size(), Directory );
+}
+
+void WatcherFSEvents::sendFileAction( WatchID watchid, const std::string& dir,
+									  const std::string& filename, Action action,
+									  const std::string& oldFilename ) {
+	Listener->handleFileAction( watchid, FileSystem::precomposeFileName( dir ),
+								FileSystem::precomposeFileName( filename ), action,
+								FileSystem::precomposeFileName( oldFilename ) );
+}
+
+void WatcherFSEvents::sendMissedFileActions( WatchID watchid, const std::string& dir ) {
+	Listener->handleMissedFileActions( watchid, FileSystem::precomposeFileName( dir ) );
+}
+
+void WatcherFSEvents::handleAddModDel( const Uint32& flags, const std::string& path,
+									   std::string& dirPath, std::string& filePath, Uint64 inode ) {
+	if ( ( flags & efswFSEventStreamEventFlagItemCreated ) && FileInfo::exists( path ) &&
+		 ( !SanitizeEvents || FilesAdded.find( inode ) != FilesAdded.end() ) ) {
+		sendFileAction( ID, dirPath, filePath, Actions::Add );
+
+		if ( SanitizeEvents )
+			FilesAdded.insert( inode );
+	}
+
+	if ( flags & ModifiedFlags ) {
+		sendFileAction( ID, dirPath, filePath, Actions::Modified );
+	}
+
+	if ( ( flags & efswFSEventStreamEventFlagItemRemoved ) && !FileInfo::exists( path ) ) {
+		// Since i don't know the order, at least i try to keep the data consistent with the real
+		// state
+		sendFileAction( ID, dirPath, filePath, Actions::Delete );
+
+		if ( SanitizeEvents )
+			FilesAdded.erase( inode );
+	}
+}
+
+bool WatcherFSEvents::findPathByInode( Uint64 inode, const std::string& excludedPath,
+									   std::string& foundPath ) {
+	struct stat directoryStat;
+	if ( 0 != stat( Directory.c_str(), &directoryStat ) )
+		return false;
+
+	char fileReference[128];
+	int length = snprintf( fileReference, sizeof( fileReference ), "/.vol/%llu/%llu",
+						   static_cast<unsigned long long>( directoryStat.st_dev ),
+						   static_cast<unsigned long long>( inode ) );
+	if ( length < 0 || static_cast<size_t>( length ) >= sizeof( fileReference ) )
+		return false;
+
+	char resolvedPath[PATH_MAX];
+	if ( NULL == realpath( fileReference, resolvedPath ) || excludedPath == resolvedPath )
+		return false;
+
+	// File IDs are volume-scoped. Also ensure that a resolved ID belongs to this logical watch.
+	if ( 0 != strncmp( resolvedPath, Directory.c_str(), Directory.size() ) )
+		return false;
+
+	foundPath.assign( resolvedPath );
+	return true;
+}
+
+void WatcherFSEvents::handleActions( std::vector<FSEvent>& events ) {
+	handleActions( events, events.size() );
+}
+
+void WatcherFSEvents::handleActions( std::vector<FSEvent>& events, size_t eventCount ) {
+	size_t esize = eventCount;
+
+	for ( size_t i = 0; i < esize; i++ ) {
+		FSEvent& event = events[i];
+
+		if ( event.Flags &
+			 ( kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped |
+			   kFSEventStreamEventFlagMustScanSubDirs ) ) {
+			efDEBUG( "Rescan/Drop event for watch: %s - flags: 0x%x\n", Directory.c_str(),
+					 event.Flags );
+			std::string dirPath = Directory;
+			FileSystem::dirRemoveSlashAtEnd( dirPath );
+			sendMissedFileActions( ID, dirPath );
+			continue;
+		}
+
+		if ( event.Flags &
+			 ( kFSEventStreamEventFlagEventIdsWrapped | kFSEventStreamEventFlagHistoryDone |
+			   kFSEventStreamEventFlagMount | kFSEventStreamEventFlagUnmount |
+			   kFSEventStreamEventFlagRootChanged ) ) {
+			continue;
+		}
+
+		// Ignore events for the watched directory itself or outside of it
+		if ( event.Path.length() < Directory.length() || event.Path.find( Directory ) != 0 ||
+			 event.Path == Directory ) {
+			continue;
+		}
+
+		if ( !Recursive ) {
+			/** In case that is not recursive the watcher, ignore the events from subfolders */
+			if ( event.Path.find_last_of( FileSystem::getOSSlash() ) != Directory.size() - 1 ) {
+				continue;
+			}
+		}
+
+		if ( FileWatcherFSEvents::isGranular() ) {
+			std::string dirPath( FileSystem::pathRemoveFileName( event.Path ) );
+			std::string filePath( FileSystem::fileNameFromPath( event.Path ) );
+
+			if ( event.Flags &
+				 ( efswFSEventStreamEventFlagItemCreated | efswFSEventStreamEventFlagItemRemoved |
+				   efswFSEventStreamEventFlagItemRenamed ) ) {
+				if ( dirPath != Directory ) {
+					DirsChanged.insert( dirPath );
+				}
+			}
+
+			// This is a mess. But it's FSEvents faults, because shrinks events from the same file
+			// in one single event ( so there's no order for them ) For example a file could have
+			// been added modified and erased, but i can't know if first was erased and then added
+			// and modified, or added, then modified and then erased. I don't know what they were
+			// thinking by doing this...
+			efDEBUG( "Event in: %s - flags: 0x%x\n", event.Path.c_str(), event.Flags );
+
+			if ( event.Flags & efswFSEventStreamEventFlagItemRenamed ) {
+				if ( ( i + 1 < esize ) &&
+					 ( events[i + 1].Flags & efswFSEventStreamEventFlagItemRenamed ) &&
+					 event.inode != 0 && ( events[i + 1].inode == event.inode ) ) {
+					FSEvent& nEvent = events[i + 1];
+					std::string newDir( FileSystem::pathRemoveFileName( nEvent.Path ) );
+					std::string newFilepath( FileSystem::fileNameFromPath( nEvent.Path ) );
+
+					if ( event.Path != nEvent.Path ) {
+						bool eventExists = FileInfo::exists( event.Path );
+						bool nextEventExists = FileInfo::exists( nEvent.Path );
+						if ( dirPath == newDir ) {
+							if ( !FileInfo::exists( event.Path ) ||
+								 0 == strcasecmp( event.Path.c_str(), nEvent.Path.c_str() ) ) {
+								sendFileAction( ID, dirPath, newFilepath, Actions::Moved,
+												filePath );
+							} else {
+								sendFileAction( ID, dirPath, filePath, Actions::Moved,
+												newFilepath );
+							}
+						} else if ( ReportCrossDirectoryMoves && Recursive &&
+									eventExists != nextEventExists ) {
+							FSEvent& source = eventExists ? nEvent : event;
+							FSEvent& destination = eventExists ? event : nEvent;
+							std::string destinationDir(
+								FileSystem::pathRemoveFileName( destination.Path ) );
+							std::string destinationFile(
+								FileSystem::fileNameFromPath( destination.Path ) );
+
+							sendFileAction( ID, destinationDir, destinationFile, Actions::Moved,
+											source.Path );
+						} else {
+							FSEvent& source = eventExists && !nextEventExists ? nEvent : event;
+							FSEvent& destination = eventExists && !nextEventExists ? event : nEvent;
+							std::string sourceDir( FileSystem::pathRemoveFileName( source.Path ) );
+							std::string sourceFile( FileSystem::fileNameFromPath( source.Path ) );
+							std::string destinationDir(
+								FileSystem::pathRemoveFileName( destination.Path ) );
+							std::string destinationFile(
+								FileSystem::fileNameFromPath( destination.Path ) );
+
+							sendFileAction( ID, sourceDir, sourceFile, Actions::Delete );
+							sendFileAction( ID, destinationDir, destinationFile, Actions::Add );
+
+							if ( destination.Flags & ModifiedFlags ) {
+								sendFileAction( ID, destinationDir, destinationFile,
+												Actions::Modified );
+							}
+						}
+					} else if ( ReportCrossDirectoryMoves && Recursive &&
+								!FileInfo::exists( event.Path ) ) {
+						std::string destinationPath;
+						if ( findPathByInode( event.inode, event.Path, destinationPath ) ) {
+							std::string sourceDir( FileSystem::pathRemoveFileName( event.Path ) );
+							std::string destinationDir(
+								FileSystem::pathRemoveFileName( destinationPath ) );
+							std::string oldFilename =
+								sourceDir == destinationDir
+									? FileSystem::fileNameFromPath( event.Path )
+									: event.Path;
+							sendFileAction( ID, FileSystem::pathRemoveFileName( destinationPath ),
+											FileSystem::fileNameFromPath( destinationPath ),
+											Actions::Moved, oldFilename );
+						} else {
+							handleAddModDel( nEvent.Flags, nEvent.Path, dirPath, filePath,
+											 event.inode );
+						}
+					} else {
+						handleAddModDel( nEvent.Flags, nEvent.Path, dirPath, filePath,
+										 event.inode );
+					}
+
+					if ( nEvent.Flags & ( efswFSEventStreamEventFlagItemCreated |
+										  efswFSEventStreamEventFlagItemRemoved |
+										  efswFSEventStreamEventFlagItemRenamed ) ) {
+						if ( newDir != Directory ) {
+							DirsChanged.insert( newDir );
+						}
+					}
+
+					// Skip the renamed file
+					i++;
+				} else if ( FileInfo::exists( event.Path ) ) {
+					sendFileAction( ID, dirPath, filePath, Actions::Add );
+
+					if ( event.Flags & ModifiedFlags ) {
+						sendFileAction( ID, dirPath, filePath, Actions::Modified );
+					}
+				} else {
+					sendFileAction( ID, dirPath, filePath, Actions::Delete );
+				}
+			} else {
+				handleAddModDel( event.Flags, event.Path, dirPath, filePath, event.inode );
+			}
+		} else {
+			efDEBUG( "Directory: %s changed\n", event.Path.c_str() );
+			DirsChanged.insert( event.Path );
+		}
+	}
+}
+
+void WatcherFSEvents::process() {
+	std::unordered_set<std::string>::iterator it = DirsChanged.begin();
+
+	for ( ; it != DirsChanged.end(); it++ ) {
+		if ( !FileWatcherFSEvents::isGranular() ) {
+			WatcherGen->watchDir( ( *it ) );
+		} else {
+			sendFileAction( ID, FileSystem::pathRemoveFileName( ( *it ) ),
+							FileSystem::fileNameFromPath( ( *it ) ), Actions::Modified );
+		}
+	}
+
+	DirsChanged.clear();
+}
+
+} // namespace efsw
+
+#endif

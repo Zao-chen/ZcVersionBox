@@ -20,6 +20,7 @@ struct OperationResult
     QString path;
     int duration{3000};
     NotificationLevel level{NotificationLevel::Error};
+    bool cancelled{false};
 
     static OperationResult ok(const QString &title, const QString &message = {}, int duration = 2500)
     {
@@ -36,6 +37,12 @@ struct OperationResult
     static OperationResult info(const QString &title, const QString &message, int duration = 3000)
     {
         return {true, title, message, {}, {}, duration, NotificationLevel::Information};
+    }
+    static OperationResult cancel(const QString &title, const QString &message = {})
+    {
+        auto result = warn(title, message);
+        result.cancelled = true;
+        return result;
     }
 };
 Q_DECLARE_METATYPE(OperationResult)

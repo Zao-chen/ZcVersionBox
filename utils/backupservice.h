@@ -17,20 +17,21 @@ class BackupService : public QObject
     ~BackupService() override;
     const AppPaths &paths() const;
     QVector<TrackedItem> trackedItems() const;
+    QVector<BackupObservationTarget> observationTargets() const;
     QString sourcePath(const QString &id) const;
     QString repoPath(const QString &id) const;
     QString idForSource(const QString &source) const;
     bool contains(const QString &id) const;
     bool isReady() const;
+    bool isReloading() const;
     bool isBusy() const;
     quint64 repositoryGeneration(const QString &id) const;
     BackupSyncState syncState(const QString &id) const;
     QString pendingCommit(const QString &id) const;
 
-    BackupTaskId reload(QObject *context = nullptr, Completion callback = {});
+    BackupTaskId reload(QObject *context = nullptr, Completion callback = {}, BackupReloadOptions options = {});
     BackupTaskId addLocal(const QString &source, QObject *context, Completion callback = {});
-    BackupTaskId backup(const QString &id, QObject *context, Completion callback = {}, bool changedOnly = false);
-    BackupTaskId observe(const QString &id, QObject *context, Reply<bool> callback);
+    BackupTaskId backup(const QString &id, QObject *context, Completion callback = {}, BackupRequestOptions options = {});
     BackupTaskId statistics(const QString &id, QObject *context, Reply<BackupStats> callback);
     BackupTaskId history(const QString &id, QObject *context, Reply<QVector<Revision>> callback);
     BackupTaskId diff(const QString &id, const QString &commit, QObject *context, Reply<DiffData> callback);
@@ -56,6 +57,7 @@ class BackupService : public QObject
   signals:
     void notification(const OperationResult &result);
     void ready();
+    void reloadFinished(const OperationResult &result);
     void trackedItemsChanged();
     void repositoryChanged(const QString &id);
     void repositoryInvalidated(const QString &id);

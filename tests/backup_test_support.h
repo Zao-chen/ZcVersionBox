@@ -1,6 +1,7 @@
 #pragma once
 #include "utils/aigateway.h"
 #include "utils/backup_catalog.h"
+#include "utils/backupmonitor.h"
 #include "utils/backupservice.h"
 #include <QTemporaryDir>
 #include <QTest>
@@ -37,6 +38,26 @@ inline void settle(BackupService &service)
         qFatal("Backup queue did not settle");
     QCoreApplication::processEvents();
 }
+inline void settle(BackupMonitor &monitor, BackupService &service)
+{
+    QCoreApplication::processEvents();
+    if (!QTest::qWaitFor([&]
+                         { return monitor.isIdle() && !service.isBusy(); }, 30000))
+        qFatal("Monitor did not settle");
+    QCoreApplication::processEvents();
+}
+inline BackupScanResult scanSource(const BackupObservationTarget &target)
+{
+    BackupSourceScanner scanner;
+    std::optional<BackupScanResult> result;
+    QObject::connect(&scanner, &BackupSourceScanner::finished, &scanner, [&](const BackupScanResult &reply)
+                     { result = reply; });
+    scanner.scan({target, 1, 1});
+    if (!QTest::qWaitFor([&]
+                         { return result.has_value(); }, 30000))
+        qFatal("Source scan did not settle");
+    return *result;
+}
 inline QString testBackupId(const QString &source)
 {
     auto path = BackupCatalog::normalizedSource(source);
@@ -71,11 +92,6 @@ class TestBackupService : public BackupService
     {
         return awaitBackup<OperationResult>([&](auto f)
                                             { BackupService::backup(id, this, f); });
-    }
-    BackupResult<bool> observe(const QString &id)
-    {
-        return awaitBackup<BackupResult<bool>>([&](auto f)
-                                               { BackupService::observe(id, this, f); });
     }
     OperationResult statistics(const QString &id, BackupStats &out)
     {

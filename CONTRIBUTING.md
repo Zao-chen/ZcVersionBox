@@ -5,9 +5,11 @@
 - Qt 6.8.3：Widgets、Network、Svg；运行回归测试还需要 Qt Test。
 - Windows：Visual Studio 2022 的 MSVC x64 工具链。
 - macOS：Xcode Command Line Tools，最低部署版本 12.0；仓库自带的 AI SDK 仅支持 arm64。
-- CMake 3.21 或更新版本、Git 2.29 或更新版本。使用 Ninja 生成器时另需 Ninja。
+- CMake 3.27 或更新版本、Git 2.29 或更新版本。使用 Ninja 生成器时另需 Ninja。
 
 Qlementine v1.4.2 源码已固定纳入 `3rdparty/qlementine`，提交为 `13f72eb8b53bafd9ac24e5562d8ddc28d5440469`，通过静态库链接，配置阶段不下载依赖。来源、MIT 许可证和字体许可证见其 `UPSTREAM.md`、`LICENSE`、`LICENSES`。`ZcAILib` 保留为仓库内的预编译 AI SDK，不使用项目父目录中的依赖。
+
+文件监听使用静态链接的 efsw 1.7.2，源码固定在 `3rdparty/efsw`，不增加运行时 DLL 或构建时下载。提交、MIT 许可证及 Windows 事件去重补丁见其 `UPSTREAM.md`、`LICENSE`。监听库支持 Windows、macOS、Linux；当前整套应用的 Linux 构建仍受现有 AI SDK 平台范围限制。
 
 ## 构建与测试
 

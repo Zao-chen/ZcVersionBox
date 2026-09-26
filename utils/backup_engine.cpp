@@ -210,23 +210,6 @@ OperationResult BackupEngine::addLocal(const QString &source)
     m_generations[r.id] = r.generation;
     return OperationResult::ok("添加成功", "已将文件添加至版本控制");
 }
-BackupResult<bool> BackupEngine::changed(const QString &id)
-{
-    auto r = require(id);
-    if (!r.result.success)
-        return {r.result};
-    if (r.value.state == BackupSyncState::Tracking)
-    {
-        r = require(id, true);
-        if (!r.result.success)
-            return {r.result};
-    }
-    SourceFingerprint now;
-    const auto result = m_dependencies.files->fingerprint(r.value.sourcePath, r.value.directory, now);
-    if (!result.success)
-        return {result};
-    return {OperationResult::ok({}), now != r.value.fingerprint && r.value.state == BackupSyncState::Tracking};
-}
 BackupResult<std::shared_ptr<PendingBackup>> BackupEngine::prepareBackup(const QString &id, bool changedOnly, const RestoreRequest *resolution)
 {
     auto checked = require(id, true, resolution != nullptr);
@@ -236,7 +219,7 @@ BackupResult<std::shared_ptr<PendingBackup>> BackupEngine::prepareBackup(const Q
     if (resolution)
     {
         if (!resolution->pulledVersion || resolution->id != id)
-            return {OperationResult::warn("操作已取消", "拉取确认上下文无效")};
+            return {OperationResult::cancel("操作已取消", "拉取确认上下文无效")};
         const auto verified = verifyRequest(*resolution, r);
         if (!verified.success)
             return {verified};
@@ -268,7 +251,7 @@ BackupResult<std::shared_ptr<PendingBackup>> BackupEngine::prepareBackup(const Q
     auto git = repository(id);
     result = git.clean();
     if (!result.success || git.head().value != work->head)
-        return {OperationResult::warn("操作已取消", "准备副本期间仓库发生变化")};
+        return {OperationResult::cancel("操作已取消", "准备副本期间仓库发生变化")};
     r.operation = "backup";
     r.recoveryPaths = {work->replacement->recoveryPath()};
     result = m_catalog.save(r);
@@ -330,7 +313,10 @@ OperationResult BackupEngine::abortBackup(const std::shared_ptr<PendingBackup> &
     }
     auto saved = m_catalog.save(work->before);
     if (!saved.success)
+    {
         failure.warning = saved.message;
+        failure.cancelled = false;
+    }
     return failure;
 }
 OperationResult BackupEngine::finishBackup(std::shared_ptr<PendingBackup> work, const QString &message, bool cancelled)
@@ -340,7 +326,7 @@ OperationResult BackupEngine::finishBackup(std::shared_ptr<PendingBackup> work, 
     if (!work)
         return OperationResult::ok({});
     if (cancelled || (m_cancel && m_cancel->load()))
-        return abortBackup(work, OperationResult::warn("备份已取消", "已保留上一次同步副本"));
+        return abortBackup(work, OperationResult::cancel("备份已取消", "已保留上一次同步副本"));
     auto git = repository(work->before.id);
     auto index = git.stagedState(work->before.repositoryPath);
     if (git.head().value != work->head || !index.result.success || index.value != work->indexState || !git.run({"diff", "--quiet"}).success() || !work->replacement->verifyInstalled().success)

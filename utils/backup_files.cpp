@@ -6,6 +6,11 @@
 #include <QTemporaryDir>
 #include <filesystem>
 #include <functional>
+#ifdef Q_OS_WIN
+#include <fcntl.h>
+#include <io.h>
+#include <qt_windows.h>
+#endif
 
 namespace
 {
@@ -62,7 +67,7 @@ BackupResult<QStringList> BackupFiles::children(const QString &path) const
     while (!error && it != end)
     {
         if (cancellation && cancellation->load())
-            return {failed("操作已取消", path)};
+            return {OperationResult::cancel("操作已取消", path)};
 #ifdef Q_OS_WIN
         result.append(QDir::fromNativeSeparators(QString::fromStdWString(it->path().wstring())));
 #else
@@ -89,7 +94,7 @@ bool BackupFiles::overlaps(const QString &first, const QString &second)
 OperationResult BackupFiles::copy(const QString &source, const QString &target) const
 {
     if (cancellation && cancellation->load())
-        return failed("操作已取消", source);
+        return OperationResult::cancel("操作已取消", source);
     if (hasLinkedAncestor(source) || hasLinkedAncestor(target))
         return failed("不支持复制符号链接或目录联接，未遍历链接目标", source);
     const QFileInfo info(source);
@@ -123,7 +128,7 @@ OperationResult BackupFiles::copy(const QString &source, const QString &target) 
     while (!input.atEnd())
     {
         if (cancellation && cancellation->load())
-            return failed("操作已取消", source);
+            return OperationResult::cancel("操作已取消", source);
         const auto bytes = input.read(1024 * 1024);
         if (input.error() != QFile::NoError || output.write(bytes) != bytes.size())
             return failed("读取或写入失败", source);
@@ -164,16 +169,47 @@ OperationResult BackupFiles::remove(const QString &path) const
     QFile::setPermissions(path, QFile::permissions(path) | QFileDevice::WriteOwner);
     return QFile::remove(path) ? OperationResult::ok({}) : failed("无法删除文件", path);
 }
-OperationResult BackupFiles::fingerprint(const QString &path, bool directory, SourceFingerprint &result, bool observation) const
+bool BackupFiles::openForFingerprint(QFile &file)
+{
+#ifdef Q_OS_WIN
+    // Qt 6's normal QFile reader denies deletion on Windows. A background hash
+    // must not prevent an editor's atomic save or a restore's source replacement.
+    auto path = QDir::toNativeSeparators(QFileInfo(file.fileName()).absoluteFilePath());
+    if (!path.startsWith(QStringLiteral("\\\\?\\")))
+        path = path.startsWith(QStringLiteral("\\\\")) ? QStringLiteral("\\\\?\\UNC\\") + path.mid(2) : QStringLiteral("\\\\?\\") + path;
+    const auto handle = CreateFileW(reinterpret_cast<const wchar_t *>(path.utf16()), GENERIC_READ,
+                                    FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                                    FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        return false;
+    const int descriptor = _open_osfhandle(reinterpret_cast<intptr_t>(handle), _O_RDONLY | _O_BINARY);
+    if (descriptor < 0)
+    {
+        CloseHandle(handle);
+        return false;
+    }
+    if (file.open(descriptor, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle))
+        return true;
+    _close(descriptor);
+    return false;
+#else
+    return file.open(QIODevice::ReadOnly);
+#endif
+}
+
+OperationResult BackupFiles::fingerprint(const QString &path, bool directory, SourceFingerprint &result, bool observation,
+                                         QStringList *visitedPaths) const
 {
     result.clear();
+    if (visitedPaths)
+        visitedPaths->clear();
     const QFileInfo root(path);
     if (hasLinkedAncestor(path) || !root.exists() || root.isDir() != directory || (!directory && !root.isFile()) || !root.isReadable())
         return failed("源不存在、不可读或类型已改变", path);
     std::function<OperationResult(const QString &, const QString &)> scan = [&](const QString &current, const QString &relative)
     {
         if (cancellation && cancellation->load())
-            return failed("操作已取消", current);
+            return OperationResult::cancel("操作已取消", current);
         const QFileInfo info(current);
         if (isLink(current))
             return observation ? OperationResult::ok({}) : failed("不支持符号链接或目录联接", current);
@@ -181,6 +217,8 @@ OperationResult BackupFiles::fingerprint(const QString &path, bool directory, So
             return failed("无法读取完整源内容", current);
         if (info.isDir())
         {
+            if (visitedPaths)
+                visitedPaths->append(current);
             const auto listed = children(current);
             if (!listed.result.success)
                 return listed.result;
@@ -202,12 +240,12 @@ OperationResult BackupFiles::fingerprint(const QString &path, bool directory, So
                 return failed("不支持的文件类型", current);
             QFile file(current);
             QCryptographicHash hash(QCryptographicHash::Sha256);
-            if (!file.open(QIODevice::ReadOnly))
+            if (!openForFingerprint(file))
                 return failed("文件读取失败", current);
             while (!file.atEnd())
             {
                 if (cancellation && cancellation->load())
-                    return failed("操作已取消", current);
+                    return OperationResult::cancel("操作已取消", current);
                 const auto bytes = file.read(1024 * 1024);
                 if (file.error() != QFile::NoError)
                     return failed("文件读取失败", current);

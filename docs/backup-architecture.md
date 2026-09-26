@@ -7,7 +7,11 @@ ZcVersionBox 为选定的普通文件或文件夹建立独立同步副本，再�
 ```mermaid
 flowchart LR
     UI[既有 Qt 页面] --> Service[BackupService]
-    Monitor[BackupMonitor] --> Service
+    Watcher[BackupSourceWatcher / efsw] -->|变化提示| Monitor[BackupMonitor]
+    Monitor --> Policy[BackupMonitorScheduler]
+    Monitor -->|只读检查| Scanner[BackupSourceScanner]
+    Scanner -->|独立工作线程| ScanFiles[独立 BackupFiles / SHA-256]
+    Monitor -->|后台备份 / 清单审计| Service
     Service -->|后台串行任务| Engine[BackupEngine]
     Service -->|异步提交说明| AI[AiGateway]
     Engine --> Catalog[BackupCatalog]
@@ -18,19 +22,57 @@ flowchart LR
 
 | 模块 | 职责 |
 | --- | --- |
-| `utils/backupservice.*` | 应用级串行队列、工作线程、任务 ID、取消、异步完成、AI 等待、内存快照和通知 |
+| `utils/backupservice.*` | 前台/后台串行队列、工作线程、任务 ID、取消、异步完成、AI 等待、版本化内存快照和加载状态 |
 | `utils/backup_engine.*` | 仅在工作线程执行的添加、备份、恢复、远程同步、分歧解决、导入、删除和重建用例 |
 | `utils/backup_catalog.*` | UUID、路径映射、仓库代次、持久状态、成功基线和未完成标记；QSaveFile 原子保存 |
 | `utils/backup_git.*` | 普通 Git 命令、完整提交身份、历史/Diff、实际分支与 upstream、detached worktree 导出 |
 | `utils/gitcommand.*` | 进程、二进制输出、错误、超时、取消；去除会重定向 Git 存储的继承环境变量 |
 | `utils/backup_files.*` | 观察/复制策略、指纹、候选副本、同卷替换、回滚与路径安全 |
-| `utils/backupmonitor.*` | 1.5 秒周期、请求合并、失败退避和条目目录监控；只向服务申请操作 |
+| `utils/backupmonitor.*` | 生命周期、组件连接、后台清单/仓库审计、通知去重；自动写入只向服务申请 |
+| `utils/backupmonitor_scheduler.*` | 不依赖 QObject、文件系统或服务的调度策略；可注入时钟、事件合并、轮转、期限及退避 |
+| `utils/backupmonitor_scanner.*` | 独立线程及文件访问对象，完整枚举和 SHA-256 检查，返回带快照版本的强类型结果 |
+| `utils/backupmonitor_watcher.*` | 源路径与条目映射、共享目录引用、父目录锚点、分批登记及覆盖恢复 |
+| `utils/backupmonitor_directorywatcher.*` | efsw 的 Qt 适配，平台原生事件、监听合并、队列内去重、溢出及删除/改名失效处理 |
+| `utils/backupmonitor_catalog.*` | `items` 和 `record.json` 变化监听；过滤锁文件、暂存目录和 Git 内部事件 |
 | `utils/backup_types.h` | 与 UI 无关的状态、记录、版本、导入选择、恢复确认和强类型结果 |
 | `utils/backup_dependencies.h` | 注入 Git、文件操作、保存、UUID 和 AI 超时，供隔离故障测试使用 |
 
 服务不依赖窗口、Designer、展示模型或 Qlementine。耗时接口返回 `BackupTaskId`，以 `BackupResult<T>` 或 `OperationResult` 完成。列表、路径、代次和状态来自内存快照，不运行 Git。页面绑定对象 ID、仓库代次和请求代次，丢弃过期结果；恢复与 pull 解决还校验确认时的源内容。
 
 AI 提交说明异步请求，默认 15 秒超时后使用普通自动说明。等待期间 UI 事件循环保持响应，当前备份仍占有串行队列与进程锁。生产代码没有嵌套事件循环等待 AI，也没有第二条写仓库的通道。
+
+## 事件、检查与服务调度
+
+默认变化安静 500 ms 后检查，连续事件最多合并 5 s。每个条目在完整检查完成 30 s 后再次检查，启动、源快照变化和恢复正常追踪时立即检查。事件只表明需要复查，完整指纹仍包含路径、大小、修改时间及 SHA-256。扫描器拥有独立 `BackupFiles` 和取消标记，不调用 Git，不拿存储锁，也不改变服务忙态。
+
+`observationTargets()` 返回 ID、源路径/类型、仓库代次、同步状态、成功指纹和仅存在内存中的版本号。版本在记录变化时递增，未变化的重载不递增。扫描请求携带快照版本、唯一令牌和变化版本；过期或取消的结果不能申请备份。扫描及备份期间的新事件保留为下一次检查，完成回调不清除后来产生的变化。备份实际执行前仍由引擎重读持久状态和源内容，只有成功事务推进基线。
+
+每个条目只保留一个检查/备份意图；全局最多一个扫描、一个尚未完成的自动备份，其余条目轮转。`backup` 使用 `BackupRequestOptions { changedOnly, priority }`，`reload` 使用 `BackupReloadOptions`。页面默认前台，监控备份和审计为后台；同级 FIFO，前台优先，后台等待期间每完成 8 个前台任务让一个后台任务执行。运行中的事务及 AI 等待不被抢占，忙态覆盖整个服务队列，不在连续任务之间闪烁。
+
+监控构造后为 `Stopped`，由应用显式 `start()`。生命周期为 `Stopped → Running → Stopping → Stopped`；重复启动/停止幂等。停止只取消本监控的扫描、自动备份及重载；运行中的写入由引擎完成保护性收尾。停止过程中请求启动会等待旧任务结束。删除、重建、停止和销毁使旧结果失效。取消有独立结果标记，不用中文提示文字判断，也不计为失败；普通失败采用 1.5–60 s 指数退避，相同错误去重。
+
+`RemotePending`、`NeedsAttention` 继续观察源并暂停自动写入；排队的自动备份遇到暂停会取消，恢复 `Tracking` 后立即完整检查。服务统一管理目录加载状态；启动等待已有加载，不重复发起启动重载。加载期间的目录变化合并为一次后续重载。每 30 s 安排一次后台清单及 Git 仓库审计，以发现外部提交、暂存及工作区修改。
+
+扫描同时收集符合观察规则的目录，Qt 线程每批最多登记 256 个逻辑路径。目录事件覆盖其中的普通及隐藏文件，不为每个文件长期持有句柄。源的父目录或最近存在的祖先用于检测原子保存、删除重建及改名；同一路径由多个条目共享，最后一个引用移除才释放。新登记结束后补查一次，覆盖枚举与监听生效之间的间隙。登记失败每个条目提示一次，继续周期检查；成功恢复后可报告下一次独立故障。
+
+Windows/macOS 使用 efsw 递归原生监听，并合并被祖先覆盖的监听；Linux 按后台枚举结果逐目录非递归登记，避免 inotify 重叠注册。递归后端也在 Qt 投递前按逻辑目录过滤事件；单个原生监听积压超过 256 条不同路径时合并为整个监听范围的复查和重新登记。原生溢出通知同样处理，独立完整校验补偿没有通知的事件遗漏。
+
+### 跨平台监听库选择
+
+2026-09-26 核实了以下上游资料。根据用户补充要求，本次将原先的 Qt 原生监听方案调整为固定版本 efsw，Qt 继续负责应用线程、信号、定时器及生命周期。
+
+| 候选 | 上游证据及取舍 |
+| --- | --- |
+| [efsw 1.7.2](https://github.com/SpartanJ/efsw/tree/1.7.2) | 采用。MIT、C++11 起、无第三方运行时依赖；Windows IOCP、macOS FSEvents、Linux inotify，以及 BSD/kqueue；提供事件遗漏回调。所取源码约 0.5 MB，静态链接。 |
+| [Filewatch](https://github.com/ThomasMonkman/filewatch/blob/master/README.md) | 单头文件很轻，但官方 README 的支持范围是 Windows/Linux，未覆盖本项目必需的 macOS。 |
+| [libuv](https://docs.libuv.org/en/v1.x/fs_event.html) | 成熟且跨平台；文件事件只是整个异步 I/O 库的一部分，递归标志只支持 Windows/macOS，Linux 仍需调用方管理目录。 |
+| [fswatch/libfswatch](https://github.com/emcrisostomo/fswatch/blob/master/README.md) | 支持多平台和递归；上游 Windows 推荐 MSYS2/MinGW，CMake 支持非正式，与当前 MSVC 工具链的集成成本较高。 |
+
+efsw 固定提交、档案 SHA-256、许可证及本地补丁见 [UPSTREAM.md](../3rdparty/efsw/UPSTREAM.md)。上游 1.7.2 提交日期为 2026-08-29。保留一个 Windows 小补丁：移除通过 `FileInfo` 打开变更文件进行大小/时间去重的两处代码，交由应用合并事件。该临时文件句柄会使并发 QSaveFile 替换失败；元数据去重也会掩盖同大小、同时间的内容变化。其他上游源码不改动。
+
+Windows 目录监听使用共享删除，并避免持有子目录句柄，否则父目录仍不能改名。指纹读取也允许共享删除，隔离测试使用 `ReplaceFileW` 验证读者存活期间的原子替换。Windows 的 `MoveFileEx`/QSaveFile 替换和祖先目录改名仍可能被正在读取的子文件短暂阻止；事件监听不能改变这项文件系统限制。扫描取消、退避和周期校验负责恢复检查，不承诺所有编辑器在并发读写时都能完成原子保存。
+
+监听层支持 Windows、macOS、Linux；当前整套应用仍只有 Windows/macOS 的预编译 AI SDK，Linux 应用构建不是本次已完成的平台移植。
 
 ## 存储与身份
 
@@ -96,7 +138,7 @@ pull 与备份串行，要求工作区和暂存区干净。使用实际分支和
 
 ## 执行与失败边界
 
-每个任务使用存储级 `QLockFile`，正常应用与右键入口不能同时写存储；被占用时返回可重试结果。监控只监听 `items`，避免自身锁文件变化触发重载循环。失败从 1.5 秒退避到最多 60 秒，重复相同错误不反复通知。
+每个服务任务使用存储级 `QLockFile`，正常应用与右键入口不能同时写存储；被占用时返回可重试结果。独立源扫描不获取该锁。清单监听覆盖 `items` 和记录文件，以目录条目、记录元数据及记录事件识别变化，过滤自身锁文件和仓库内部噪声，避免重载循环。
 
 普通备份流程：
 
@@ -118,7 +160,7 @@ pull 与备份串行，要求工作区和暂存区干净。使用实际分支和
 
 - Ignore 的产品范围、配置与 UI 单独设计，不能借策略抽象改变默认 build 行为。
 - 自动崩溃恢复独立评估；当前是保留材料、报告和人工检查。
-- 大目录目前在后台周期读取指纹，后续可据实际性能数据增加增量扫描或系统监控。
+- 大目录已有事件合并和 30 秒完整校验；进一步的增量指纹缓存需依据性能数据独立评估。
 - 符号链接、目录联接和 Git 子模块尚不支持；空目录等仍受普通 Git 能力约束。
 - 部分路径比较目前仅区分 Windows 与其他平台，macOS 需按磁盘实际的大小写规则补齐实现与回归。
 - 文件复制保留权限，但源指纹尚未包含权限；仅修改脚本可执行位不会触发自动备份，需要补充实现与跨平台测试。

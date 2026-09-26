@@ -21,6 +21,8 @@ macdeployqt "$app" -always-overwrite -verbose=1
 licenses="$app/Contents/Resources/licenses"
 mkdir -p "$licenses"
 cp "$project_root/3rdparty/qlementine/LICENSE" "$licenses/Qlementine.txt"
+cp "$project_root/3rdparty/efsw/LICENSE" "$licenses/efsw.txt"
+cp "$project_root/3rdparty/efsw/UPSTREAM.md" "$licenses/efsw-upstream.md"
 cp "$project_root/3rdparty/qlementine/UPSTREAM.md" "$licenses/"
 cp "$project_root/3rdparty/qlementine/LICENSES/"*.txt "$licenses/"
 cp "$project_root/LICENSE" "$licenses/ZcVersionBox.txt"
