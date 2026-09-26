@@ -59,31 +59,16 @@ function(zc_add_file_watcher)
 endfunction()
 zc_add_file_watcher()
 
-add_library(ZcAiLib SHARED IMPORTED GLOBAL)
-set_target_properties(ZcAiLib PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/include"
-    INTERFACE_LINK_LIBRARIES "Qt6::Core;Qt6::Network")
-if(WIN32)
-    set_target_properties(ZcAiLib PROPERTIES
-        IMPORTED_IMPLIB "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/lib/ZcAiLib.lib"
-        IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/bin/ZcAiLib.dll")
-elseif(APPLE)
-    set(ZCAI_RUNTIME "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib/lib/libZcAiLib.dylib")
-    set_target_properties(ZcAiLib PROPERTIES IMPORTED_LOCATION "${ZCAI_RUNTIME}")
-    execute_process(COMMAND lipo -archs "${ZCAI_RUNTIME}" OUTPUT_VARIABLE ZCAI_ARCHS OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
-    if(CMAKE_OSX_ARCHITECTURES)
-        set(REQUIRED_ARCHS ${CMAKE_OSX_ARCHITECTURES})
-    else()
-        set(REQUIRED_ARCHS ${CMAKE_SYSTEM_PROCESSOR})
-    endif()
-    foreach(arch IN LISTS REQUIRED_ARCHS)
-        if(NOT " ${ZCAI_ARCHS} " MATCHES " ${arch} ")
-            message(FATAL_ERROR "ZcAiLib lacks ${arch}; available: ${ZCAI_ARCHS}. Supply a matching SDK before packaging.")
-        endif()
-    endforeach()
-else()
-    message(FATAL_ERROR "This repository ships the AI SDK for Windows and macOS only")
+set(ZCVERSIONBOX_AI_SDK_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib"
+    CACHE PATH "ZcAILib 0.2.0 source directory (defaults to the offline snapshot)")
+if(NOT EXISTS "${ZCVERSIONBOX_AI_SDK_SOURCE_DIR}/CMakeLists.txt")
+    message(FATAL_ERROR "ZCVERSIONBOX_AI_SDK_SOURCE_DIR must contain the ZcAILib source project")
 endif()
+set(ZCAILIB_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(ZCAILIB_BUILD_STATIC OFF CACHE BOOL "" FORCE)
+set(ZCAILIB_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(ZCAILIB_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory("${ZCVERSIONBOX_AI_SDK_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/zcailib" EXCLUDE_FROM_ALL)
 
 add_library(zc_services STATIC
     GlobalConstants.h
@@ -107,7 +92,7 @@ add_library(zc_services STATIC
     utils/aiconfighelper.h utils/aiconfighelper.cpp
     utils/aicommitmessagehelper.h utils/aicommitmessagehelper.cpp)
 target_include_directories(zc_services PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(zc_services PUBLIC Qt6::Core Qt6::Network ZcAiLib)
+target_link_libraries(zc_services PUBLIC Qt6::Core Qt6::Network ZcAiLib::ZcAiLib)
 target_link_libraries(zc_services PRIVATE efsw)
 if(APPLE)
     target_sources(zc_services PRIVATE macos/macos_services.h macos/macos_services.mm)
@@ -161,7 +146,7 @@ if(APPLE)
         INSTALL_RPATH "@executable_path/../Frameworks")
     add_custom_command(TARGET ZcVersionBox POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ZcVersionBox>/../Frameworks"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ZCAI_RUNTIME}" "$<TARGET_FILE_DIR:ZcVersionBox>/../Frameworks/libZcAiLib.1.dylib")
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:ZcAiLib>" "$<TARGET_FILE_DIR:ZcVersionBox>/../Frameworks/$<TARGET_SONAME_FILE_NAME:ZcAiLib>")
 endif()
 include(GNUInstallDirs)
 install(TARGETS ZcVersionBox BUNDLE DESTINATION . RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})

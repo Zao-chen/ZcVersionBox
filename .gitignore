@@ -53,8 +53,5 @@ Thumbs.db
 !3rdparty/qlementine/lib/
 !3rdparty/qlementine/lib/**
 
-# Keep the remaining prebuilt AI SDK in the repository for offline builds.
-!3rdparty/ZcAILib/lib/
-!3rdparty/ZcAILib/lib/**
-!3rdparty/ZcAILib/bin/
-!3rdparty/ZcAILib/bin/**
+# Historical local SDK binaries/headers are not build inputs.
+3rdparty/ZcAILib/include/

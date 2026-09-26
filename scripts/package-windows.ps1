@@ -12,7 +12,7 @@ if (!(Test-Path -LiteralPath $executable)) { throw "Missing build: $executable" 
 if (Test-Path -LiteralPath $payload) { throw "Packaging requires a new, empty output path: $payload" }
 New-Item -ItemType Directory -Path $payload | Out-Null
 Copy-Item -LiteralPath $executable -Destination $payload
-Copy-Item -LiteralPath "$projectRoot/3rdparty/ZcAILib/bin/ZcAiLib.dll" -Destination $payload
+Copy-Item -LiteralPath (Join-Path (Split-Path -Parent $executable) 'ZcAiLib.dll') -Destination $payload
 
 $deploy = (Get-Command windeployqt.exe -ErrorAction Stop).Source
 & $deploy --release --compiler-runtime --no-translations (Join-Path $payload 'ZcVersionBox.exe') (Join-Path $payload 'ZcAiLib.dll')
@@ -26,6 +26,8 @@ if ($forbidden) { throw "Unexpected runtime in package: $($forbidden.Name -join 
 $licenses = New-Item -ItemType Directory -Path (Join-Path $payload 'licenses')
 Copy-Item -LiteralPath "$projectRoot/3rdparty/qlementine/LICENSE" -Destination (Join-Path $licenses.FullName 'Qlementine.txt')
 Copy-Item -LiteralPath "$projectRoot/3rdparty/efsw/LICENSE" -Destination (Join-Path $licenses.FullName 'efsw.txt')
+Copy-Item -LiteralPath "$projectRoot/3rdparty/ZcAILib/LICENSE" -Destination (Join-Path $licenses.FullName 'ZcAILib.txt')
+Copy-Item -LiteralPath "$projectRoot/3rdparty/ZcAILib/UPSTREAM.md" -Destination (Join-Path $licenses.FullName 'ZcAILib-upstream.md')
 Copy-Item -LiteralPath "$projectRoot/3rdparty/efsw/UPSTREAM.md" -Destination (Join-Path $licenses.FullName 'efsw-upstream.md')
 Copy-Item -LiteralPath "$projectRoot/3rdparty/qlementine/UPSTREAM.md" -Destination $licenses.FullName
 Get-ChildItem -LiteralPath "$projectRoot/3rdparty/qlementine/LICENSES" -File |

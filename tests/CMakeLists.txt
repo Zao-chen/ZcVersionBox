@@ -8,7 +8,7 @@ function(zc_add_regression target source name dependency)
     if(WIN32)
         add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:ZcAiLib>" "$<TARGET_FILE_DIR:${target}>")
-    else()
+    elseif(APPLE)
         set_target_properties(${target} PROPERTIES BUILD_RPATH "@loader_path")
         add_custom_command(TARGET ${target} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:ZcAiLib>" "$<TARGET_FILE_DIR:${target}>/libZcAiLib.1.dylib")

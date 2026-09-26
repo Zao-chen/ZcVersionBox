@@ -1,4 +1,6 @@
-# Keep release shell scripts usable after a Windows checkout.
+* text=auto
 *.sh text eol=lf
-# Preserve the byte-for-byte vendored upstream source and font files.
-3rdparty/qlementine/** -text
+*.yml text eol=lf
+*.cmake text eol=lf
+*.cmake.in text eol=lf
+*.desktop text eol=lf

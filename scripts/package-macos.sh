@@ -13,7 +13,7 @@ app="$output_dir/ZcVersionBox.app"
 cp -R "$build_dir/ZcVersionBox.app" "$app"
 frameworks="$app/Contents/Frameworks"
 mkdir -p "$frameworks"
-cp "$project_root/3rdparty/ZcAILib/lib/libZcAiLib.dylib" "$frameworks/libZcAiLib.1.dylib"
+[[ -f "$frameworks/libZcAiLib.1.dylib" ]] || { echo 'Built AI SDK missing from bundle'; exit 1; }
 install_name_tool -id '@rpath/libZcAiLib.1.dylib' "$frameworks/libZcAiLib.1.dylib"
 # Copy the SDK before deployment so its QtNetwork dependency is also resolved.
 macdeployqt "$app" -always-overwrite -verbose=1
@@ -22,6 +22,8 @@ licenses="$app/Contents/Resources/licenses"
 mkdir -p "$licenses"
 cp "$project_root/3rdparty/qlementine/LICENSE" "$licenses/Qlementine.txt"
 cp "$project_root/3rdparty/efsw/LICENSE" "$licenses/efsw.txt"
+cp "$project_root/3rdparty/ZcAILib/LICENSE" "$licenses/ZcAILib.txt"
+cp "$project_root/3rdparty/ZcAILib/UPSTREAM.md" "$licenses/ZcAILib-upstream.md"
 cp "$project_root/3rdparty/efsw/UPSTREAM.md" "$licenses/efsw-upstream.md"
 cp "$project_root/3rdparty/qlementine/UPSTREAM.md" "$licenses/"
 cp "$project_root/3rdparty/qlementine/LICENSES/"*.txt "$licenses/"
