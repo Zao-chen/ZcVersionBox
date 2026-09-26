@@ -243,7 +243,7 @@ QFont font(FontRole role)
     case FontRole::Title:
     {
         auto result = theme.fontBold;
-        result.setPointSizeF(result.pointSizeF() * 13. / 14.);
+        result.setPointSizeF(result.pointSizeF() * 15. / 14.);
         return result;
     }
     case FontRole::Caption:
