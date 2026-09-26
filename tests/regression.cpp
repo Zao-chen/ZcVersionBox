@@ -816,6 +816,19 @@ class Regression : public QObject
         QTest::mouseDClick(table->viewport(), Qt::LeftButton, {}, rowPoint);
         QCOMPARE(routes.count(), 2);
         QCOMPARE(qvariant_cast<Route>(routes.last().first()).commit, first);
+
+        // A right click on a row opens the revision menu and does not activate/navigate.
+        QTest::mouseClick(table->viewport(), Qt::RightButton, {}, rowPoint);
+        QCOMPARE(routes.count(), 2);
+        QContextMenuEvent rightClick(QContextMenuEvent::Mouse, rowPoint, table->viewport()->mapToGlobal(rowPoint));
+        QApplication::sendEvent(table->viewport(), &rightClick);
+        QTRY_VERIFY(QApplication::activePopupWidget());
+        auto *contextMenu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+        QVERIFY(contextMenu);
+        QCOMPARE(contextMenu->objectName(), QString("revisionMenu"));
+        contextMenu->close();
+        QTRY_VERIFY(!QApplication::activePopupWidget());
+        QCOMPARE(routes.count(), 2);
         table->setFocus();
         QTest::keyClick(table, Qt::Key_Return);
         QCOMPARE(routes.count(), 3);

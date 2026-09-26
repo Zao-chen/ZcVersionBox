@@ -174,10 +174,10 @@ class HistoryDelegate : public QStyledItemDelegate
                     }
                 }
             }
-            else if (event->type() == QEvent::MouseButtonRelease && m_actionPress)
+            else if (event->type() == QEvent::MouseButtonRelease)
             {
                 const auto *mouse = static_cast<QMouseEvent *>(event);
-                if (mouse->button() == Qt::LeftButton)
+                if (m_actionPress && mouse->button() == Qt::LeftButton)
                 {
                     const auto pressed = m_pressed;
                     const int action = m_pressedAction;
@@ -190,6 +190,8 @@ class HistoryDelegate : public QStyledItemDelegate
                         m_action(index, static_cast<RevisionAction>(action), m_view->viewport()->mapToGlobal(actionRect(m_view->visualRect(index.siblingAtColumn(ActionsColumn)), action).bottomLeft()));
                     return true;
                 }
+                if (mouse->button() == Qt::RightButton)
+                    return true;
             }
             else if (event->type() == QEvent::ToolTip)
             {

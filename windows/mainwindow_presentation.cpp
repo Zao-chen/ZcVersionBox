@@ -24,6 +24,7 @@
 #include <QShortcut>
 #include <QStyleOptionToolButton>
 #include <QStyleHints>
+#include <QTableView>
 #include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -109,6 +110,16 @@ class AppStyle final : public QlementineStyle
                 }
             }
         }
+    }
+    int styleHint(StyleHint hint, const QStyleOption *option = nullptr, const QWidget *widget = nullptr,
+                  QStyleHintReturn *returnData = nullptr) const override
+    {
+        if (hint == SH_ItemView_ActivateItemOnSingleClick)
+        {
+            if (qobject_cast<const QTableView *>(widget) || (widget && qobject_cast<const QTableView *>(widget->parentWidget())))
+                return 0;
+        }
+        return QlementineStyle::styleHint(hint, option, widget, returnData);
     }
     void polish(QWidget *widget) override
     {
