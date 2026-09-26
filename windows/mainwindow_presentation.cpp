@@ -30,6 +30,8 @@
 #include <oclero/qlementine/style/QlementineStyle.hpp>
 #include <oclero/qlementine/style/Theme.hpp>
 #include <oclero/qlementine/utils/IconUtils.hpp>
+#include <oclero/qlementine/utils/PrimitiveUtils.hpp>
+#include <oclero/qlementine/utils/StateUtils.hpp>
 #include <oclero/qlementine/widgets/Label.hpp>
 #include <oclero/qlementine/widgets/Popover.hpp>
 
@@ -95,6 +97,31 @@ class AppStyle final : public QlementineStyle
                 return;
         }
         QlementineStyle::drawPrimitive(element, option, painter, widget);
+        if (element == PE_FrameButtonBevel)
+        {
+            if (const auto *optButton = qstyleoption_cast<const QStyleOptionButton *>(option))
+            {
+                if (!optButton->features.testFlag(QStyleOptionButton::Flat))
+                {
+                    const bool dark = theme().backgroundColorMain1.lightness() < 128;
+                    const auto mouse = getMouseState(optButton->state);
+                    QColor borderColor;
+                    if (optButton->state.testFlag(QStyle::State_Enabled))
+                    {
+                        if (mouse == MouseState::Hovered || mouse == MouseState::Pressed)
+                            borderColor = dark ? QColor(0x4C, 0x4C, 0x54) : QColor(0xCE, 0xCE, 0xD4);
+                        else
+                            borderColor = dark ? QColor(0x3E, 0x3E, 0x44) : QColor(0xD8, 0xD8, 0xDC);
+                    }
+                    else
+                    {
+                        borderColor = dark ? QColor(0x33, 0x33, 0x37) : QColor(0xE5, 0xE5, 0xE5);
+                    }
+                    const auto radius = theme().borderRadius;
+                    drawRoundedRectBorder(painter, optButton->rect, borderColor, 1.0, radius);
+                }
+            }
+        }
     }
     void polish(QWidget *widget) override
     {
