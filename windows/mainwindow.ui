@@ -947,34 +947,6 @@
             </widget>
            </item>
            <item>
-            <widget class="QToolButton" name="diffTab">
-             <property name="text">
-              <string>版本对比</string>
-             </property>
-             <property name="toolTip">
-              <string>版本对比</string>
-             </property>
-             <property name="accessibleName">
-              <string>版本对比</string>
-             </property>
-             <property name="autoRaise">
-              <bool>true</bool>
-             </property>
-             <property name="focusPolicy">
-              <enum>Qt::TabFocus</enum>
-             </property>
-             <property name="minimumSize">
-              <size>
-               <width>28</width>
-               <height>32</height>
-              </size>
-             </property>
-             <property name="checkable">
-              <bool>true</bool>
-             </property>
-            </widget>
-           </item>
-           <item>
             <spacer name="tabsSpace">
              <property name="orientation">
               <enum>Qt::Horizontal</enum>

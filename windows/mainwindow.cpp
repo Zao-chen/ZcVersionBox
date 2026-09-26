@@ -125,7 +125,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     m_windowAgent->setHitTestVisible(ui->collapseButton, true);
     m_windowAgent->setHitTestVisible(ui->backButton, true);
     m_windowAgent->setHitTestVisible(ui->forwardButton, true);
-    for (auto *button : {ui->historyTab, ui->overviewTab, ui->diffTab, ui->generalTab, ui->aiTab, ui->aboutTab,
+    for (auto *button : {ui->historyTab, ui->overviewTab, ui->generalTab, ui->aiTab, ui->aboutTab,
                          ui->backupsButton, ui->settingsButton, ui->returnApplicationButton,
                          ui->addSidebarButton, ui->collapseButton, ui->backButton, ui->forwardButton,
                          ui->moreButton, ui->appMenuButton})
@@ -269,14 +269,12 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     connect(ui->clearSettingsSearchButton, &QPushButton::clicked, ui->settingsSearch, &QLineEdit::clear);
     connect(ui->collapseButton, &QToolButton::clicked, this, &MainWindow::toggleSidebar);
     const QList<QPair<QToolButton *, PageId>> tabs{
-        {ui->historyTab, PageId::History}, {ui->overviewTab, PageId::Dashboard}, {ui->diffTab, PageId::Diff}, {ui->generalTab, PageId::GeneralSettings}, {ui->aiTab, PageId::AiSettings}, {ui->aboutTab, PageId::About}};
+        {ui->historyTab, PageId::History}, {ui->overviewTab, PageId::Dashboard}, {ui->generalTab, PageId::GeneralSettings}, {ui->aiTab, PageId::AiSettings}, {ui->aboutTab, PageId::About}};
     for (const auto &[button, page] : tabs)
     {
         button->setAutoExclusive(true);
         connect(button, &QToolButton::clicked, this, [this, page]
                 {
-            if (page == PageId::Diff)
-                return; // This tab describes the current comparison.
             navigate(isObjectPage(page) ? Route{page, m_route.backupId} : Route{page}); });
     }
     connect(ui->moreButton, &QToolButton::clicked, this, [this]
@@ -671,13 +669,12 @@ void MainWindow::displayRoute(const Route &route)
     ui->forwardButton->setEnabled(m_navigation.canForward());
     ui->backupsButton->setChecked(route.page == PageId::Backups);
     ui->settingsButton->setChecked(isSettingsPage(route.page));
-    ui->tabs->setVisible(isObjectPage(route.page));
-    for (auto *button : {ui->historyTab, ui->overviewTab})
-        button->setVisible(isObjectPage(route.page));
-    ui->diffTab->setVisible(route.page == PageId::Diff);
+    const bool showTabs = (route.page == PageId::History || route.page == PageId::Dashboard);
+    ui->tabs->setVisible(showTabs);
+    ui->historyTab->setVisible(showTabs);
+    ui->overviewTab->setVisible(showTabs);
     ui->historyTab->setChecked(route.page == PageId::History);
     ui->overviewTab->setChecked(route.page == PageId::Dashboard);
-    ui->diffTab->setChecked(route.page == PageId::Diff);
     ui->generalTab->setChecked(route.page == PageId::GeneralSettings);
     ui->aiTab->setChecked(route.page == PageId::AiSettings);
     ui->aboutTab->setChecked(route.page == PageId::About);
