@@ -154,7 +154,6 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         if (ui->sidebar->width() >= 200)
             m_sidebarWidth = ui->sidebar->width();
         updateHeaderLayout(); });
-    ui->sidebarLayout->setContentsMargins(0, 0, 0, 0);
     m_sidebarAnimation = new QVariantAnimation(this);
     m_sidebarAnimation->setEasingCurve(QEasingCurve::OutCubic);
     connect(m_sidebarAnimation, &QVariantAnimation::valueChanged, this, [this](const QVariant &value)
