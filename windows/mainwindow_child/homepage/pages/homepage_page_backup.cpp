@@ -328,8 +328,6 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     ui->table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     ui->table->horizontalHeader()->setMinimumSectionSize(64);
     UiStyle::text(ui->table->horizontalHeader(), UiStyle::FontRole::Caption, true);
-    UiStyle::text(ui->countLabel, UiStyle::FontRole::Caption, true);
-    UiStyle::text(ui->hintLabel, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->emptyLabel, UiStyle::FontRole::Body, true);
     m_compare = UiStyle::action(this, "compareAction", "对比", "compare");
     m_preview = UiStyle::action(this, "previewAction", "预览", "preview");
@@ -570,7 +568,6 @@ void HomePageBackupPage::refresh()
     const auto id = m_id;
     const auto generation = m_service->repositoryGeneration(id);
     const auto request = ++m_refreshGeneration;
-    ui->countLabel->setText("正在读取历史…");
     updateActions();
     m_service->history(id, this, [this, id, generation, request](const BackupResult<QVector<Revision>> &reply)
                        {
@@ -625,7 +622,6 @@ void HomePageBackupPage::refresh()
     ui->table->setColumnWidth(2, qCeil(QFontMetricsF(UiStyle::font(UiStyle::FontRole::Code), ui->table->viewport()).horizontalAdvance("00000000")) + 24);
     ui->table->setColumnWidth(ActionsColumn, ActionsWidth);
     ui->table->setColumnHidden(2, width() < 640);
-    ui->countLabel->setText(QString("%1 个版本").arg(revisions.size()));
     ui->emptyLabel->setVisible(revisions.isEmpty());
     ui->table->setVisible(!revisions.isEmpty());
     if (!revisions.isEmpty())
@@ -643,7 +639,6 @@ void HomePageBackupPage::resizeEvent(QResizeEvent *event)
     const int margin = width() < 640 ? 16 : 24;
     ui->pageLayout->setContentsMargins(margin, 12, margin, 16);
     ui->table->setColumnHidden(2, width() < 640);
-    ui->hintLabel->setVisible(width() >= 640);
 }
 void HomePageBackupPage::hideEvent(QHideEvent *event)
 {
