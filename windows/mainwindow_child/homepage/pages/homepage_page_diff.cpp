@@ -112,26 +112,9 @@ HomePageDiffPage::HomePageDiffPage(BackupService *service, SettingsService *sett
     ui->content->setAccessibleName("版本差异");
     ui->analysis->setAccessibleName("AI 分析结果");
     ui->filePath->setAccessibleName("当前文件路径");
-    UiStyle::text(ui->rangeLabel, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->filesLabel, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->filePath, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->analysisStatus, UiStyle::FontRole::Caption, true);
-    ui->returnHistoryButton->setIcon(UiStyle::icon("back"));
-    ui->returnHistoryButton->setCursor(Qt::PointingHandCursor);
-    connect(ui->returnHistoryButton, &QToolButton::clicked, this, [this]
-            {
-        if (!m_id.isEmpty())
-            emit navigate({PageId::History, m_id});
-        else
-            emit navigate({PageId::Backups});
-    });
-    connect(new QShortcut(QKeySequence(Qt::Key_Escape), this), &QShortcut::activated, this, [this]
-            {
-        if (!m_id.isEmpty())
-            emit navigate({PageId::History, m_id});
-        else
-            emit navigate({PageId::Backups});
-    });
     m_highlighter = new DiffHighlighter(ui->content->document());
     m_analyze = UiStyle::action(this, "analyzeAction", "AI 分析", "sparkles");
     ui->splitter->setChildrenCollapsible(false);
@@ -211,7 +194,7 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
     ui->analysis->clear();
     m_model.clear();
     m_hasAnalysis = false;
-    ui->rangeLabel->setText("正在读取版本差异…");
+    emit titleChanged("正在读取版本差异…");
     updateLoadingState();
     const auto generation = m_generation;
     const auto repositoryGeneration = m_repositoryGeneration;
@@ -223,7 +206,7 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
     if (!reply.result.success)
     {
         emit notification(reply.result);
-        ui->rangeLabel->setText("无法打开版本对比");
+        emit titleChanged("无法打开版本对比");
         m_hasAnalysis = false;
         updateLoadingState();
         return;
@@ -233,8 +216,7 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
     if (state.generation != m_repositoryGeneration)
         state = {};
     m_fileScrolls = state.scrolls;
-    ui->rangeLabel->setText(QString("版本对比 · %1 → %2 · %3 个变更文件").arg(m_diff.oldCommit.isEmpty() ? "初始版本" : m_diff.oldCommit.left(8), m_diff.newCommit.left(8)).arg(m_diff.files.size()));
-    ui->rangeLabel->setToolTip((m_diff.oldCommit.isEmpty() ? "初始版本" : m_diff.oldCommit) + " → " + m_diff.newCommit);
+    emit titleChanged(QString("版本对比 · %1 → %2 · %3 个变更文件").arg(m_diff.oldCommit.isEmpty() ? "初始版本" : m_diff.oldCommit.left(8), m_diff.newCommit.left(8)).arg(m_diff.files.size()));
     int selected = 0;
     for (const auto &file : m_diff.files)
     {
@@ -294,7 +276,6 @@ void HomePageDiffPage::loadFile()
 }
 void HomePageDiffPage::refreshTheme()
 {
-    ui->returnHistoryButton->setIcon(UiStyle::icon("back"));
     // Recolor the existing document without resetting selection or scroll.
     m_highlighter->rehighlight();
     ui->files->viewport()->update();

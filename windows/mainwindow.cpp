@@ -125,7 +125,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     m_windowAgent->setHitTestVisible(ui->collapseButton, true);
     m_windowAgent->setHitTestVisible(ui->backButton, true);
     m_windowAgent->setHitTestVisible(ui->forwardButton, true);
-    for (auto *button : {ui->historyTab, ui->overviewTab, ui->generalTab, ui->aiTab, ui->aboutTab,
+    for (auto *button : {ui->historyTab, ui->overviewTab, ui->returnHistoryButton, ui->generalTab, ui->aiTab, ui->aboutTab,
                          ui->backupsButton, ui->settingsButton, ui->returnApplicationButton,
                          ui->addSidebarButton, ui->collapseButton, ui->backButton, ui->forwardButton,
                          ui->moreButton, ui->appMenuButton})
@@ -265,6 +265,13 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         ui->backupsButton->setChecked(true); });
     connect(ui->settingsButton, &QToolButton::clicked, this, &MainWindow::openSettings);
     connect(ui->returnApplicationButton, &QToolButton::clicked, this, &MainWindow::returnToApplication);
+    ui->returnHistoryButton->setCursor(Qt::PointingHandCursor);
+    UiStyle::text(ui->diffTitleLabel, UiStyle::FontRole::Caption, true);
+    connect(ui->returnHistoryButton, &QToolButton::clicked, this, [this]
+            { navigate({PageId::History, m_route.backupId}); });
+    connect(m_diff, &HomePageDiffPage::titleChanged, ui->diffTitleLabel, &QLabel::setText);
+    connect(new QShortcut(QKeySequence(Qt::Key_Escape), this), &QShortcut::activated, this, [this]
+            { if (m_route.page == PageId::Diff) navigate({PageId::History, m_route.backupId}); });
     connect(ui->settingsSearch, &QLineEdit::textChanged, this, &MainWindow::updateSettingsSearch);
     connect(ui->clearSettingsSearchButton, &QPushButton::clicked, ui->settingsSearch, &QLineEdit::clear);
     connect(ui->collapseButton, &QToolButton::clicked, this, &MainWindow::toggleSidebar);
@@ -497,6 +504,7 @@ void MainWindow::updateIcons()
         {ui->moreButton, "more"},
         {ui->addSidebarButton, "add"},
         {ui->returnApplicationButton, "back"},
+        {ui->returnHistoryButton, "back"},
         {ui->generalTab, "settings"},
         {ui->aiTab, "sparkles"},
         {ui->aboutTab, "info"}};
@@ -669,10 +677,13 @@ void MainWindow::displayRoute(const Route &route)
     ui->forwardButton->setEnabled(m_navigation.canForward());
     ui->backupsButton->setChecked(route.page == PageId::Backups);
     ui->settingsButton->setChecked(isSettingsPage(route.page));
-    const bool showTabs = (route.page == PageId::History || route.page == PageId::Dashboard);
-    ui->tabs->setVisible(showTabs);
-    ui->historyTab->setVisible(showTabs);
-    ui->overviewTab->setVisible(showTabs);
+    const bool isObject = isObjectPage(route.page);
+    ui->tabs->setVisible(isObject);
+    const bool isDiff = (route.page == PageId::Diff);
+    ui->returnHistoryButton->setVisible(isDiff);
+    ui->diffTitleLabel->setVisible(isDiff);
+    ui->historyTab->setVisible(!isDiff && isObject);
+    ui->overviewTab->setVisible(!isDiff && isObject);
     ui->historyTab->setChecked(route.page == PageId::History);
     ui->overviewTab->setChecked(route.page == PageId::Dashboard);
     ui->generalTab->setChecked(route.page == PageId::GeneralSettings);

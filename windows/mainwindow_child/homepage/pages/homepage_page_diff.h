@@ -29,6 +29,7 @@ class HomePageDiffPage : public QWidget
   signals:
     void navigate(const Route &route);
     void notification(const OperationResult &result);
+    void titleChanged(const QString &title);
 
   protected:
     void resizeEvent(QResizeEvent *event) override;

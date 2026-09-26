@@ -891,6 +891,50 @@
             <number>4</number>
            </property>
            <item>
+            <widget class="QToolButton" name="returnHistoryButton">
+             <property name="text">
+              <string>返回历史版本</string>
+             </property>
+             <property name="toolTip">
+              <string>返回历史版本 (Esc)</string>
+             </property>
+             <property name="accessibleName">
+              <string>返回历史版本</string>
+             </property>
+             <property name="autoRaise">
+              <bool>true</bool>
+             </property>
+             <property name="focusPolicy">
+              <enum>Qt::TabFocus</enum>
+             </property>
+             <property name="toolButtonStyle">
+              <enum>Qt::ToolButtonTextBesideIcon</enum>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>28</width>
+               <height>32</height>
+              </size>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="diffTitleLabel">
+             <property name="text">
+              <string>版本对比</string>
+             </property>
+             <property name="textFormat">
+              <enum>Qt::PlainText</enum>
+             </property>
+             <property name="sizePolicy">
+              <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+               <horstretch>1</horstretch>
+               <verstretch>0</verstretch>
+              </sizepolicy>
+             </property>
+            </widget>
+           </item>
+           <item>
             <widget class="QToolButton" name="historyTab">
              <property name="text">
               <string>历史版本</string>
