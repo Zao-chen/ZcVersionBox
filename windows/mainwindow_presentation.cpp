@@ -30,7 +30,6 @@
 #include <oclero/qlementine/style/QlementineStyle.hpp>
 #include <oclero/qlementine/style/Theme.hpp>
 #include <oclero/qlementine/utils/IconUtils.hpp>
-#include <oclero/qlementine/utils/PrimitiveUtils.hpp>
 #include <oclero/qlementine/widgets/Label.hpp>
 #include <oclero/qlementine/widgets/Popover.hpp>
 
@@ -96,19 +95,6 @@ class AppStyle final : public QlementineStyle
                 return;
         }
         QlementineStyle::drawPrimitive(element, option, painter, widget);
-        if (element == PE_FrameButtonBevel)
-        {
-            if (const auto *optButton = qstyleoption_cast<const QStyleOptionButton *>(option))
-            {
-                if (!optButton->features.testFlag(QStyleOptionButton::Flat))
-                {
-                    const auto &borderColor = optButton->state.testFlag(QStyle::State_Enabled)
-                        ? theme().borderColor
-                        : theme().borderColorDisabled;
-                    drawRoundedRectBorder(painter, optButton->rect, borderColor, 1.0, theme().borderRadius);
-                }
-            }
-        }
     }
     void polish(QWidget *widget) override
     {
