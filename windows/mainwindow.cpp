@@ -93,6 +93,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     UiStyle::text(ui->sidebarFilter, UiStyle::FontRole::Sidebar);
     UiStyle::text(ui->settingsSearch, UiStyle::FontRole::Sidebar);
     UiStyle::text(ui->settingsGroupLabel, UiStyle::FontRole::Caption, true);
+    ui->settingsGroupLabel->setContentsMargins(8, 0, 0, 0);
     UiStyle::text(ui->settingsEmptyTitle, UiStyle::FontRole::Object);
     UiStyle::text(ui->settingsEmptyDescription, UiStyle::FontRole::Caption, true);
     ui->settingsEmptyState->hide();
