@@ -240,6 +240,12 @@ QFont font(FontRole role)
         return theme.fontH3;
     case FontRole::Section:
         return theme.fontH5;
+    case FontRole::Title:
+    {
+        auto result = theme.fontBold;
+        result.setPointSizeF(result.pointSizeF() * 13. / 14.);
+        return result;
+    }
     case FontRole::Caption:
         return theme.fontCaption;
     case FontRole::Code:
@@ -268,7 +274,7 @@ void text(QWidget *widget, FontRole role, bool secondary)
     {
         using TextRole = oclero::qlementine::TextRole;
         label->setRole(role == FontRole::Page ? TextRole::H1 : role == FontRole::Object ? TextRole::H3
-                                                           : role == FontRole::Section  ? TextRole::H5
+                                                           : (role == FontRole::Section || role == FontRole::Title) ? TextRole::H5
                                                            : role == FontRole::Caption  ? TextRole::Caption
                                                                                         : TextRole::Default);
     }

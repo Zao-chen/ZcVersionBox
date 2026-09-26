@@ -26,6 +26,7 @@ enum class FontRole
     Page,
     Object,
     Section,
+    Title,
     Body,
     Sidebar,
     Caption,

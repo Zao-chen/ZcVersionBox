@@ -89,7 +89,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     UiStyle::surface(ui->sidebarContent, UiStyle::Surface::Sidebar);
     UiStyle::surface(ui->content, UiStyle::Surface::Canvas);
     UiStyle::surface(ui->sidebarList, UiStyle::Surface::Sidebar);
-    UiStyle::text(ui->contextTitle, UiStyle::FontRole::Object);
+    UiStyle::text(ui->contextTitle, UiStyle::FontRole::Title);
     UiStyle::text(ui->sidebarFilter, UiStyle::FontRole::Sidebar);
     UiStyle::text(ui->settingsSearch, UiStyle::FontRole::Sidebar);
     UiStyle::text(ui->settingsGroupLabel, UiStyle::FontRole::Caption, true);
@@ -139,6 +139,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     ui->settingsSearch->addAction(searchIcon, QLineEdit::LeadingPosition);
     connect(searchIcon, &QAction::triggered, this, [this]
             { ui->settingsSearch->setFocus(Qt::ShortcutFocusReason); });
+    ui->headerLayout->setContentsMargins(24, 8, 8, 8);
     ui->tabsLayout->setContentsMargins(24, 0, 24, 8);
     ui->windowSplitter->setStretchFactor(0, 0);
     ui->windowSplitter->setStretchFactor(1, 1);
@@ -708,9 +709,11 @@ void MainWindow::updateHeaderLayout()
         return;
     updating = true;
     const bool compact = ui->content->width() < 640;
+    const int margin = compact ? 16 : 24;
     for (auto *button : m_toolbarButtons)
         button->setToolButtonStyle(compact || button->defaultAction()->property("iconOnly").toBool() ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
-    ui->tabsLayout->setContentsMargins(compact ? 16 : 24, 0, compact ? 16 : 24, 8);
+    ui->headerLayout->setContentsMargins(margin, 8, 8, 8);
+    ui->tabsLayout->setContentsMargins(margin, 0, margin, 8);
     ui->contextTitle->setText(ui->contextTitle->fontMetrics().elidedText(m_contextTitle, Qt::ElideRight, qMax(0, ui->contextTitle->width())));
     updating = false;
 }
