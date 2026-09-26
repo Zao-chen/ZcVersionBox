@@ -126,6 +126,6 @@ void BackupMonitor::scanNow()
             state->task = m_service->backup(id, this, [this, id, state, epoch](const OperationResult &result)
             {
                 if (m_enabled && epoch == m_epoch && m_states.value(id) == state) completed(state, result);
-            }, true); });
+            }, {true, BackupTaskPriority::Background}); });
     }
 }

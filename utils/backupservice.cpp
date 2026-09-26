@@ -20,6 +20,7 @@ class BackupService::Private
         BackupTaskId task;
         QString id;
         quint64 generation;
+        BackupTaskPriority priority{BackupTaskPriority::Foreground};
         QPointer<QObject> context;
         std::shared_ptr<std::atomic_bool> cancelled{std::make_shared<std::atomic_bool>(false)};
         std::function<void(const std::shared_ptr<Job> &)> start;
@@ -33,9 +34,13 @@ class BackupService::Private
     QObject *worker{new QObject};
     std::unique_ptr<BackupEngine> engine;
     QMap<QString, BackupRecord> cache;
-    QQueue<JobPtr> queue;
+    QQueue<JobPtr> foregroundQueue, backgroundQueue;
     JobPtr active;
     BackupTaskId sequence{0};
+    quint64 observationSequence{0};
+    QMap<QString, quint64> observationVersions;
+    int foregroundStreak{0}, reloadCount{0};
+    bool reportedBusy{false};
     bool loaded{false}, stopping{false};
     QPointer<QObject> aiContext;
     std::function<void()> cancelAi;
@@ -54,8 +59,9 @@ class BackupService::Private
         stopping = true;
         if (active)
             active->cancelled->store(true);
-        for (const auto &job : queue)
-            job->cancelled->store(true);
+        for (const auto *queue : {&foregroundQueue, &backgroundQueue})
+            for (const auto &job : *queue)
+                job->cancelled->store(true);
         if (aiContext)
             delete aiContext.data();
         cancelAi = {};
@@ -65,25 +71,38 @@ class BackupService::Private
         thread.quit();
         thread.wait();
     }
-    BackupTaskId schedule(const QString &id, QObject *context, std::function<void(const JobPtr &)> start)
+    bool busy() const { return active || !foregroundQueue.isEmpty() || !backgroundQueue.isEmpty(); }
+    void publishBusy()
+    {
+        const bool value = busy();
+        if (reportedBusy != value)
+        {
+            reportedBusy = value;
+            emit owner->busyChanged(value);
+        }
+    }
+    BackupTaskId schedule(const QString &id, QObject *context, std::function<void(const JobPtr &)> start,
+                          BackupTaskPriority priority = BackupTaskPriority::Foreground)
     {
         auto job = std::make_shared<Job>();
         job->task = ++sequence;
         job->id = id;
         job->generation = owner->repositoryGeneration(id);
+        job->priority = priority;
         job->context = context ? context : owner;
         job->start = std::move(start);
-        queue.enqueue(job);
+        (priority == BackupTaskPriority::Foreground ? foregroundQueue : backgroundQueue).enqueue(job);
+        publishBusy();
         QTimer::singleShot(0, owner, [this]
                            { next(); });
         return job->task;
     }
     void next()
     {
-        if (active || stopping || queue.isEmpty())
+        if (active || stopping || (foregroundQueue.isEmpty() && backgroundQueue.isEmpty()))
             return;
-        active = queue.dequeue();
-        emit owner->busyChanged(true);
+        const bool background = !backgroundQueue.isEmpty() && (foregroundQueue.isEmpty() || foregroundStreak >= 8);
+        active = (background ? backgroundQueue : foregroundQueue).dequeue();
         emit owner->taskStarted(active->task, active->id);
         active->start(active);
     }
@@ -106,7 +125,8 @@ class BackupService::Private
     }
     static bool same(const BackupRecord &a, const BackupRecord &b)
     {
-        return a.sourcePath == b.sourcePath && a.generation == b.generation && a.state == b.state &&
+        return a.sourcePath == b.sourcePath && a.directory == b.directory && a.repositoryPath == b.repositoryPath &&
+               a.generation == b.generation && a.state == b.state &&
                a.stateDetail == b.stateDetail && a.lastCommit == b.lastCommit && a.pendingCommit == b.pendingCommit &&
                a.fingerprint == b.fingerprint && a.operation == b.operation && a.recoveryPaths == b.recoveryPaths;
     }
@@ -124,6 +144,12 @@ class BackupService::Private
             cache.insert(r.id, r);
         }
         bool changed = previous.size() != cache.size();
+        for (const auto &id : observationVersions.keys())
+            if (!cache.contains(id))
+                observationVersions.remove(id);
+        for (const auto &r : cache)
+            if (!previous.contains(r.id) || !same(previous[r.id], r))
+                observationVersions[r.id] = ++observationSequence;
         for (const auto &old : previous)
             if (!cache.contains(old.id) || cache[old.id].generation != old.generation)
                 emit owner->repositoryInvalidated(old.id);
@@ -146,14 +172,16 @@ class BackupService::Private
             emit owner->ready();
         }
         emit owner->taskFinished(job->task, job->id, result);
+        foregroundStreak = job->priority == BackupTaskPriority::Background ? 0 : std::min(foregroundStreak + 1, 8);
         active.reset();
-        emit owner->busyChanged(false);
+        publishBusy();
         QTimer::singleShot(0, owner, [this]
                            { next(); });
     }
     template <class T>
     BackupTaskId submit(const QString &id, QObject *context, Reply<T> callback,
-                        std::function<BackupResult<T>(BackupEngine &)> action, bool notify = false)
+                        std::function<BackupResult<T>(BackupEngine &)> action, bool notify = false,
+                        BackupTaskPriority priority = BackupTaskPriority::Foreground)
     {
         return schedule(id, context, [this, action = std::move(action), callback = std::move(callback), notify](const JobPtr &job)
                         { QMetaObject::invokeMethod(worker, [this, job, action, callback, notify]
@@ -174,14 +202,15 @@ class BackupService::Private
                     if (notify && reply.result.success && !job->id.isEmpty()) emit owner->repositoryChanged(job->id);
                     done(job, reply.result);
                     if (job->context && callback) callback(reply);
-                }, Qt::QueuedConnection); }, Qt::QueuedConnection); });
+                }, Qt::QueuedConnection); }, Qt::QueuedConnection); }, priority);
     }
     BackupTaskId mutate(const QString &id, QObject *context, Completion callback,
-                        std::function<OperationResult(BackupEngine &)> action, bool notify = true)
+                        std::function<OperationResult(BackupEngine &)> action, bool notify = true,
+                        BackupTaskPriority priority = BackupTaskPriority::Foreground)
     {
         return submit<bool>(id, context, [callback](const BackupResult<bool> &reply)
                             { if (callback) callback(reply.result); }, [action](BackupEngine &e)
-                            { return BackupResult<bool>{action(e), false}; }, notify);
+                            { return BackupResult<bool>{action(e), false}; }, notify, priority);
     }
     void finishBackup(const JobPtr &job, const std::shared_ptr<PendingBackup> &work, const QString &message, Completion callback)
     {
@@ -201,8 +230,10 @@ class BackupService::Private
                 if (job->context && callback) callback(result);
             }, Qt::QueuedConnection); }, Qt::QueuedConnection);
     }
-    BackupTaskId submitBackup(const QString &id, QObject *context, Completion callback, bool changedOnly, std::optional<RestoreRequest> resolution = {})
+    BackupTaskId submitBackup(const QString &id, QObject *context, Completion callback, BackupRequestOptions options,
+                              std::optional<RestoreRequest> resolution = {})
     {
+        const bool changedOnly = options.changedOnly;
         return schedule(id, context, [this, id, callback, changedOnly, resolution](const JobPtr &job)
                         { QMetaObject::invokeMethod(worker, [this, id, job, callback, changedOnly, resolution]
                                                     {
@@ -247,7 +278,7 @@ class BackupService::Private
                     QTimer::singleShot(dependencies.aiTimeoutMs, aiContext, [complete] { complete({}); });
                     gateway->generateCommitMessage(config, prepared.value->diff, aiContext,
                         [complete](const QString &message, const QString &) { complete(message); });
-                }, Qt::QueuedConnection); }, Qt::QueuedConnection); });
+                }, Qt::QueuedConnection); }, Qt::QueuedConnection); }, options.priority);
     }
 };
 
@@ -263,6 +294,14 @@ QVector<TrackedItem> BackupService::trackedItems() const
     std::sort(items.begin(), items.end(), [](const TrackedItem &a, const TrackedItem &b)
               { return a.sourcePath < b.sourcePath; });
     return items;
+}
+QVector<BackupObservationTarget> BackupService::observationTargets() const
+{
+    QVector<BackupObservationTarget> targets;
+    targets.reserve(d->cache.size());
+    for (const auto &r : d->cache)
+        targets.append({r.id, r.sourcePath, r.directory, r.generation, d->observationVersions.value(r.id), r.state, r.fingerprint});
+    return targets;
 }
 QString BackupService::sourcePath(const QString &id) const { return d->cache.value(id).sourcePath; }
 QString BackupService::repoPath(const QString &id) const { return contains(id) ? QDir(d->paths.backupRoot).filePath("items/" + id + "/repository") : QString(); }
@@ -283,24 +322,30 @@ QString BackupService::idForSource(const QString &source) const
 }
 bool BackupService::contains(const QString &id) const { return d->cache.contains(id); }
 bool BackupService::isReady() const { return d->loaded; }
-bool BackupService::isBusy() const { return d->active || !d->queue.isEmpty(); }
+bool BackupService::isReloading() const { return d->reloadCount > 0; }
+bool BackupService::isBusy() const { return d->busy(); }
 quint64 BackupService::repositoryGeneration(const QString &id) const { return contains(id) ? d->cache.value(id).generation : 0; }
 BackupSyncState BackupService::syncState(const QString &id) const { return contains(id) ? d->cache[id].state : BackupSyncState::NeedsAttention; }
 QString BackupService::pendingCommit(const QString &id) const { return d->cache.value(id).pendingCommit; }
-BackupTaskId BackupService::reload(QObject *c, Completion f)
+BackupTaskId BackupService::reload(QObject *c, Completion f, BackupReloadOptions options)
 {
-    return d->mutate({}, c, [this, f](const OperationResult &result)
+    ++d->reloadCount;
+    const QPointer<QObject> context(c ? c : this);
+    // Load accounting belongs to the service even if the caller is destroyed.
+    return d->mutate({}, this, [this, context, f, options](const OperationResult &result)
                      {
-        if (!result.success || !result.warning.isEmpty()) emit notification(result);
-        if (f) f(result); }, [](BackupEngine &e)
-                     { return e.reload(); }, false);
+        --d->reloadCount;
+        emit reloadFinished(result);
+        if (options.notify && (!result.success || !result.warning.isEmpty())) emit notification(result);
+        if (context && f) f(result); }, [](BackupEngine &e)
+                     { return e.reload(); }, false, options.priority);
 }
 BackupTaskId BackupService::addLocal(const QString &p, QObject *c, Completion f)
 {
     return d->mutate({}, c, std::move(f), [p](BackupEngine &e)
                      { return e.addLocal(p); });
 }
-BackupTaskId BackupService::backup(const QString &id, QObject *c, Completion f, bool changedOnly) { return d->submitBackup(id, c, std::move(f), changedOnly); }
+BackupTaskId BackupService::backup(const QString &id, QObject *c, Completion f, BackupRequestOptions options) { return d->submitBackup(id, c, std::move(f), options); }
 BackupTaskId BackupService::observe(const QString &id, QObject *c, Reply<bool> f)
 {
     return d->submit<bool>(id, c, std::move(f), [id](BackupEngine &e)
@@ -350,7 +395,7 @@ BackupTaskId BackupService::resolvePull(const RestoreRequest &r, bool apply, QOb
 {
     if (apply)
         return restore(r, c, std::move(f));
-    return d->submitBackup(r.id, c, std::move(f), false, r);
+    return d->submitBackup(r.id, c, std::move(f), {}, r);
 }
 BackupTaskId BackupService::editMessage(const QString &id, const QString &commit, const QString &message, QObject *c, Completion f)
 {
@@ -418,7 +463,8 @@ void BackupService::cancel(BackupTaskId task)
             cancel();
         }
     }
-    for (const auto &job : d->queue)
-        if (job->task == task)
-            job->cancelled->store(true);
+    for (const auto *queue : {&d->foregroundQueue, &d->backgroundQueue})
+        for (const auto &job : *queue)
+            if (job->task == task)
+                job->cancelled->store(true);
 }

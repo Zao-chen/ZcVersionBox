@@ -1,6 +1,7 @@
 #include "backup_test_support.h"
 #include "utils/backup_engine.h"
 #include "utils/backupmonitor.h"
+#include "utils/backupmonitor_scheduler.h"
 #include <QCoreApplication>
 #include <QFile>
 #include <QLockFile>
@@ -146,6 +147,189 @@ class BackupCoreRegression : public QObject
         qputenv("GIT_CONFIG_GLOBAL", (m_environment.path() + "/gitconfig").toUtf8());
         QVERIFY(runGit({}, {"--version"}).success());
     }
+    void monitorSchedulerCoalescesAndAudits()
+    {
+        qint64 now = 0;
+        BackupMonitorScheduler scheduler([&]
+                                         { return now; });
+        BackupObservationTarget target{"one", "/source.txt", false, 1, 1};
+        scheduler.reconcile({target});
+        auto request = scheduler.takeScan();
+        QVERIFY(request);
+        QVERIFY(!scheduler.takeScan());
+        QVERIFY(scheduler.completeScan({*request, BackupScanStatus::Unchanged, OperationResult::ok({})}));
+        QCOMPARE(scheduler.nextDeadline(), qint64(30000));
+        now = 100;
+        scheduler.markDirty(target.id);
+        now = 599;
+        QVERIFY(!scheduler.takeScan());
+        now = 600;
+        request = scheduler.takeScan();
+        QVERIFY(request);
+        scheduler.completeScan({*request, BackupScanStatus::Unchanged, OperationResult::ok({})});
+
+        now = 1000;
+        scheduler.markDirty(target.id);
+        for (now = 1100; now < 6000; now += 100)
+        {
+            scheduler.markDirty(target.id);
+            QVERIFY(!scheduler.takeScan());
+        }
+        request = scheduler.takeScan();
+        QVERIFY(request); // Continuous events cannot postpone the check past five seconds.
+        scheduler.completeScan({*request, BackupScanStatus::Unchanged, OperationResult::ok({})});
+        now = 35999;
+        QVERIFY(!scheduler.takeScan());
+        now = 36000;
+        QVERIFY(scheduler.takeScan());
+    }
+    void monitorSchedulerRetainsChangesAndInvalidatesSnapshots()
+    {
+        qint64 now = 0;
+        BackupMonitorScheduler scheduler([&]
+                                         { return now; });
+        BackupObservationTarget target{"one", "/source.txt", false, 1, 1};
+        scheduler.reconcile({target});
+        const auto initial = scheduler.takeScan();
+        QVERIFY(initial);
+        now = 100;
+        scheduler.markDirty(target.id);
+        scheduler.completeScan({*initial, BackupScanStatus::Changed, OperationResult::ok({})});
+        const auto backup = scheduler.takeBackup();
+        QVERIFY(backup);
+        QVERIFY(!scheduler.takeBackup());
+        QVERIFY(!scheduler.takeScan());
+        now = 200;
+        scheduler.markDirty(target.id);
+        scheduler.completeBackup(*backup, OperationResult::ok({}));
+        now = 699;
+        QVERIFY(!scheduler.takeScan());
+        now = 700;
+        const auto followup = scheduler.takeScan();
+        QVERIFY(followup);
+        QVERIFY(followup->changeVersion > initial->changeVersion);
+        ++target.version;
+        scheduler.reconcile({target});
+        QVERIFY(!scheduler.completeScan({*followup, BackupScanStatus::Changed, OperationResult::ok({})}));
+        QVERIFY(!scheduler.takeBackup());
+        const auto current = scheduler.takeScan();
+        QVERIFY(current);
+        QCOMPARE(current->target.version, target.version);
+        scheduler.reconcile({});
+        QVERIFY(!scheduler.completeScan({*current, BackupScanStatus::Changed, OperationResult::ok({})}));
+        QVERIFY(!scheduler.hasWork());
+    }
+    void monitorSchedulerBoundsWorkAndRetries()
+    {
+        qint64 now = 0;
+        BackupMonitorScheduler scheduler([&]
+                                         { return now; });
+        BackupObservationTarget first{"one", "/one", false, 1, 1}, second{"two", "/two", false, 1, 2};
+        scheduler.reconcile({first, second});
+        auto request = scheduler.takeScan();
+        QVERIFY(request);
+        QCOMPARE(request->target.id, first.id);
+        scheduler.completeScan({*request, BackupScanStatus::Changed, OperationResult::ok({})});
+        const auto backup = scheduler.takeBackup();
+        QVERIFY(backup);
+        request = scheduler.takeScan();
+        QVERIFY(request);
+        QCOMPARE(request->target.id, second.id);
+        scheduler.completeScan({*request, BackupScanStatus::Changed, OperationResult::ok({})});
+        QVERIFY(!scheduler.takeBackup());
+        scheduler.completeBackup(*backup, OperationResult::fail("test", "retry"));
+        const auto secondBackup = scheduler.takeBackup();
+        QVERIFY(secondBackup);
+        QCOMPARE(secondBackup->target.id, second.id);
+        scheduler.completeBackup(*secondBackup, OperationResult::ok({}));
+        QCOMPARE(scheduler.phase(first.id), BackupMonitorScheduler::Phase::BackingOff);
+        now = 1499;
+        scheduler.requestScan(first.id);
+        QVERIFY(!scheduler.takeScan());
+        qint64 delay = 1500;
+        for (int failure = 0; failure < 7; ++failure)
+        {
+            now = delay;
+            request = scheduler.takeScan();
+            QVERIFY(request);
+            QCOMPARE(request->target.id, first.id);
+            scheduler.completeScan({*request, BackupScanStatus::Changed, OperationResult::ok({})});
+            const auto retry = scheduler.takeBackup();
+            QVERIFY(retry);
+            scheduler.completeBackup(*retry, OperationResult::fail("test", "retry"));
+            const auto expected = qMin<qint64>(60000, qint64(3000) << failure);
+            // Keep the unrelated item's periodic check from obscuring this deadline.
+            scheduler.reconcile({first});
+            QCOMPARE(scheduler.nextDeadline(), now + expected);
+            delay = now + expected;
+        }
+    }
+    void monitorSchedulerPausesWritesAndResumesImmediately()
+    {
+        qint64 now = 0;
+        BackupMonitorScheduler scheduler([&]
+                                         { return now; });
+        BackupObservationTarget target{"one", "/source", false, 1, 1, BackupSyncState::RemotePending};
+        scheduler.reconcile({target});
+        const auto request = scheduler.takeScan();
+        QVERIFY(request);
+        scheduler.completeScan({*request, BackupScanStatus::Changed, OperationResult::ok({})});
+        QVERIFY(!scheduler.takeBackup());
+        QCOMPARE(scheduler.phase(target.id), BackupMonitorScheduler::Phase::Paused);
+        target.state = BackupSyncState::Tracking;
+        ++target.version;
+        scheduler.reconcile({target});
+        QVERIFY(scheduler.takeScan());
+        scheduler.clear();
+        QVERIFY(!scheduler.hasWork());
+    }
+    void backgroundServiceTasksAreFairAndBusyDoesNotFlicker()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        CHECK_OK(awaitBackup<OperationResult>([&](auto f)
+                                              { service.BackupService::reload(this, f, {BackupTaskPriority::Background, false}); }));
+        QSignalSpy started(&service, &BackupService::taskStarted), busy(&service, &BackupService::busyChanged);
+        const auto background = service.BackupService::reload(this, {}, {BackupTaskPriority::Background, false});
+        const auto lastBackground = service.BackupService::reload(this, {}, {BackupTaskPriority::Background, false});
+        QVector<BackupTaskId> foreground;
+        for (int i = 0; i < 10; ++i)
+            foreground.append(service.BackupService::reload(this, {}, {BackupTaskPriority::Foreground, false}));
+        QVERIFY(service.isReloading());
+        settle(service);
+        QVERIFY(!service.isReloading());
+        QCOMPARE(started.size(), 12);
+        for (int i = 0; i < 8; ++i)
+            QCOMPARE(started[i][0].toULongLong(), foreground[i]);
+        QCOMPARE(started[8][0].toULongLong(), background);
+        QCOMPARE(started[9][0].toULongLong(), foreground[8]);
+        QCOMPARE(started[10][0].toULongLong(), foreground[9]);
+        QCOMPARE(started[11][0].toULongLong(), lastBackground);
+        QCOMPARE(busy.size(), 2);
+        QCOMPARE(busy[0][0].toBool(), true);
+        QCOMPARE(busy[1][0].toBool(), false);
+    }
+    void observationSnapshotsChangeOnlyWhenRecordsChange()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/source.txt";
+        writeFile(source, "one\n");
+        CHECK_OK(service.addLocal(source));
+        const auto before = service.observationTargets().first();
+        QVERIFY(before.version > 0);
+        QVERIFY(!before.directory);
+        CHECK_OK(service.reload());
+        QCOMPARE(service.observationTargets().first().version, before.version);
+        writeFile(source, "two\n");
+        CHECK_OK(service.backup(before.id));
+        const auto after = service.observationTargets().first();
+        QVERIFY(after.version > before.version);
+        QVERIFY(after.fingerprint != before.fingerprint);
+        QCOMPARE(after.generation, before.generation);
+        CHECK_OK(service.reload());
+        QCOMPARE(service.observationTargets().first().version, after.version);
+    }
     void pullPausesQueuedBackupsAndSurvivesRestart_data()
     {
         QTest::addColumn<bool>("applyToSource");
@@ -163,7 +347,7 @@ class BackupCoreRegression : public QObject
         f.service->synchronize(f.id, false, this, [&](const OperationResult &r)
                                { pull = r; });
         f.service->backup(f.id, this, [&](const OperationResult &r)
-                          { backup = r; }, true);
+                          { backup = r; }, {true, BackupTaskPriority::Foreground});
         settle(*f.service);
         CHECK_OK(pull);
         QVERIFY(!backup.success);

@@ -77,6 +77,8 @@ add_library(zc_services STATIC
     utils/gitcommand.h utils/gitcommand.cpp
     utils/backupservice.h utils/backupservice.cpp
     utils/backupmonitor.h utils/backupmonitor.cpp
+    utils/backupmonitor_types.h
+    utils/backupmonitor_scheduler.h utils/backupmonitor_scheduler.cpp
     utils/backup_types.h utils/backup_dependencies.h
     utils/backup_catalog.h utils/backup_catalog.cpp
     utils/backup_files.h utils/backup_files.cpp

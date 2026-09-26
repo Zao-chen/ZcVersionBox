@@ -15,6 +15,34 @@ enum class BackupSyncState
 using SourceFingerprint = QMap<QString, QString>;
 using BackupTaskId = quint64;
 
+enum class BackupTaskPriority
+{
+    Foreground,
+    Background
+};
+
+struct BackupRequestOptions
+{
+    bool changedOnly{false};
+    BackupTaskPriority priority{BackupTaskPriority::Foreground};
+};
+
+struct BackupReloadOptions
+{
+    BackupTaskPriority priority{BackupTaskPriority::Foreground};
+    bool notify{true};
+};
+
+// A value snapshot. Its version is local to the service and is never persisted.
+struct BackupObservationTarget
+{
+    QString id, sourcePath;
+    bool directory{false};
+    quint64 generation{0}, version{0};
+    BackupSyncState state{BackupSyncState::Tracking};
+    SourceFingerprint fingerprint;
+};
+
 struct TrackedItem
 {
     QString id;
