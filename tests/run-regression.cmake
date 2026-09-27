@@ -1,8 +1,8 @@
 if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin")
-    # Qt's offscreen Cocoa integration can crash while tearing down a GUI test
-    # process on hosted macOS runners. The minimal plugin still exercises the
-    # widget hierarchy without requiring a display server.
-    set(ENV{QT_QPA_PLATFORM} minimal)
+    # Hosted macOS runners provide WindowServer. Exercise widgets through the
+    # native Cocoa plugin; Qt's offscreen and minimal plugins crash while
+    # constructing the main window in the regression smoke test.
+    set(ENV{QT_QPA_PLATFORM} cocoa)
 else()
     set(ENV{QT_QPA_PLATFORM} offscreen)
 endif()
