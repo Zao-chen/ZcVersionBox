@@ -1927,8 +1927,8 @@ class Regression : public QObject
         auto hwnd = reinterpret_cast<HWND>(tipLabel->winId());
         auto classStyle = (unsigned long)GetClassLongPtrW(hwnd, GCL_STYLE);
         QVERIFY(!(classStyle & 0x00020000));
-#endif
         QVERIFY(!tipLabel->mask().isEmpty());
+#endif
         QToolTip::hideText();
     }
 

@@ -157,6 +157,7 @@ class AppStyle final : public QlementineStyle
     int styleHint(StyleHint hint, const QStyleOption *option = nullptr, const QWidget *widget = nullptr,
                   QStyleHintReturn *returnData = nullptr) const override
     {
+#ifdef _WIN32
         if (hint == SH_ToolTip_Mask && option && returnData)
         {
             if (auto *maskReturn = qstyleoption_cast<QStyleHintReturnMask *>(returnData))
@@ -174,6 +175,7 @@ class AppStyle final : public QlementineStyle
                 return 1;
             }
         }
+#endif
         return QlementineStyle::styleHint(hint, option, widget, returnData);
     }
     int pixelMetric(PixelMetric metric, const QStyleOption *option = nullptr, const QWidget *widget = nullptr) const override
