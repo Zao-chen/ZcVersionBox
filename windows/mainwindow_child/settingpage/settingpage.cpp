@@ -94,7 +94,7 @@ SettingPageAiPage::SettingPageAiPage(SettingsService *settings, QWidget *parent)
     UiStyle::text(ui->pageTitle, UiStyle::FontRole::Page);
     for (auto *label : {ui->automationSectionTitle, ui->serviceSectionTitle})
         UiStyle::text(label, UiStyle::FontRole::Section);
-    for (auto *label : {ui->enabledDescription, ui->providerDescription, ui->apiKeyDescription, ui->baseUrlDescription, ui->modelDescription, ui->statusLabel})
+    for (auto *label : {ui->enabledDescription, ui->providerDescription, ui->apiKeyDescription, ui->baseUrlDescription, ui->modelDescription})
         UiStyle::text(label, UiStyle::FontRole::Caption, true);
     ui->provider->addItems({"OpenAI", "DeepSeek", "Qwen", "Kimi", "GLM", "Doubao", "SiliconFlow", "Claude", "Gemini", "Grok", "Custom"});
     ui->providerLabel->setBuddy(ui->provider);
@@ -124,7 +124,6 @@ SettingPageAiPage::SettingPageAiPage(SettingsService *settings, QWidget *parent)
     ui->modelStatusLayout->insertWidget(0, m_spinner);
     ui->modelStatusLayout->setStretch(1, 1);
     ui->modelStatusLayout->setAlignment(m_spinner, Qt::AlignTop);
-    ui->statusLabel->setVisible(false);
     connect(m_enabled, &QAbstractButton::toggled, this, [this](bool enabled)
             {
         if (!m_loading)
@@ -141,42 +140,25 @@ SettingPageAiPage::SettingPageAiPage(SettingsService *settings, QWidget *parent)
             {
         if (!m_loading)
         {
-            m_fetchError.clear();
             m_settings->selectProvider(name);
             emit navigate({PageId::AiSettings, {}, {}, name});
         } });
     connect(ui->apiKey, &QLineEdit::textChanged, this, [this](const QString &text)
             {
         if (!m_loading)
-        {
-            m_fetchError.clear();
-            m_settings->saveField("ApiKey", text);
-        } });
+            m_settings->saveField("ApiKey", text); });
     connect(ui->baseUrl, &QLineEdit::textChanged, this, [this](const QString &text)
             {
         if (!m_loading)
-        {
-            m_fetchError.clear();
-            m_settings->saveField("BaseUrl", text);
-        } });
+            m_settings->saveField("BaseUrl", text); });
     connect(ui->model, &QComboBox::currentTextChanged, this, [this](const QString &text)
             {
         if (!m_loading)
             m_settings->saveField("Model", text); });
     connect(ui->fetchButton, &QPushButton::clicked, settings, &SettingsService::fetchModels);
     connect(settings, &SettingsService::changed, this, &SettingPageAiPage::refresh);
-    connect(settings, &SettingsService::fetchingChanged, this, [this](bool fetching)
-            {
-        if (fetching)
-            m_fetchError.clear();
-        updateLoadingState(); });
-    connect(settings, &SettingsService::notification, this, [this](const OperationResult &result)
-            {
-        if (result.title == "模型获取失败")
-        {
-            m_fetchError = result.message;
-            updateLoadingState();
-        } });
+    connect(settings, &SettingsService::fetchingChanged, this, [this](bool)
+            { updateLoadingState(); });
     refresh();
 }
 SettingPageAiPage::~SettingPageAiPage() = default;
@@ -185,8 +167,6 @@ void SettingPageAiPage::refresh()
     const QScopedValueRollback<bool> loading(m_loading, true);
     const auto config = m_settings->config(m_settings->provider());
     const bool providerChanged = config.providerName != m_displayedProvider;
-    if (providerChanged)
-        m_fetchError.clear();
     const bool configured = m_settings->isAiConfigured();
     m_enabled->setEnabled(configured);
     m_enabled->setToolTip(configured ? QString() : QStringLiteral("请先配置 API Key 和模型以启用 AI 功能"));
@@ -221,10 +201,6 @@ void SettingPageAiPage::updateLoadingState()
     m_spinner->setSpinning(fetching && isVisible());
     m_spinner->setVisible(fetching);
     ui->fetchButton->setEnabled(!fetching);
-    const auto status = fetching ? QString("正在获取模型…") : m_fetchError;
-    ui->statusLabel->setText(status);
-    ui->statusLabel->setToolTip(status);
-    ui->statusLabel->setVisible(!status.isEmpty());
 }
 void SettingPageAiPage::showEvent(QShowEvent *event)
 {

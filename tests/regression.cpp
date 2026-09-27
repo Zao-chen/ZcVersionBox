@@ -1607,10 +1607,12 @@ class Regression : public QObject
         QCOMPARE(combo->count(), 2);
         QCOMPARE(combo->completer()->filterMode(), Qt::MatchContains);
         QVERIFY(!modelsSpinner->spinning());
+        QSignalSpy fetchFailure(&settings, &SettingsService::notification);
         ai.findChild<QPushButton *>("fetchButton")->click();
         gateway.models.last()({}, "模拟模型获取失败");
         QVERIFY(!modelsSpinner->spinning());
-        QVERIFY(ai.findChild<QLabel *>("statusLabel")->text().contains("模拟模型获取失败"));
+        QCOMPARE(fetchFailure.count(), 1);
+        QCOMPARE(fetchFailure.first().first().value<OperationResult>().message, QString("模拟模型获取失败"));
         auto *aiSwitch = ai.findChild<oclero::qlementine::Switch *>("aiEnabledSwitch");
         QVERIFY(aiSwitch != nullptr);
         QVERIFY(aiSwitch->isEnabled());
