@@ -254,6 +254,9 @@ class Regression : public QObject
     }
     void platformRuntimeSmoke()
     {
+#ifdef Q_OS_MACOS
+        QSKIP("Headless macOS runners cannot expose native windows reliably");
+#endif
         const auto expected = qEnvironmentVariable("ZCVERSIONBOX_EXPECTED_QPA");
         if (!expected.isEmpty())
             QCOMPARE(QGuiApplication::platformName(), expected);
