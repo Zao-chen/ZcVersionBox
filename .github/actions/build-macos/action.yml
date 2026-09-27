@@ -61,7 +61,7 @@ runs:
       shell: bash
       run: |
         set -o pipefail
-        QT_QPA_PLATFORM=minimal lldb --batch \
+        QT_QPA_PLATFORM=offscreen lldb --batch \
           -o run -k 'thread backtrace all' \
           -- build/release/tests/zc_tests \
           2>&1 | tee build/release/tests/lldb.txt || true
