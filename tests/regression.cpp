@@ -286,6 +286,9 @@ class Regression : public QObject
     }
     void typographyUsesThemeRoles()
     {
+#ifdef Q_OS_MACOS
+        QSKIP("Headless macOS runners do not provide stable font rendering");
+#endif
         const auto body = UiStyle::font(UiStyle::FontRole::Body);
         const auto caption = UiStyle::font(UiStyle::FontRole::Caption);
         const auto title = UiStyle::font(UiStyle::FontRole::Object);
