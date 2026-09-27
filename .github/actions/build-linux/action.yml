@@ -28,7 +28,7 @@ runs:
           libxcb-shape0 libxcb-xfixes0 libxcb-sync1 libxcb-xinerama0 \
           libx11-xcb-dev libfontconfig1-dev libdbus-1-dev libssl-dev libwayland-dev \
           libglib2.0-dev patchelf xvfb xauth openbox weston dbus-x11 desktop-file-utils \
-          dpkg-dev fakeroot file fonts-noto-cjk
+          dpkg-dev fakeroot file fonts-noto-cjk x11-utils
     - uses: jurplel/install-qt-action@v4
       with:
         version: '6.8.3'
