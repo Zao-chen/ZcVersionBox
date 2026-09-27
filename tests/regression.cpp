@@ -1903,6 +1903,25 @@ class Regression : public QObject
         QVERIFY(window.findChild<HomePage *>()->findChild<QLabel *>("emptyLabel")->isVisible());
         capture("empty");
     }
+    void tooltipVisualSmoke()
+    {
+        QWidget parent;
+        parent.resize(200, 200);
+        parent.show();
+        QTest::qWaitForWindowExposed(&parent);
+        QToolTip::showText(parent.mapToGlobal(QPoint(50, 50)), "概览", &parent);
+        QTRY_VERIFY(QToolTip::isVisible());
+        QWidget *tipLabel = nullptr;
+        for (auto *w : QApplication::topLevelWidgets()) {
+            if (w->inherits("QTipLabel") && w->isVisible()) {
+                tipLabel = w;
+                break;
+            }
+        }
+        QVERIFY(tipLabel != nullptr);
+        QVERIFY(!tipLabel->mask().isEmpty());
+        QToolTip::hideText();
+    }
 
   private:
     TestDirectory m_environment;

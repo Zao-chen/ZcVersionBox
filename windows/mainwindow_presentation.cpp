@@ -3,6 +3,7 @@
 #include <QAbstractItemView>
 #include <QAction>
 #include <QApplication>
+#include <QBitmap>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
@@ -129,6 +130,7 @@ class AppStyle final : public QlementineStyle
     void polish(QWidget *widget) override
     {
         QlementineStyle::polish(widget);
+#ifndef _WIN32
         if (widget && widget->inherits("QTipLabel"))
         {
             widget->setBackgroundRole(QPalette::NoRole);
@@ -137,6 +139,7 @@ class AppStyle final : public QlementineStyle
             widget->setAttribute(Qt::WA_NoSystemBackground, true);
             widget->setAttribute(Qt::WA_OpaquePaintEvent, false);
         }
+#endif
         if (auto *button = qobject_cast<QAbstractButton *>(widget))
         {
             if (button->focusPolicy() == Qt::StrongFocus || button->focusPolicy() == Qt::ClickFocus)
@@ -146,6 +149,28 @@ class AppStyle final : public QlementineStyle
             font.setWeight(push && push->isDefault() ? QFont::DemiBold : QFont::Normal);
             widget->setFont(font);
         }
+    }
+    int styleHint(StyleHint hint, const QStyleOption *option = nullptr, const QWidget *widget = nullptr,
+                  QStyleHintReturn *returnData = nullptr) const override
+    {
+        if (hint == SH_ToolTip_Mask && option && returnData)
+        {
+            if (auto *maskReturn = qstyleoption_cast<QStyleHintReturnMask *>(returnData))
+            {
+                const auto radius = static_cast<int>(std::round(theme().borderRadius));
+                QBitmap bitmap(option->rect.size());
+                bitmap.fill(Qt::color0);
+                QPainter painter(&bitmap);
+                painter.setRenderHint(QPainter::Antialiasing, true);
+                painter.setBrush(Qt::color1);
+                painter.setPen(Qt::NoPen);
+                painter.drawRoundedRect(option->rect, radius, radius);
+                painter.end();
+                maskReturn->region = QRegion(bitmap);
+                return 1;
+            }
+        }
+        return QlementineStyle::styleHint(hint, option, widget, returnData);
     }
     int pixelMetric(PixelMetric metric, const QStyleOption *option = nullptr, const QWidget *widget = nullptr) const override
     {
