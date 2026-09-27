@@ -3,8 +3,8 @@ set -euo pipefail
 build_dir=${1:?Build directory required}
 output_dir=${2:?New output directory required}
 tag=${3:?Release tag required}
-architectures=${4:-arm64}
-[[ "$tag" =~ ^[0-9A-Za-z][0-9A-Za-z._+-]*$ ]] || { echo 'Invalid tag'; exit 1; }
+architectures="${4:-arm64;x86_64}"
+[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid tag'; exit 1; }
 project_root=$(cd "$(dirname "$0")/.." && pwd)
 [[ -d "$build_dir/ZcVersionBox.app" ]] || { echo 'Application bundle missing'; exit 1; }
 [[ ! -e "$output_dir" ]] || { echo 'Packaging requires a new, empty output path'; exit 1; }
