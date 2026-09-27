@@ -231,9 +231,6 @@ class Regression : public QObject
     }
     void closingWithoutTrayExitsWindow()
     {
-#ifdef Q_OS_MACOS
-        QSKIP("Headless macOS runners do not provide a stable system tray");
-#endif
         if (QSystemTrayIcon::isSystemTrayAvailable())
             QSKIP("This scenario requires a desktop without a tray");
         class QuitFilter : public QObject
@@ -254,9 +251,6 @@ class Regression : public QObject
     }
     void platformRuntimeSmoke()
     {
-#ifdef Q_OS_MACOS
-        QSKIP("Headless macOS runners cannot expose native windows reliably");
-#endif
         const auto expected = qEnvironmentVariable("ZCVERSIONBOX_EXPECTED_QPA");
         if (!expected.isEmpty())
             QCOMPARE(QGuiApplication::platformName(), expected);
@@ -286,9 +280,6 @@ class Regression : public QObject
     }
     void typographyUsesThemeRoles()
     {
-#ifdef Q_OS_MACOS
-        QSKIP("Headless macOS runners do not provide stable font rendering");
-#endif
         const auto body = UiStyle::font(UiStyle::FontRole::Body);
         const auto caption = UiStyle::font(UiStyle::FontRole::Caption);
         const auto title = UiStyle::font(UiStyle::FontRole::Object);
