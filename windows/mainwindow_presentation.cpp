@@ -101,7 +101,7 @@ class AppStyle final : public QlementineStyle
         {
             const auto &bgColor = toolTipBackgroundColor();
             const auto &borderColor = toolTipBorderColor();
-            constexpr auto radius = 8.0;
+            constexpr auto radius = 7.0;
             const auto borderW = 1.0;
             painter->save();
             painter->setRenderHint(QPainter::Antialiasing, true);
@@ -161,7 +161,7 @@ class AppStyle final : public QlementineStyle
         {
             if (auto *maskReturn = qstyleoption_cast<QStyleHintReturnMask *>(returnData))
             {
-                constexpr auto radius = 8;
+                constexpr auto radius = 7;
                 QBitmap bitmap(option->rect.size());
                 bitmap.fill(Qt::color0);
                 QPainter painter(&bitmap);
