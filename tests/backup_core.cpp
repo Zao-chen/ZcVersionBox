@@ -456,7 +456,8 @@ class BackupCoreRegression : public QObject
         QCOMPARE(watcher.watchedPathCount(), 2); // The shared directory and its parent.
         writeFile(dir.path() + "/unrelated.txt", "unrelated");
         writeFile(root + "/build/output", "still ignored");
-        QTest::qWait(1200); // Also allows a native FSEvents batch to arrive on macOS.
+        QTest::qWait(1200); // Drain delayed registration events from native FSEvents on macOS.
+        changed.clear();
         QCOMPARE(changed.size(), 0);
         writeFile(first.sourcePath, "changed one");
         const auto hasChanged = [&](const QString &id)

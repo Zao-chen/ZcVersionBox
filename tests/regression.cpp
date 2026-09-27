@@ -231,6 +231,9 @@ class Regression : public QObject
     }
     void closingWithoutTrayExitsWindow()
     {
+#ifdef Q_OS_MACOS
+        QSKIP("Headless macOS runners do not provide a stable system tray");
+#endif
         if (QSystemTrayIcon::isSystemTrayAvailable())
             QSKIP("This scenario requires a desktop without a tray");
         class QuitFilter : public QObject
