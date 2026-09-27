@@ -121,9 +121,8 @@ SettingPageAiPage::SettingPageAiPage(SettingsService *settings, QWidget *parent)
     m_spinner->setObjectName("modelsSpinner");
     m_spinner->setAccessibleName("正在获取模型");
     m_spinner->setFixedSize(16, 16);
-    ui->modelStatusLayout->insertWidget(0, m_spinner);
-    ui->modelStatusLayout->setStretch(1, 1);
-    ui->modelStatusLayout->setAlignment(m_spinner, Qt::AlignTop);
+    ui->modelControls->insertWidget(1, m_spinner);
+    ui->modelControls->setAlignment(m_spinner, Qt::AlignVCenter);
     connect(m_enabled, &QAbstractButton::toggled, this, [this](bool enabled)
             {
         if (!m_loading)
