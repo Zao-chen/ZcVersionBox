@@ -43,6 +43,11 @@ bool SettingsService::runtimeConfig(AiConfigHelper::RuntimeConfig &config, QStri
 {
     return Config::loadRuntimeConfig(config, &error, m_paths.settingsFile);
 }
+bool SettingsService::isAiConfigured() const
+{
+    AiConfigHelper::RuntimeConfig config;
+    return Config::loadRuntimeConfig(config, nullptr, m_paths.settingsFile);
+}
 void SettingsService::invalidateRequest()
 {
     ++m_generation;

@@ -28,6 +28,9 @@
 #include <QListView>
 #include <QMenu>
 #include <QMimeData>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <QMouseEvent>
 #include <QPersistentModelIndex>
 #include <QPlainTextEdit>
@@ -52,6 +55,7 @@
 #include <QSslSocket>
 #include <QImageReader>
 #include <QToolButton>
+#include <QToolTip>
 #include <QUrl>
 #include <algorithm>
 #include <oclero/qlementine/widgets/Expander.hpp>
@@ -1496,14 +1500,18 @@ class Regression : public QObject
         const auto selection = content->textCursor().selectedText();
         const auto scroll = QPoint(content->horizontalScrollBar()->value(), content->verticalScrollBar()->value());
         const auto text = content->toPlainText();
+        const auto toolTipBaseBefore = QToolTip::palette().color(QPalette::ToolTipBase);
         m_theme->toggle();
         page.refreshTheme();
         QCoreApplication::processEvents();
+        const auto toolTipBaseToggled = QToolTip::palette().color(QPalette::ToolTipBase);
+        QVERIFY(toolTipBaseBefore != toolTipBaseToggled);
         QCOMPARE(content->toPlainText(), text);
         QCOMPARE(content->textCursor().selectedText(), selection);
         QCOMPARE(QPoint(content->horizontalScrollBar()->value(), content->verticalScrollBar()->value()), scroll);
         m_theme->toggle();
         page.refreshTheme();
+        QCOMPARE(QToolTip::palette().color(QPalette::ToolTipBase), toolTipBaseBefore);
         auto *analyze = page.findChild<QAction *>("analyzeAction");
         auto *spinner = page.findChild<oclero::qlementine::LoadingSpinner *>("analysisSpinner");
         analyze->trigger();
@@ -1569,6 +1577,22 @@ class Regression : public QObject
         gateway.models.last()({}, "模拟模型获取失败");
         QVERIFY(!modelsSpinner->spinning());
         QVERIFY(ai.findChild<QLabel *>("statusLabel")->text().contains("模拟模型获取失败"));
+        auto *aiSwitch = ai.findChild<oclero::qlementine::Switch *>("aiEnabledSwitch");
+        QVERIFY(aiSwitch != nullptr);
+        QVERIFY(aiSwitch->isEnabled());
+        settings.saveField("Model", "");
+        ai.refresh();
+        QVERIFY(!aiSwitch->isEnabled());
+        HomePageDiffPage diffPage(&service, &settings, &gateway);
+        diffPage.setRevision(id, head(service, id));
+        settle(service);
+        auto *analyzeAction = diffPage.findChild<QAction *>("analyzeAction");
+        QVERIFY(analyzeAction != nullptr);
+        QVERIFY(!analyzeAction->isEnabled());
+        settings.saveField("Model", "manual-model");
+        ai.refresh();
+        QVERIFY(aiSwitch->isEnabled());
+        QVERIFY(analyzeAction->isEnabled());
     }
     void notificationsPauseWhileDetailsAreOpen()
     {
@@ -1881,6 +1905,31 @@ class Regression : public QObject
         QTest::qWait(160);
         QVERIFY(window.findChild<HomePage *>()->findChild<QLabel *>("emptyLabel")->isVisible());
         capture("empty");
+    }
+    void tooltipVisualSmoke()
+    {
+        QWidget parent;
+        parent.resize(200, 200);
+        parent.show();
+        QTest::qWaitForWindowExposed(&parent);
+        QToolTip::showText(parent.mapToGlobal(QPoint(50, 50)), "概览", &parent);
+        QTRY_VERIFY(QToolTip::isVisible());
+        QWidget *tipLabel = nullptr;
+        for (auto *w : QApplication::topLevelWidgets()) {
+            if (w->inherits("QTipLabel") && w->isVisible()) {
+                tipLabel = w;
+                break;
+            }
+        }
+        QVERIFY(tipLabel != nullptr);
+        QVERIFY(tipLabel->windowFlags().testFlag(Qt::NoDropShadowWindowHint));
+#ifdef _WIN32
+        auto hwnd = reinterpret_cast<HWND>(tipLabel->winId());
+        auto classStyle = (unsigned long)GetClassLongPtrW(hwnd, GCL_STYLE);
+        QVERIFY(!(classStyle & 0x00020000));
+        QVERIFY(!tipLabel->mask().isEmpty());
+#endif
+        QToolTip::hideText();
     }
 
   private:

@@ -21,6 +21,7 @@ class SettingsService : public QObject
     void fetchModels();
     bool isFetching() const { return m_fetching; }
     bool runtimeConfig(AiConfigHelper::RuntimeConfig &config, QString &error) const;
+    bool isAiConfigured() const;
     OperationResult setSystemOption(const QString &key, bool enabled);
     QString themeMode() const;
     void setThemeMode(const QString &mode);

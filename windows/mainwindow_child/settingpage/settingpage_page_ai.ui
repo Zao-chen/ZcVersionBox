@@ -680,7 +680,7 @@
                   <item>
                    <widget class="QLabel" name="statusLabel">
                     <property name="text">
-                     <string>支持选择或手工输入模型名称。</string>
+                     <string/>
                     </property>
                     <property name="textFormat">
                      <enum>Qt::PlainText</enum>

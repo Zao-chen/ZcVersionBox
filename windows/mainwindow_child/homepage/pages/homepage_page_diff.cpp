@@ -141,6 +141,8 @@ HomePageDiffPage::HomePageDiffPage(BackupService *service, SettingsService *sett
     ui->analysisHeaderLayout->insertWidget(1, m_spinner);
     connect(ui->files->selectionModel(), &QItemSelectionModel::currentChanged, this, &HomePageDiffPage::loadFile);
     connect(m_analyze, &QAction::triggered, this, &HomePageDiffPage::analyze);
+    if (settings)
+        connect(settings, &SettingsService::changed, this, &HomePageDiffPage::updateLoadingState);
     connect(service, &BackupService::repositoryInvalidated, this, [this](const QString &id)
             {
         if (id == m_id)
@@ -282,7 +284,7 @@ void HomePageDiffPage::refreshTheme()
 }
 void HomePageDiffPage::analyze()
 {
-    if (!m_active || !m_valid || m_loading)
+    if (!m_active || !m_valid || m_loading || !m_settings || !m_settings->isAiConfigured())
         return;
     AiConfigHelper::RuntimeConfig config;
     QString error;
@@ -332,7 +334,9 @@ void HomePageDiffPage::analyze()
 }
 void HomePageDiffPage::updateLoadingState()
 {
-    m_analyze->setEnabled(m_active && m_valid && !m_loading);
+    const bool configured = m_settings && m_settings->isAiConfigured();
+    m_analyze->setEnabled(m_active && m_valid && !m_loading && configured);
+    m_analyze->setToolTip(configured ? QStringLiteral("AI 分析") : QStringLiteral("AI 未配置：请先在设置中配置 API Key 和模型"));
     m_spinner->setSpinning(m_loading && m_active && isVisible());
     m_spinner->setVisible(m_loading);
     const bool showAnalysis = m_loading || m_hasAnalysis;
