@@ -101,7 +101,7 @@ class AppStyle final : public QlementineStyle
         {
             const auto &bgColor = toolTipBackgroundColor();
             const auto &borderColor = toolTipBorderColor();
-            const auto radius = theme().borderRadius;
+            constexpr auto radius = 4.0;
             const auto borderW = 1.0;
             painter->save();
             painter->setRenderHint(QPainter::Antialiasing, true);
@@ -157,7 +157,7 @@ class AppStyle final : public QlementineStyle
         {
             if (auto *maskReturn = qstyleoption_cast<QStyleHintReturnMask *>(returnData))
             {
-                const auto radius = static_cast<int>(std::round(theme().borderRadius));
+                constexpr auto radius = 4;
                 QBitmap bitmap(option->rect.size());
                 bitmap.fill(Qt::color0);
                 QPainter painter(&bitmap);
@@ -175,13 +175,12 @@ class AppStyle final : public QlementineStyle
     int pixelMetric(PixelMetric metric, const QStyleOption *option = nullptr, const QWidget *widget = nullptr) const override
     {
         if (metric == PM_ToolTipLabelFrameWidth)
-            return 6;
+            return 2;
         return QlementineStyle::pixelMetric(metric, option, widget);
     }
     const QColor &toolTipBackgroundColor() const override
     {
-        static const QColor light("#FFFFFF"), dark("#252527");
-        return theme().backgroundColorMain1.lightness() < 128 ? dark : light;
+        return theme().backgroundColorMain2;
     }
     const QColor &toolTipBorderColor() const override
     {
@@ -561,8 +560,7 @@ void ThemeController::apply()
             theme.palette.setColor(QPalette::All, QPalette::HighlightedText, theme.secondaryColor);
             theme.palette.setColor(QPalette::All, QPalette::PlaceholderText, theme.secondaryAlternativeColor);
             theme.palette.setColor(QPalette::All, QPalette::ButtonText, theme.secondaryColor);
-            const bool isDark = theme.backgroundColorMain1.lightness() < 128;
-            theme.palette.setColor(QPalette::All, QPalette::ToolTipBase, isDark ? QColor("#252527") : QColor("#FFFFFF"));
+            theme.palette.setColor(QPalette::All, QPalette::ToolTipBase, theme.backgroundColorMain2);
             theme.palette.setColor(QPalette::All, QPalette::ToolTipText, theme.secondaryColor);
             m_style->setTheme(theme);
             QApplication::setFont(theme.fontRegular);
