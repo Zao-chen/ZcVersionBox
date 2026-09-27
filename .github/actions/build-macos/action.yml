@@ -56,6 +56,15 @@ runs:
         set -euo pipefail
         cmake --build build/release --parallel 4
         ctest --test-dir build/release --output-on-failure
+    - name: Diagnose regression crash
+      if: failure()
+      shell: bash
+      run: |
+        set -o pipefail
+        QT_QPA_PLATFORM=minimal lldb --batch \
+          -o run -o 'thread backtrace all' \
+          -- build/release/tests/zc_tests \
+          2>&1 | tee build/release/tests/lldb.txt || true
     - name: Package macOS DMG
       if: ${{ inputs.package == 'true' }}
       shell: bash
@@ -78,3 +87,4 @@ runs:
           build/release/Testing/Temporary/LastTest.log
           build/release/tests/regression.txt
           build/release/tests/backup_core.txt
+          build/release/tests/lldb.txt
