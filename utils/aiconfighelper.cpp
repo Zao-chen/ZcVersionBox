@@ -7,6 +7,14 @@ namespace
 
 const QString kProviderOpenAI = QStringLiteral("OpenAI");
 const QString kProviderDeepSeek = QStringLiteral("DeepSeek");
+const QString kProviderQwen = QStringLiteral("Qwen");
+const QString kProviderKimi = QStringLiteral("Kimi");
+const QString kProviderGlm = QStringLiteral("GLM");
+const QString kProviderDoubao = QStringLiteral("Doubao");
+const QString kProviderSiliconFlow = QStringLiteral("SiliconFlow");
+const QString kProviderClaude = QStringLiteral("Claude");
+const QString kProviderGemini = QStringLiteral("Gemini");
+const QString kProviderGrok = QStringLiteral("Grok");
 const QString kProviderCustom = QStringLiteral("Custom");
 
 QString providerFromLegacyBaseUrl(const QString &baseUrl)
@@ -42,22 +50,19 @@ QString customProviderName()
 // 统一服务商名称。
 QString normalizeProviderName(const QString &providerName)
 {
-    if (providerName.compare(kProviderDeepSeek, Qt::CaseInsensitive) == 0)
-        return kProviderDeepSeek;
-    if (providerName.compare(kProviderCustom, Qt::CaseInsensitive) == 0)
-        return kProviderCustom;
+    for (const QString &known : {kProviderDeepSeek, kProviderQwen, kProviderKimi, kProviderGlm, kProviderDoubao,
+                                 kProviderSiliconFlow, kProviderClaude, kProviderGemini, kProviderGrok, kProviderCustom})
+    {
+        if (providerName.compare(known, Qt::CaseInsensitive) == 0)
+            return known;
+    }
     return kProviderOpenAI;
 }
 
 // 服务商显示名称。
 QString providerDisplayName(const QString &providerName)
 {
-    const QString normalized = normalizeProviderName(providerName);
-    if (normalized == kProviderDeepSeek)
-        return QStringLiteral("DeepSeek");
-    if (normalized == kProviderCustom)
-        return QStringLiteral("Custom");
-    return QStringLiteral("OpenAI");
+    return normalizeProviderName(providerName);
 }
 
 // 服务商配置前缀。
@@ -72,6 +77,22 @@ AiProvider::ServiceType serviceTypeForProvider(const QString &providerName)
     const QString normalized = normalizeProviderName(providerName);
     if (normalized == kProviderDeepSeek)
         return AiProvider::DeepSeek;
+    if (normalized == kProviderQwen)
+        return AiProvider::Qwen;
+    if (normalized == kProviderKimi)
+        return AiProvider::Moonshot;
+    if (normalized == kProviderGlm)
+        return AiProvider::Zhipu;
+    if (normalized == kProviderDoubao)
+        return AiProvider::Doubao;
+    if (normalized == kProviderSiliconFlow)
+        return AiProvider::SiliconFlow;
+    if (normalized == kProviderClaude)
+        return AiProvider::Anthropic;
+    if (normalized == kProviderGemini)
+        return AiProvider::Gemini;
+    if (normalized == kProviderGrok)
+        return AiProvider::Grok;
     if (normalized == kProviderCustom)
         return AiProvider::Custom;
     return AiProvider::OpenAI;

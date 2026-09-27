@@ -53,6 +53,5 @@ class SettingPageAiPage : public QWidget
     oclero::qlementine::LoadingSpinner *m_spinner;
     bool m_loading{false};
     QString m_displayedProvider;
-    QString m_fetchError;
     void updateLoadingState();
 };

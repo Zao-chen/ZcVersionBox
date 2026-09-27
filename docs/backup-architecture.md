@@ -72,7 +72,7 @@ efsw 固定提交、档案 SHA-256、许可证及本地补丁见 [UPSTREAM.md](.
 
 Windows 目录监听使用共享删除，并避免持有子目录句柄，否则父目录仍不能改名。指纹读取也允许共享删除，隔离测试使用 `ReplaceFileW` 验证读者存活期间的原子替换。Windows 的 `MoveFileEx`/QSaveFile 替换和祖先目录改名仍可能被正在读取的子文件短暂阻止；事件监听不能改变这项文件系统限制。扫描取消、退避和周期校验负责恢复检查，不承诺所有编辑器在并发读写时都能完成原子保存。
 
-监听层支持 Windows、macOS、Linux；应用的 ZcAILib 0.2.0 已统一为源码构建。Ubuntu 22.04/24.04 的构建、原生事件和安装包验证见 [Linux 兼容说明](linux-compatibility.md)。
+监听层支持 Windows、macOS、Linux；应用的 ZcAILib 0.3.0 已统一为源码构建。Ubuntu 22.04/24.04 的构建、原生事件和安装包验证见 [Linux 兼容说明](linux-compatibility.md)。
 
 ## 存储与身份
 

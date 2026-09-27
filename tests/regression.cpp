@@ -634,6 +634,40 @@ class Regression : public QObject
         window.findChild<HomePage *>()->findChild<QLineEdit *>("filter")->setText("/a/");
         QCOMPARE(sidebar->model()->rowCount(), 2);
     }
+    void aiProviderChannels()
+    {
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("OpenAI"), AiProvider::OpenAI);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("DeepSeek"), AiProvider::DeepSeek);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("qwen"), AiProvider::Qwen);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("Kimi"), AiProvider::Moonshot);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("glm"), AiProvider::Zhipu);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("Doubao"), AiProvider::Doubao);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("SiliconFlow"), AiProvider::SiliconFlow);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("claude"), AiProvider::Anthropic);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("Gemini"), AiProvider::Gemini);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("Grok"), AiProvider::Grok);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("Custom"), AiProvider::Custom);
+
+        TestDirectory dir;
+        const auto paths = pathsIn(dir);
+        FakeAi gateway;
+        SettingsService settings(paths, &gateway);
+        settings.selectProvider("GLM");
+        settings.saveField("ApiKey", "fixture-glm");
+        QVERIFY(settings.config("GLM").modelList.isEmpty());
+        settings.fetchModels();
+        QCOMPARE(gateway.models.size(), 1);
+        gateway.models.last()({"glm-4.7", "glm-5.3"}, {});
+        QCOMPARE(settings.config("GLM").modelName, QString("glm-4.7"));
+        settings.selectProvider("Claude");
+        settings.saveField("ApiKey", "fixture-claude");
+        settings.fetchModels();
+        QCOMPARE(gateway.models.size(), 2);
+        gateway.models.last()({"claude-sonnet-4-5", "claude-opus-4-6"}, {});
+        QCOMPARE(settings.config("Claude").modelName, QString("claude-sonnet-4-5"));
+        settings.selectProvider("GLM");
+        QCOMPARE(settings.config("GLM").modelName, QString("glm-4.7"));
+    }
     void settingsRejectStaleResponses()
     {
         TestDirectory dir;
@@ -1573,10 +1607,12 @@ class Regression : public QObject
         QCOMPARE(combo->count(), 2);
         QCOMPARE(combo->completer()->filterMode(), Qt::MatchContains);
         QVERIFY(!modelsSpinner->spinning());
+        QSignalSpy fetchFailure(&settings, &SettingsService::notification);
         ai.findChild<QPushButton *>("fetchButton")->click();
         gateway.models.last()({}, "模拟模型获取失败");
         QVERIFY(!modelsSpinner->spinning());
-        QVERIFY(ai.findChild<QLabel *>("statusLabel")->text().contains("模拟模型获取失败"));
+        QCOMPARE(fetchFailure.count(), 1);
+        QCOMPARE(fetchFailure.first().first().value<OperationResult>().message, QString("模拟模型获取失败"));
         auto *aiSwitch = ai.findChild<oclero::qlementine::Switch *>("aiEnabledSwitch");
         QVERIFY(aiSwitch != nullptr);
         QVERIFY(aiSwitch->isEnabled());

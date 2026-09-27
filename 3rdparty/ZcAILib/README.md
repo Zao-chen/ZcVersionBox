@@ -3,7 +3,8 @@
 Qt-based AI client library for chat completion APIs.  
 It currently provides:
 
-- OpenAI / DeepSeek service switching
+- Multiple built-in AI services (OpenAI, DeepSeek, Qwen, Moonshot, Zhipu,
+  Doubao, SiliconFlow, Anthropic, Gemini, Grok)
 - model list fetching
 - system prompt support
 - non-streaming reply callbacks
@@ -35,7 +36,7 @@ The example executable will be generated as:
 
 ## Add To Your Project
 
-Version 0.2.0 supports Windows (MSVC / MinGW), macOS arm64 (12.0+), and Linux
+Version 0.3.0 supports Windows (MSVC / MinGW), macOS arm64 (12.0+), and Linux
 x86_64 (Ubuntu 22.04 / 24.04). SDK releases use Qt 6.8.3 and shared-library ABI 1.
 The public `AiProvider` methods and signals are unchanged.
 
@@ -57,7 +58,7 @@ cmake --install build --config Release --prefix /your/sdk/prefix
 ```
 
 ```cmake
-find_package(ZcAiLib 0.2 CONFIG REQUIRED)
+find_package(ZcAiLib 0.3 CONFIG REQUIRED)
 target_link_libraries(YourApp PRIVATE ZcAiLib::ZcAiLib)
 ```
 
@@ -121,7 +122,7 @@ AiProvider *ai = new AiProvider(this);
 
 ai->setServiceType(AiProvider::OpenAI);
 ai->setApiKey("YOUR_API_KEY");
-ai->setModel("gpt-3.5-turbo");
+ai->setModel("gpt-5-mini");
 ai->setStreamEnabled(true);
 
 connect(ai, &AiProvider::replyChunkReceived, this, [](const QString &chunk) {
@@ -170,9 +171,21 @@ ai->fetchModels();
 
 Built-in service types:
 
-- `AiProvider::OpenAI`
-- `AiProvider::DeepSeek`
+- `AiProvider::OpenAI` — `https://api.openai.com/v1`
+- `AiProvider::DeepSeek` — `https://api.deepseek.com/v1`
+- `AiProvider::Qwen` — `https://dashscope.aliyuncs.com/compatible-mode/v1`
+- `AiProvider::Moonshot` — `https://api.moonshot.cn/v1`
+- `AiProvider::Zhipu` — `https://open.bigmodel.cn/api/paas/v4`
+- `AiProvider::Doubao` — `https://ark.cn-beijing.volces.com/api/v3`
+- `AiProvider::SiliconFlow` — `https://api.siliconflow.cn/v1`
+- `AiProvider::Anthropic` — `https://api.anthropic.com/v1` (native Messages API)
+- `AiProvider::Gemini` — `https://generativelanguage.googleapis.com/v1beta/openai`
+- `AiProvider::Grok` — `https://api.x.ai/v1`
 - `AiProvider::Custom`
+
+All built-in types except `Anthropic` speak the OpenAI-compatible chat
+completions protocol; `Anthropic` uses the native Messages API (`x-api-key`
+plus `anthropic-version` headers, `max_tokens` in the request body).
 
 For custom services:
 
@@ -219,7 +232,7 @@ The example UI is in `example/mainwindow.cpp`.
 
 It demonstrates:
 
-- switching between OpenAI and DeepSeek
+- switching between all built-in AI services
 - fetching model lists from the API
 - setting a system prompt
 - enabling/disabling stream output

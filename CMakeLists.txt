@@ -60,7 +60,7 @@ endfunction()
 zc_add_file_watcher()
 
 set(ZCVERSIONBOX_AI_SDK_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/ZcAILib"
-    CACHE PATH "ZcAILib 0.2.0 source directory (defaults to the offline snapshot)")
+    CACHE PATH "ZcAILib 0.3.0 source directory (defaults to the offline snapshot)")
 if(NOT EXISTS "${ZCVERSIONBOX_AI_SDK_SOURCE_DIR}/CMakeLists.txt")
     message(FATAL_ERROR "ZCVERSIONBOX_AI_SDK_SOURCE_DIR must contain the ZcAILib source project")
 endif()

@@ -8,11 +8,11 @@
 - Linux：Ubuntu 22.04/24.04 x86_64、GCC；打包还需要 Qt WaylandClient、`file`、`dpkg-dev`、`patchelf` 和 `desktop-file-utils`。Qt 和系统开发库清单见 `tests/linux/Dockerfile`。
 - CMake 3.27 或更新版本、Git 2.29 或更新版本。使用 Ninja 生成器时另需 Ninja。
 
-Qlementine v1.4.2 源码已固定纳入 `3rdparty/qlementine`，提交为 `13f72eb8b53bafd9ac24e5562d8ddc28d5440469`，通过静态库链接，配置阶段不下载依赖。来源、MIT 许可证和字体许可证见其 `UPSTREAM.md`、`LICENSE`、`LICENSES`。ZcAILib 0.2.0 的源码快照位于 `3rdparty/ZcAILib`，固定提交见其 `UPSTREAM.md`；三平台均构建共享 SDK，嵌入时关闭 SDK 示例、测试、静态库和独立安装规则，不再使用旧预编译文件。
+Qlementine v1.4.2 源码已固定纳入 `3rdparty/qlementine`，提交为 `13f72eb8b53bafd9ac24e5562d8ddc28d5440469`，通过静态库链接，配置阶段不下载依赖。来源、MIT 许可证和字体许可证见其 `UPSTREAM.md`、`LICENSE`、`LICENSES`。ZcAILib 0.3.0 的源码快照位于 `3rdparty/ZcAILib`，固定提交见其 `UPSTREAM.md`；三平台均构建共享 SDK，嵌入时关闭 SDK 示例、测试、静态库和独立安装规则，不再使用旧预编译文件。
 
 文件监听使用静态链接的 efsw 1.7.2，源码固定在 `3rdparty/efsw`，不增加运行时 DLL 或构建时下载。提交、MIT 许可证、Windows 事件去重补丁和 Linux `IN_ATTRIB` 补丁见其 `UPSTREAM.md`、`LICENSE`。
 
-默认使用仓库快照进行离线构建。联调本机 SDK 时可显式传入 `-DZCVERSIONBOX_AI_SDK_SOURCE_DIR=P:/Qt/Project/ZcAILib`；不会自动读取项目父目录。独立 SDK 的共享库、静态库、安装后 `find_package(ZcAiLib 0.2 CONFIG REQUIRED)` 和模拟 HTTP 测试由 SDK 仓库构建，应用链接 `ZcAiLib::ZcAiLib`。
+默认使用仓库快照进行离线构建。联调本机 SDK 时可显式传入 `-DZCVERSIONBOX_AI_SDK_SOURCE_DIR=P:/Qt/Project/ZcAILib`；不会自动读取项目父目录。独立 SDK 的共享库、静态库、安装后 `find_package(ZcAiLib 0.3 CONFIG REQUIRED)` 和模拟 HTTP 测试由 SDK 仓库构建，应用链接 `ZcAiLib::ZcAiLib`。
 
 ## 构建与测试
 
