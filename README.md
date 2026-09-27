@@ -29,6 +29,6 @@ Linux 会记录并恢复 Git 的可执行模式（`100644` / `100755`），单�
 
 ## 开发
 
-使用 Qt 6.8.3、MSVC 2022（Windows）、macOS arm64 或 Linux/GCC。Qlementine v1.4.2、QWindowKit、efsw 和 ZcAILib 0.2.0 均使用仓库内固定源码，配置阶段不下载依赖。SDK 保留 `AiProvider` 接口与 ABI 1，并支持可安装的 CMake package。
+使用 Qt 6.8.3、MSVC 2022（Windows）、macOS arm64 或 Linux/GCC。Qlementine v1.4.2、QWindowKit、efsw 和 ZcAILib 0.3.0 均使用仓库内固定源码，配置阶段不下载依赖。SDK 保留 `AiProvider` 接口与 ABI 1，并支持可安装的 CMake package。
 
 构建、测试、打包及 Designer 编辑方式见 [开发指南](CONTRIBUTING.md)。备份状态与失败边界见 [备份架构](docs/backup-architecture.md)，页面边界见 [UI 架构](docs/ui-architecture.md)，验证范围见 [回归验证](docs/ui-regression.md)。

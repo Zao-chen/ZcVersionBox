@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 if(CMAKE_HOST_APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum supported macOS")
 endif()
-project(ZcAiLib VERSION 0.2.0 LANGUAGES CXX)
+project(ZcAiLib VERSION 0.3.0 LANGUAGES CXX)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)

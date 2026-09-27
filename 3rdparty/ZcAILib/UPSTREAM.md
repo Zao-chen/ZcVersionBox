@@ -1,7 +1,7 @@
-ZcAILib 0.2.0
+ZcAILib 0.3.0
 
 Source repository: P:/Qt/Project/ZcAILib
-Commit: 275abb447916cf25c0e99e391048b307ed803621
+Commit: f73000770968e3380c101618781a530f31cbe967
 License: GPL-3.0 (see LICENSE).
 
 Snapshot: CMakeLists.txt, src/, cmake/, README.md, LICENSE.

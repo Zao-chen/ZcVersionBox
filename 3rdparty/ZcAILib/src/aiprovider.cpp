@@ -36,7 +36,28 @@ QString buildApiErrorMessage(const QByteArray &data, const QString &fallback) {
   return errorMsg;
 }
 
-QString extractFinalContent(const QJsonObject &root) {
+QString extractFinalContent(const QJsonObject &root,
+                            AiProvider::ServiceType type) {
+  if (type == AiProvider::Anthropic) {
+    const QJsonValue content = root.value("content");
+    if (content.isString()) {
+      return content.toString();
+    }
+
+    QString text;
+    const QJsonArray blocks = content.toArray();
+    for (const QJsonValue &block : blocks) {
+      const QJsonObject blockObject = block.toObject();
+      if (blockObject.value("type").toString() == "text") {
+        if (!text.isEmpty()) {
+          text += '\n';
+        }
+        text += blockObject.value("text").toString();
+      }
+    }
+    return text;
+  }
+
   const QJsonArray choices = root.value("choices").toArray();
   if (choices.isEmpty()) {
     return {};
@@ -52,7 +73,21 @@ QString extractFinalContent(const QJsonObject &root) {
   return delta.value("content").toString();
 }
 
-QString extractStreamDelta(const QJsonObject &root) {
+QString extractStreamDelta(const QJsonObject &root,
+                           AiProvider::ServiceType type) {
+  if (type == AiProvider::Anthropic) {
+    if (root.value("type").toString() != "content_block_delta") {
+      return {};
+    }
+
+    const QJsonObject delta = root.value("delta").toObject();
+    if (delta.value("type").toString() != "text_delta") {
+      return {};
+    }
+
+    return delta.value("text").toString();
+  }
+
   const QJsonArray choices = root.value("choices").toArray();
   if (choices.isEmpty()) {
     return {};
@@ -82,7 +117,7 @@ QString joinBaseUrl(const QString &baseUrl, const QString &path) {
 AiProvider::AiProvider(QObject *parent)
     : QObject(parent), m_network(new QNetworkAccessManager(this)),
       m_apiUrl("https://api.openai.com/v1/chat/completions"),
-      m_baseUrl("https://api.openai.com/v1"), m_model("gpt-3.5-turbo"),
+      m_baseUrl("https://api.openai.com/v1"), m_model("gpt-5-mini"),
       m_streamEnabled(false),
       m_modelsApiUrl("https://api.openai.com/v1/models"),
       m_serviceType(OpenAI) {}
@@ -95,21 +130,62 @@ void AiProvider::setServiceType(ServiceType type) {
   switch (type) {
   case OpenAI:
     m_baseUrl = "https://api.openai.com/v1";
-    m_apiUrl = joinBaseUrl(m_baseUrl, "chat/completions");
-    m_modelsApiUrl = joinBaseUrl(m_baseUrl, "models");
-    m_model = "gpt-3.5-turbo";
+    m_model = "gpt-5-mini";
     break;
 
   case DeepSeek:
     m_baseUrl = "https://api.deepseek.com/v1";
-    m_apiUrl = joinBaseUrl(m_baseUrl, "chat/completions");
-    m_modelsApiUrl = joinBaseUrl(m_baseUrl, "models");
     m_model = "deepseek-chat";
     break;
 
-  case Custom:
+  case Qwen:
+    m_baseUrl = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+    m_model = "qwen-plus";
     break;
+
+  case Moonshot:
+    m_baseUrl = "https://api.moonshot.cn/v1";
+    m_model = "kimi-k2.6";
+    break;
+
+  case Zhipu:
+    m_baseUrl = "https://open.bigmodel.cn/api/paas/v4";
+    m_model = "glm-4.7";
+    break;
+
+  case Doubao:
+    m_baseUrl = "https://ark.cn-beijing.volces.com/api/v3";
+    m_model = "doubao-seed-evolving";
+    break;
+
+  case SiliconFlow:
+    m_baseUrl = "https://api.siliconflow.cn/v1";
+    m_model = "deepseek-ai/DeepSeek-V4-Flash";
+    break;
+
+  case Anthropic:
+    m_baseUrl = "https://api.anthropic.com/v1";
+    m_model = "claude-sonnet-4-5";
+    break;
+
+  case Gemini:
+    m_baseUrl = "https://generativelanguage.googleapis.com/v1beta/openai";
+    m_model = "gemini-3.8-flash";
+    break;
+
+  case Grok:
+    m_baseUrl = "https://api.x.ai/v1";
+    m_model = "grok-4";
+    break;
+
+  case Custom:
+    return;
   }
+
+  const QString chatPath =
+      type == Anthropic ? "messages" : "chat/completions";
+  m_apiUrl = joinBaseUrl(m_baseUrl, chatPath);
+  m_modelsApiUrl = joinBaseUrl(m_baseUrl, "models");
 }
 
 void AiProvider::setApiKey(const QString &apiKey) { m_apiKey = apiKey; }
@@ -125,13 +201,25 @@ void AiProvider::setBaseUrl(const QString &baseUrl) {
     return;
   }
 
-  m_apiUrl = joinBaseUrl(m_baseUrl, "chat/completions");
+  const QString chatPath =
+      m_serviceType == Anthropic ? "messages" : "chat/completions";
+  m_apiUrl = joinBaseUrl(m_baseUrl, chatPath);
   m_modelsApiUrl = joinBaseUrl(m_baseUrl, "models");
 }
 
 void AiProvider::setModel(const QString &model) { m_model = model; }
 
 void AiProvider::setStreamEnabled(bool enabled) { m_streamEnabled = enabled; }
+
+void AiProvider::setAuthHeaders(QNetworkRequest &request) const {
+  if (m_serviceType == Anthropic) {
+    request.setRawHeader("x-api-key", m_apiKey.toUtf8());
+    request.setRawHeader("anthropic-version", "2023-06-01");
+    return;
+  }
+
+  request.setRawHeader("Authorization", ("Bearer " + m_apiKey).toUtf8());
+}
 
 void AiProvider::fetchModels() {
   if (m_apiKey.isEmpty()) {
@@ -145,7 +233,7 @@ void AiProvider::fetchModels() {
   }
 
   QNetworkRequest request{QUrl(m_modelsApiUrl)};
-  request.setRawHeader("Authorization", ("Bearer " + m_apiKey).toUtf8());
+  setAuthHeaders(request);
 
   qDebug() << "=== Fetching Models ===";
   qDebug() << "URL:" << m_modelsApiUrl;
@@ -245,25 +333,39 @@ void AiProvider::chat(const QString &message) {
 
   QNetworkRequest request{QUrl(m_apiUrl)};
   request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-  request.setRawHeader("Authorization", ("Bearer " + m_apiKey).toUtf8());
+  setAuthHeaders(request);
 
   QJsonObject json;
   json["model"] = m_model;
   json["stream"] = m_streamEnabled;
 
-  QJsonArray messages;
-  if (!m_systemPrompt.isEmpty()) {
-    QJsonObject systemMsg;
-    systemMsg["role"] = "system";
-    systemMsg["content"] = m_systemPrompt;
-    messages.append(systemMsg);
-  }
+  if (m_serviceType == Anthropic) {
+    json["max_tokens"] = 4096;
+    if (!m_systemPrompt.isEmpty()) {
+      json["system"] = m_systemPrompt;
+    }
 
-  QJsonObject userMsg;
-  userMsg["role"] = "user";
-  userMsg["content"] = message;
-  messages.append(userMsg);
-  json["messages"] = messages;
+    QJsonArray messages;
+    QJsonObject userMsg;
+    userMsg["role"] = "user";
+    userMsg["content"] = message;
+    messages.append(userMsg);
+    json["messages"] = messages;
+  } else {
+    QJsonArray messages;
+    if (!m_systemPrompt.isEmpty()) {
+      QJsonObject systemMsg;
+      systemMsg["role"] = "system";
+      systemMsg["content"] = m_systemPrompt;
+      messages.append(systemMsg);
+    }
+
+    QJsonObject userMsg;
+    userMsg["role"] = "user";
+    userMsg["content"] = message;
+    messages.append(userMsg);
+    json["messages"] = messages;
+  }
 
   qDebug() << "=== AI Request ===";
   qDebug() << "URL:" << m_apiUrl;
@@ -340,7 +442,7 @@ void AiProvider::processStreamChunk(QNetworkReply *reply,
       continue;
     }
 
-    const QString delta = extractStreamDelta(root);
+    const QString delta = extractStreamDelta(root, m_serviceType);
     if (delta.isEmpty()) {
       continue;
     }
@@ -365,7 +467,7 @@ void AiProvider::finalizeStreamReply(QNetworkReply *reply) {
     QJsonParseError parseError;
     const QJsonDocument doc = QJsonDocument::fromJson(rawResponse, &parseError);
     if (parseError.error == QJsonParseError::NoError && doc.isObject()) {
-      fullReply = extractFinalContent(doc.object());
+      fullReply = extractFinalContent(doc.object(), m_serviceType);
     }
   }
 
@@ -451,7 +553,7 @@ void AiProvider::handleReply() {
     return;
   }
 
-  const QString content = extractFinalContent(root);
+  const QString content = extractFinalContent(root, m_serviceType);
   if (content.isEmpty()) {
     emit errorOccurred("Response did not contain any content");
   } else {

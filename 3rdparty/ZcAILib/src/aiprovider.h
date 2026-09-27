@@ -10,12 +10,25 @@
 
 class QNetworkAccessManager;
 class QNetworkReply;
+class QNetworkRequest;
 
 class ZCAILIB_EXPORT AiProvider : public QObject {
   Q_OBJECT
 
 public:
-  enum ServiceType { OpenAI, DeepSeek, Custom };
+  enum ServiceType {
+    OpenAI,
+    DeepSeek,
+    Qwen,
+    Moonshot,
+    Zhipu,
+    Doubao,
+    SiliconFlow,
+    Anthropic,
+    Gemini,
+    Grok,
+    Custom
+  };
 
   struct ModelInfo {
     QString id;
@@ -59,6 +72,7 @@ private:
   void processStreamChunk(QNetworkReply *reply, const QByteArray &chunk);
   void finalizeStreamReply(QNetworkReply *reply);
   void cleanupStreamReply(QNetworkReply *reply);
+  void setAuthHeaders(QNetworkRequest &request) const;
 
   QNetworkAccessManager *m_network;
   QString m_apiKey;
