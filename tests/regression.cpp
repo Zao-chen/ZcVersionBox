@@ -28,6 +28,9 @@
 #include <QListView>
 #include <QMenu>
 #include <QMimeData>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #include <QMouseEvent>
 #include <QPersistentModelIndex>
 #include <QPlainTextEdit>
@@ -1919,6 +1922,12 @@ class Regression : public QObject
             }
         }
         QVERIFY(tipLabel != nullptr);
+        QVERIFY(tipLabel->windowFlags().testFlag(Qt::NoDropShadowWindowHint));
+#ifdef _WIN32
+        auto hwnd = reinterpret_cast<HWND>(tipLabel->winId());
+        auto classStyle = (unsigned long)GetClassLongPtrW(hwnd, GCL_STYLE);
+        QVERIFY(!(classStyle & 0x00020000));
+#endif
         QVERIFY(!tipLabel->mask().isEmpty());
         QToolTip::hideText();
     }

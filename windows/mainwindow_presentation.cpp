@@ -130,6 +130,10 @@ class AppStyle final : public QlementineStyle
     void polish(QWidget *widget) override
     {
         QlementineStyle::polish(widget);
+        if (widget && widget->inherits("QTipLabel"))
+        {
+            widget->setWindowFlag(Qt::NoDropShadowWindowHint, true);
+        }
 #ifndef _WIN32
         if (widget && widget->inherits("QTipLabel"))
         {
