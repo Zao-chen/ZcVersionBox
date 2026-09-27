@@ -90,6 +90,8 @@ Linux 使用 Qt 部署 API 和 CPack DEB；应用、SDK、Qt、ICU 和插件位�
 
 GitHub Actions 的 `ci.yml` 在 PR 和合并到 `main` 后运行三平台构建与测试；Linux 还执行 X11/Wayland desktop smoke。`release.yml` 由 `main` 手动触发，输入 `vMAJOR.MINOR.PATCH` 后并行构建 Windows x64 安装器、macOS Universal DMG 和 Linux amd64 DEB，Linux 在 Ubuntu 22.04/24.04 容器中验证安装、升级、测试和卸载。测试日志独立上传，Release 资产只取 `pkg-*`。Release 当前不接入证书签名和公证，macOS 使用 ad-hoc 签名。
 
+手动运行 `ci.yml` 时可选 `platform=macos`、`windows` 或 `linux`，用于定向排查；默认 `all`。macOS hosted runner 使用 `offscreen` 插件；该插件无法可靠向隐藏窗口传递键盘焦点，因此 3 项涉及弹窗关闭后的键盘操作、隐藏历史视图键盘操作和隐藏通知宿主焦点的回归在 macOS CI 中明确跳过。其余 macOS 回归与完整 `backup_core` 继续运行；这 3 项在 Windows/Linux CI 中执行，macOS 原生 Cocoa 焦点交互需在有桌面的机器上验收。
+
 应用版本默认来自 `CMakeLists.txt` 中的 `0.1.0`。Release workflow 将 tag 去掉 `v` 后传入 `-DZCVERSIONBOX_VERSION_OVERRIDE=MAJOR.MINOR.PATCH`，CMake、macOS bundle、安装器和 DEB 使用同一版本。手动 Release 必须从 `main` 运行；同一 tag 可以重跑并覆盖资产，已存在但指向其他提交的 tag 会被拒绝。
 
 ## 修改 UI
