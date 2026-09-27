@@ -294,7 +294,11 @@ class Regression : public QObject
         layout.endLayout();
         QStringList faces;
         for (const auto &run : layout.glyphRuns())
-            faces.append(run.rawFont().familyName());
+        {
+            const auto rawFont = run.rawFont();
+            if (rawFont.isValid())
+                faces.append(rawFont.familyName());
+        }
         qInfo().noquote() << "Body fonts:" << body.families().join(", ") << "; resolved:" << faces.join(", ")
                           << "; pixels:" << QFontInfo(body).pixelSize();
         m_theme->toggle();
