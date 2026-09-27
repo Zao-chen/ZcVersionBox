@@ -4,7 +4,7 @@
 
 - Qt 6.8.3：Widgets、Network、Svg；运行回归测试还需要 Qt Test。
 - Windows：Visual Studio 2022 的 MSVC x64 工具链。
-- macOS：Xcode Command Line Tools，最低部署版本 12.0；本轮发布目标为 arm64。
+- macOS：Xcode Command Line Tools，最低部署版本 12.0；Release 目标为 Universal（arm64 + x86_64）。
 - Linux：Ubuntu 22.04/24.04 x86_64、GCC；打包还需要 Qt WaylandClient、`file`、`dpkg-dev`、`patchelf` 和 `desktop-file-utils`。Qt 和系统开发库清单见 `tests/linux/Dockerfile`。
 - CMake 3.27 或更新版本、Git 2.29 或更新版本。使用 Ninja 生成器时另需 Ninja。
 
@@ -40,12 +40,13 @@ macOS：
 cmake -S . -B build/release -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
   -DCMAKE_PREFIX_PATH="$HOME/Qt/6.8.3/macos" \
-  -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 -DCMAKE_OSX_ARCHITECTURES=arm64
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
+  "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
 cmake --build build/release --parallel 4
 ctest --test-dir build/release --output-on-failure
 ```
 
-SDK 与应用使用相同工具链和 `CMAKE_OSX_ARCHITECTURES` 从源码编译。打包时用 `lipo` 验证全部指定架构；本轮没有执行 macOS 构建，arm64 的真实结果仍待平台验证。应用包内 SDK 文件名为 `libZcAiLib.1.dylib`，与其加载标识一致。
+SDK 与应用使用相同工具链和 `CMAKE_OSX_ARCHITECTURES` 从源码编译。打包时用 `lipo` 验证 arm64 与 x86_64；应用包内 SDK 文件名为 `libZcAiLib.1.dylib`，与其加载标识一致。
 
 Linux（CMake 3.27+、Qt 6.8.3 和系统开发库已安装）：
 
@@ -75,7 +76,7 @@ bash tests/linux/run-desktop-smoke.sh build/linux/tests/zc_tests build/native-sm
 
 ```bash
 # macdeployqt 必须在 PATH。
-bash scripts/package-macos.sh build/release dist/macos v0.1.0 arm64
+bash scripts/package-macos.sh build/release dist/macos v0.1.0 'arm64;x86_64'
 ```
 
 ```bash
@@ -87,7 +88,9 @@ Windows 显式复制 `ZcAiLib.dll`，并要求部署 `vc_redist.x64.exe`；安�
 
 Linux 使用 Qt 部署 API 和 CPack DEB；应用、SDK、Qt、ICU 和插件位于 `/opt/zcversionbox`，入口位于 `/usr/bin` 和 `/usr/share`，运行库使用相对 RPATH。包声明 Git、证书、OpenSSL 和系统库依赖，显式部署 XCB、Wayland、SVG、TLS。Qt/ICU 许可证快照见 `3rdparty/qt-licenses`。打包不包含测试或 Qt Test，也不写用户目录。
 
-三平台 CI 和四套手动发布工作流共用平台构建 action，固定 Qt 6.8.3、MSVC 2022、macOS arm64/12.0、Ubuntu 22.04；Linux 还在干净的 Ubuntu 22.04/24.04 容器安装同一 `.deb`、运行隔离回归并验证升级和卸载保留用户数据。CI 只上传构建产物；手动发布工作流测试通过后才发布。发布资产只取 `pkg-*`，测试日志单独上传。本轮只进行本地提交和打包，验收前不推送、合并或触发发布。
+GitHub Actions 的 `ci.yml` 在 PR 和合并到 `main` 后运行三平台构建与测试；Linux 还执行 X11/Wayland desktop smoke。`release.yml` 由 `main` 手动触发，输入 `vMAJOR.MINOR.PATCH` 后并行构建 Windows x64 安装器、macOS Universal DMG 和 Linux amd64 DEB，Linux 在 Ubuntu 22.04/24.04 容器中验证安装、升级、测试和卸载。测试日志独立上传，Release 资产只取 `pkg-*`。Release 当前不接入证书签名和公证，macOS 使用 ad-hoc 签名。
+
+应用版本默认来自 `CMakeLists.txt` 中的 `0.1.0`。Release workflow 将 tag 去掉 `v` 后传入 `-DZCVERSIONBOX_VERSION_OVERRIDE=MAJOR.MINOR.PATCH`，CMake、macOS bundle、安装器和 DEB 使用同一版本。手动 Release 必须从 `main` 运行；同一 tag 可以重跑并覆盖资产，已存在但指向其他提交的 tag 会被拒绝。
 
 ## 修改 UI
 

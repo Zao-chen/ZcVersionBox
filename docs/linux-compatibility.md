@@ -78,7 +78,7 @@ bash /work/verify-package.sh /work/ZcVersionBox.deb /work/validation.tar.gz /wor
 | 两个 Ubuntu 的 X11 与 Wayland | 各通过窗口、系统图标解析、SVG/TLS 插件和无托盘关闭测试，截图已检查 |
 | 两个 Ubuntu 的安装、升级、purge | 用户备份、设置及用户级桌面入口均保留；无开发目录运行库依赖 |
 | SDK / Windows MSVC、Ubuntu 22.04 GCC | 共享/静态各 10 passed；模型列表、普通响应、分段 UTF-8 SSE、错误回调、TLS 可用性；安装迁移后的共享/静态消费者通过 |
-| macOS arm64、Windows MinGW | 已更新源码构建与发布流程，未实际执行 |
+| macOS Universal、Windows MinGW | 已更新源码构建与发布流程，未实际执行 |
 
 Qt Test 的 passed 数包含初始化和清理。Windows 完整两组日志为 `build/backup-core/tests/{regression,backup_core}.txt`，后续 URI 定向日志为 `build/windows-nautilus-uri.txt`；Linux 交付包结果与截图位于 `build/runtime-{22.04,24.04}-final/`。SDK 日志位于 SDK 仓库的 `build/linux-compat/` 和 `build/linux-sdk*.log`。
 
