@@ -102,13 +102,6 @@ void SettingsService::fetchModels()
         emit notification(OperationResult::warn("模型获取失败", "请先填写当前服务商的 API Key 和接口地址"));
         return;
     }
-    if (!Config::supportsModelFetch(name))
-    {
-        // 该服务商没有 /models 接口，直接使用预置模型列表。
-        if (request.modelName.isEmpty())
-            saveField("Model", request.modelList.first());
-        return;
-    }
     const auto generation = m_generation;
     m_fetching = true;
     emit fetchingChanged(true);

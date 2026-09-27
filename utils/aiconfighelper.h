@@ -35,10 +35,6 @@ QString providerPrefix(const QString &providerName);
 AiProvider::ServiceType serviceTypeForProvider(const QString &providerName);
 bool isCustomProvider(const QString &providerName);
 
-// 智谱不提供 /models 接口，由应用预置候选模型。
-bool supportsModelFetch(const QString &providerName);
-QStringList builtinModelList(const QString &providerName);
-
 // Custom 服务的 URL 归一化。
 QString deriveBaseUrl(const QString &apiUrl);
 

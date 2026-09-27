@@ -103,19 +103,6 @@ bool isCustomProvider(const QString &providerName)
     return normalizeProviderName(providerName) == kProviderCustom;
 }
 
-// 智谱的 OpenAPI 不提供 /models 端点，模型列表由应用预置。
-bool supportsModelFetch(const QString &providerName)
-{
-    return normalizeProviderName(providerName) != kProviderGlm;
-}
-
-QStringList builtinModelList(const QString &providerName)
-{
-    if (normalizeProviderName(providerName) == kProviderGlm)
-        return {QStringLiteral("glm-4.7"), QStringLiteral("glm-4.7-flash"), QStringLiteral("glm-5.3")};
-    return {};
-}
-
 // 统一为 /v1 形式。
 QString deriveBaseUrl(const QString &apiUrl)
 {
@@ -172,8 +159,6 @@ RuntimeConfig loadProviderConfig(QSettings &ini, const QString &providerName, bo
     config.apiKey = ini.value(prefix + "ApiKey").toString().trimmed();
     config.modelName = ini.value(prefix + "Model").toString().trimmed();
     config.modelList = ini.value(prefix + "ModelList").toStringList();
-    if (config.modelList.isEmpty())
-        config.modelList = builtinModelList(config.providerName);
 
     if (fallbackLegacy)
     {

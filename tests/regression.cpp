@@ -647,10 +647,6 @@ class Regression : public QObject
         QCOMPARE(AiConfigHelper::serviceTypeForProvider("Gemini"), AiProvider::Gemini);
         QCOMPARE(AiConfigHelper::serviceTypeForProvider("Grok"), AiProvider::Grok);
         QCOMPARE(AiConfigHelper::serviceTypeForProvider("Custom"), AiProvider::Custom);
-        QVERIFY(AiConfigHelper::supportsModelFetch("OpenAI"));
-        QVERIFY(!AiConfigHelper::supportsModelFetch("GLM"));
-        QVERIFY(AiConfigHelper::builtinModelList("GLM").contains("glm-4.7"));
-        QVERIFY(AiConfigHelper::builtinModelList("OpenAI").isEmpty());
 
         TestDirectory dir;
         const auto paths = pathsIn(dir);
@@ -658,18 +654,19 @@ class Regression : public QObject
         SettingsService settings(paths, &gateway);
         settings.selectProvider("GLM");
         settings.saveField("ApiKey", "fixture-glm");
-        QVERIFY(!settings.config("GLM").modelList.isEmpty());
+        QVERIFY(settings.config("GLM").modelList.isEmpty());
         settings.fetchModels();
-        QCOMPARE(gateway.models.size(), 0);
+        QCOMPARE(gateway.models.size(), 1);
+        gateway.models.last()({"glm-4.7", "glm-5.3"}, {});
         QCOMPARE(settings.config("GLM").modelName, QString("glm-4.7"));
         settings.selectProvider("Claude");
         settings.saveField("ApiKey", "fixture-claude");
         settings.fetchModels();
-        QCOMPARE(gateway.models.size(), 1);
+        QCOMPARE(gateway.models.size(), 2);
         gateway.models.last()({"claude-sonnet-4-5", "claude-opus-4-6"}, {});
         QCOMPARE(settings.config("Claude").modelName, QString("claude-sonnet-4-5"));
         settings.selectProvider("GLM");
-        QCOMPARE(settings.config("GLM").modelList, AiConfigHelper::builtinModelList("GLM"));
+        QCOMPARE(settings.config("GLM").modelName, QString("glm-4.7"));
     }
     void settingsRejectStaleResponses()
     {
