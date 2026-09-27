@@ -52,6 +52,7 @@
 #include <QSslSocket>
 #include <QImageReader>
 #include <QToolButton>
+#include <QToolTip>
 #include <QUrl>
 #include <algorithm>
 #include <oclero/qlementine/widgets/Expander.hpp>
@@ -1496,14 +1497,18 @@ class Regression : public QObject
         const auto selection = content->textCursor().selectedText();
         const auto scroll = QPoint(content->horizontalScrollBar()->value(), content->verticalScrollBar()->value());
         const auto text = content->toPlainText();
+        const auto toolTipBaseBefore = QToolTip::palette().color(QPalette::ToolTipBase);
         m_theme->toggle();
         page.refreshTheme();
         QCoreApplication::processEvents();
+        const auto toolTipBaseToggled = QToolTip::palette().color(QPalette::ToolTipBase);
+        QVERIFY(toolTipBaseBefore != toolTipBaseToggled);
         QCOMPARE(content->toPlainText(), text);
         QCOMPARE(content->textCursor().selectedText(), selection);
         QCOMPARE(QPoint(content->horizontalScrollBar()->value(), content->verticalScrollBar()->value()), scroll);
         m_theme->toggle();
         page.refreshTheme();
+        QCOMPARE(QToolTip::palette().color(QPalette::ToolTipBase), toolTipBaseBefore);
         auto *analyze = page.findChild<QAction *>("analyzeAction");
         auto *spinner = page.findChild<oclero::qlementine::LoadingSpinner *>("analysisSpinner");
         analyze->trigger();

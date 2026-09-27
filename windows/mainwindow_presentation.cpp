@@ -25,6 +25,7 @@
 #include <QStyleOptionToolButton>
 #include <QStyleHints>
 #include <QToolButton>
+#include <QToolTip>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <oclero/qlementine/style/QlementineStyle.hpp>
@@ -95,6 +96,21 @@ class AppStyle final : public QlementineStyle
             if (!allow)
                 return;
         }
+        if (element == PE_PanelTipLabel && option)
+        {
+            const auto &bgColor = toolTipBackgroundColor();
+            const auto &borderColor = toolTipBorderColor();
+            const auto radius = theme().borderRadius;
+            const auto borderW = 1.0;
+            painter->save();
+            painter->setRenderHint(QPainter::Antialiasing, true);
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(bgColor);
+            painter->drawRoundedRect(QRectF(option->rect).adjusted(.5, .5, -.5, -.5), radius, radius);
+            drawRoundedRectBorder(painter, option->rect, borderColor, borderW, radius);
+            painter->restore();
+            return;
+        }
         QlementineStyle::drawPrimitive(element, option, painter, widget);
         if (element == PE_FrameButtonBevel)
         {
@@ -113,6 +129,14 @@ class AppStyle final : public QlementineStyle
     void polish(QWidget *widget) override
     {
         QlementineStyle::polish(widget);
+        if (widget && widget->inherits("QTipLabel"))
+        {
+            widget->setBackgroundRole(QPalette::NoRole);
+            widget->setAutoFillBackground(false);
+            widget->setAttribute(Qt::WA_TranslucentBackground, true);
+            widget->setAttribute(Qt::WA_NoSystemBackground, true);
+            widget->setAttribute(Qt::WA_OpaquePaintEvent, false);
+        }
         if (auto *button = qobject_cast<QAbstractButton *>(widget))
         {
             if (button->focusPolicy() == Qt::StrongFocus || button->focusPolicy() == Qt::ClickFocus)
@@ -122,6 +146,25 @@ class AppStyle final : public QlementineStyle
             font.setWeight(push && push->isDefault() ? QFont::DemiBold : QFont::Normal);
             widget->setFont(font);
         }
+    }
+    int pixelMetric(PixelMetric metric, const QStyleOption *option = nullptr, const QWidget *widget = nullptr) const override
+    {
+        if (metric == PM_ToolTipLabelFrameWidth)
+            return 6;
+        return QlementineStyle::pixelMetric(metric, option, widget);
+    }
+    const QColor &toolTipBackgroundColor() const override
+    {
+        static const QColor light("#FFFFFF"), dark("#252527");
+        return theme().backgroundColorMain1.lightness() < 128 ? dark : light;
+    }
+    const QColor &toolTipBorderColor() const override
+    {
+        return theme().borderColor;
+    }
+    const QColor &toolTipForegroundColor() const override
+    {
+        return theme().secondaryColor;
     }
     const QColor &toolButtonBackgroundColor(MouseState mouse, ColorRole role) const override
     {
@@ -493,9 +536,14 @@ void ThemeController::apply()
             theme.palette.setColor(QPalette::All, QPalette::HighlightedText, theme.secondaryColor);
             theme.palette.setColor(QPalette::All, QPalette::PlaceholderText, theme.secondaryAlternativeColor);
             theme.palette.setColor(QPalette::All, QPalette::ButtonText, theme.secondaryColor);
+            const bool isDark = theme.backgroundColorMain1.lightness() < 128;
+            theme.palette.setColor(QPalette::All, QPalette::ToolTipBase, isDark ? QColor("#252527") : QColor("#FFFFFF"));
+            theme.palette.setColor(QPalette::All, QPalette::ToolTipText, theme.secondaryColor);
             m_style->setTheme(theme);
             QApplication::setFont(theme.fontRegular);
             QApplication::setPalette(theme.palette);
+            QToolTip::setPalette(theme.palette);
+            QToolTip::setFont(theme.fontCaption);
         }
     }
     for (auto *widget : QApplication::allWidgets())
