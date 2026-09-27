@@ -96,7 +96,7 @@ SettingPageAiPage::SettingPageAiPage(SettingsService *settings, QWidget *parent)
         UiStyle::text(label, UiStyle::FontRole::Section);
     for (auto *label : {ui->enabledDescription, ui->providerDescription, ui->apiKeyDescription, ui->baseUrlDescription, ui->modelDescription, ui->statusLabel})
         UiStyle::text(label, UiStyle::FontRole::Caption, true);
-    ui->provider->addItems({"OpenAI", "DeepSeek", "Custom"});
+    ui->provider->addItems({"OpenAI", "DeepSeek", "Qwen", "Kimi", "GLM", "Doubao", "SiliconFlow", "Claude", "Gemini", "Grok", "Custom"});
     ui->providerLabel->setBuddy(ui->provider);
     ui->modelLabel->setBuddy(ui->model);
     ui->apiKeyLabel->setBuddy(ui->apiKey);

@@ -634,6 +634,43 @@ class Regression : public QObject
         window.findChild<HomePage *>()->findChild<QLineEdit *>("filter")->setText("/a/");
         QCOMPARE(sidebar->model()->rowCount(), 2);
     }
+    void aiProviderChannels()
+    {
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("OpenAI"), AiProvider::OpenAI);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("DeepSeek"), AiProvider::DeepSeek);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("qwen"), AiProvider::Qwen);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("Kimi"), AiProvider::Moonshot);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("glm"), AiProvider::Zhipu);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("Doubao"), AiProvider::Doubao);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("SiliconFlow"), AiProvider::SiliconFlow);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("claude"), AiProvider::Anthropic);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("Gemini"), AiProvider::Gemini);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("Grok"), AiProvider::Grok);
+        QCOMPARE(AiConfigHelper::serviceTypeForProvider("Custom"), AiProvider::Custom);
+        QVERIFY(AiConfigHelper::supportsModelFetch("OpenAI"));
+        QVERIFY(!AiConfigHelper::supportsModelFetch("GLM"));
+        QVERIFY(AiConfigHelper::builtinModelList("GLM").contains("glm-4.7"));
+        QVERIFY(AiConfigHelper::builtinModelList("OpenAI").isEmpty());
+
+        TestDirectory dir;
+        const auto paths = pathsIn(dir);
+        FakeAi gateway;
+        SettingsService settings(paths, &gateway);
+        settings.selectProvider("GLM");
+        settings.saveField("ApiKey", "fixture-glm");
+        QVERIFY(!settings.config("GLM").modelList.isEmpty());
+        settings.fetchModels();
+        QCOMPARE(gateway.models.size(), 0);
+        QCOMPARE(settings.config("GLM").modelName, QString("glm-4.7"));
+        settings.selectProvider("Claude");
+        settings.saveField("ApiKey", "fixture-claude");
+        settings.fetchModels();
+        QCOMPARE(gateway.models.size(), 1);
+        gateway.models.last()({"claude-sonnet-4-5", "claude-opus-4-6"}, {});
+        QCOMPARE(settings.config("Claude").modelName, QString("claude-sonnet-4-5"));
+        settings.selectProvider("GLM");
+        QCOMPARE(settings.config("GLM").modelList, AiConfigHelper::builtinModelList("GLM"));
+    }
     void settingsRejectStaleResponses()
     {
         TestDirectory dir;
