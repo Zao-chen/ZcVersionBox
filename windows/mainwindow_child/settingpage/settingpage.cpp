@@ -128,7 +128,15 @@ SettingPageAiPage::SettingPageAiPage(SettingsService *settings, QWidget *parent)
     connect(m_enabled, &QAbstractButton::toggled, this, [this](bool enabled)
             {
         if (!m_loading)
-            m_settings->setAiEnabled(enabled); });
+        {
+            if (enabled && !m_settings->isAiConfigured())
+            {
+                const QSignalBlocker blocker(m_enabled);
+                m_enabled->setChecked(false);
+                return;
+            }
+            m_settings->setAiEnabled(enabled);
+        } });
     connect(ui->provider, &QComboBox::currentTextChanged, this, [this](const QString &name)
             {
         if (!m_loading)
@@ -179,9 +187,13 @@ void SettingPageAiPage::refresh()
     const bool providerChanged = config.providerName != m_displayedProvider;
     if (providerChanged)
         m_fetchError.clear();
-    m_displayedProvider = config.providerName;
+    const bool configured = m_settings->isAiConfigured();
+    m_enabled->setEnabled(configured);
+    m_enabled->setToolTip(configured ? QString() : QStringLiteral("请先配置 API Key 和模型以启用 AI 功能"));
+    ui->enabledDescription->setText(configured ? QStringLiteral("使用 AI 为自动备份生成简短的变更说明。")
+                                               : QStringLiteral("使用 AI 为自动备份生成简短的变更说明。（请先配置下方 API 凭据与模型）"));
     const QSignalBlocker toggleBlocker(m_enabled);
-    m_enabled->setChecked(m_settings->value("AI/Enabled", m_settings->value("AI/AutoCommitMessage", false)).toBool());
+    m_enabled->setChecked(configured && m_settings->value("AI/Enabled", m_settings->value("AI/AutoCommitMessage", false)).toBool());
     ui->provider->setCurrentText(config.providerName);
     if (providerChanged || !ui->apiKey->hasFocus())
         ui->apiKey->setText(config.apiKey);

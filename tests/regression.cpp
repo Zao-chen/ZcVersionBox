@@ -1569,6 +1569,22 @@ class Regression : public QObject
         gateway.models.last()({}, "模拟模型获取失败");
         QVERIFY(!modelsSpinner->spinning());
         QVERIFY(ai.findChild<QLabel *>("statusLabel")->text().contains("模拟模型获取失败"));
+        auto *aiSwitch = ai.findChild<oclero::qlementine::Switch *>("aiEnabledSwitch");
+        QVERIFY(aiSwitch != nullptr);
+        QVERIFY(aiSwitch->isEnabled());
+        settings.saveField("Model", "");
+        ai.refresh();
+        QVERIFY(!aiSwitch->isEnabled());
+        HomePageDiffPage diffPage(&service, &settings, &gateway);
+        diffPage.setRevision(id, head(service, id));
+        settle(service);
+        auto *analyzeAction = diffPage.findChild<QAction *>("analyzeAction");
+        QVERIFY(analyzeAction != nullptr);
+        QVERIFY(!analyzeAction->isEnabled());
+        settings.saveField("Model", "manual-model");
+        ai.refresh();
+        QVERIFY(aiSwitch->isEnabled());
+        QVERIFY(analyzeAction->isEnabled());
     }
     void notificationsPauseWhileDetailsAreOpen()
     {
