@@ -293,14 +293,19 @@ class Regression : public QObject
         line.setLineWidth(400);
         layout.endLayout();
         QStringList faces;
-        for (const auto &run : layout.glyphRuns())
+        const bool nativeFonts = QGuiApplication::platformName() != "minimal";
+        if (nativeFonts)
         {
-            const auto rawFont = run.rawFont();
-            if (rawFont.isValid())
-                faces.append(rawFont.familyName());
+            for (const auto &run : layout.glyphRuns())
+            {
+                const auto rawFont = run.rawFont();
+                if (rawFont.isValid())
+                    faces.append(rawFont.familyName());
+            }
         }
-        qInfo().noquote() << "Body fonts:" << body.families().join(", ") << "; resolved:" << faces.join(", ")
-                          << "; pixels:" << QFontInfo(body).pixelSize();
+        if (nativeFonts)
+            qInfo().noquote() << "Body fonts:" << body.families().join(", ") << "; resolved:" << faces.join(", ")
+                              << "; pixels:" << QFontInfo(body).pixelSize();
         m_theme->toggle();
         QCOMPARE(UiStyle::font(UiStyle::FontRole::Body), body);
         m_theme->toggle();
