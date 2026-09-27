@@ -840,6 +840,7 @@ void MainWindow::showEvent(QShowEvent *event)
     QMainWindow::showEvent(event);
 #ifdef Q_OS_MACOS
     disableSafeAreaInsets(this);
-    setupMacTitleBar(winId());
+    if (QGuiApplication::platformName() == "cocoa")
+        setupMacTitleBar(winId());
 #endif
 }
