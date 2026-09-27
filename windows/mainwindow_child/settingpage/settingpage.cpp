@@ -124,6 +124,7 @@ SettingPageAiPage::SettingPageAiPage(SettingsService *settings, QWidget *parent)
     ui->modelStatusLayout->insertWidget(0, m_spinner);
     ui->modelStatusLayout->setStretch(1, 1);
     ui->modelStatusLayout->setAlignment(m_spinner, Qt::AlignTop);
+    ui->statusLabel->setVisible(false);
     connect(m_enabled, &QAbstractButton::toggled, this, [this](bool enabled)
             {
         if (!m_loading)
@@ -208,13 +209,10 @@ void SettingPageAiPage::updateLoadingState()
     m_spinner->setSpinning(fetching && isVisible());
     m_spinner->setVisible(fetching);
     ui->fetchButton->setEnabled(!fetching);
-    const auto config = m_settings->config(m_settings->provider());
-    const bool configured = !config.apiKey.isEmpty() && !config.modelName.isEmpty() && (!AiConfigHelper::isCustomProvider(config.providerName) || !config.baseUrl.isEmpty());
-    const auto status = fetching ? QString("正在获取模型…") : !m_fetchError.isEmpty() ? m_fetchError
-                                                          : configured                ? QString("已配置")
-                                                                                      : QString("请配置 API Key 和模型。");
+    const auto status = fetching ? QString("正在获取模型…") : m_fetchError;
     ui->statusLabel->setText(status);
     ui->statusLabel->setToolTip(status);
+    ui->statusLabel->setVisible(!status.isEmpty());
 }
 void SettingPageAiPage::showEvent(QShowEvent *event)
 {
