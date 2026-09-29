@@ -31,9 +31,12 @@ QString bytesJson(const QByteArray &bytes) { return QString::fromLatin1(bytes.to
 QByteArray bytesValue(const QJsonValue &value) { return QByteArray::fromBase64(value.toString().toLatin1()); }
 bool textBytes(const QByteArray &bytes)
 {
-    if (bytes.size() > 2 * 1024 * 1024 || bytes.count('\n') > 20000 || bytes.contains('\0')) return false;
-    QStringDecoder decoder(QStringDecoder::Utf8);
-    decoder.decode(bytes);
+    const auto lines = bytes.count('\n') + (!bytes.isEmpty() && !bytes.endsWith('\n') ? 1 : 0);
+    if (bytes.size() > 2 * 1024 * 1024 || lines > 20000 || bytes.contains('\0')) return false;
+    QStringDecoder decoder(QStringDecoder::Utf8, QStringConverter::Flag::Stateless);
+    // decode() is lazy: materialize the string before checking the decoder state.
+    const QString decoded = decoder.decode(bytes);
+    Q_UNUSED(decoded);
     return !decoder.hasError();
 }
 OperationResult writeBytes(const QString &path, const QByteArray &bytes)
@@ -316,6 +319,8 @@ OperationResult BackupMerge::analyze()
     for (const auto &path : roots)
     {
         QJsonObject file{{"path", path}, {"whole", true}, {"hunks", QJsonArray{QJsonObject{{"choice", 0}}}}};
+        file[QLatin1String("mode")] = local.value(path).mode == remote.value(path).mode ? local.value(path).mode
+            : bases.value(path).mode == local.value(path).mode ? remote.value(path).mode : local.value(path).mode;
         const auto size = [&](const Tree &side)
         {
             qint64 total = 0;
@@ -351,6 +356,8 @@ SyncResolutionSession BackupMerge::session() const
     result.id = m_data[QLatin1String("id")].toString(); result.backupId = m_data[QLatin1String("backupId")].toString(); result.revision = m_data[QLatin1String("revision")].toString().toULongLong();
     result.localTime = QDateTime::fromString(m_data[QLatin1String("localTime")].toString(), Qt::ISODateWithMs);
     result.remoteTime = QDateTime::fromString(m_data[QLatin1String("remoteTime")].toString(), Qt::ISODateWithMs);
+    result.currentPath = m_data[QLatin1String("currentPath")].toString();
+    result.currentHunk = m_data[QLatin1String("currentHunk")].toInt();
     for (const auto &value : m_data[QLatin1String("files")].toArray())
     {
         ConflictFile f;
@@ -397,6 +404,8 @@ OperationResult BackupMerge::choose(quint64 revision, const QString &path, int h
         if (hunk < 0 || hunk >= hunks.size()) return failure("此处差异已失效。");
         auto value = hunks[hunk].toObject(); value[QLatin1String("choice")] = int(choice); hunks[hunk] = value;
         file[QLatin1String("hunks")] = hunks; files[i] = file; m_data[QLatin1String("files")] = files;
+        m_data[QLatin1String("currentPath")] = path;
+        m_data[QLatin1String("currentHunk")] = hunk;
         m_data[QLatin1String("revision")] = QString::number(revision + 1); m_data.remove("resultCommit"); m_data.remove("resultTree"); m_data.remove("treeOid");
         const auto saved = save();
         if (!saved.success) m_data = before;
@@ -427,7 +436,7 @@ BackupResult<BackupMerge::Tree> BackupMerge::resultTree() const
             bytes += bytesValue(common.last());
             const auto object = git().run({"hash-object", "-w", "--stdin"}, bytes);
             if (!object.success()) return {GitRepository::outcome(object)};
-            result.insert(path, {object.output.trimmed(), local.value(path).mode});
+            result.insert(path, {object.output.trimmed(), file[QLatin1String("mode")].toString(local.value(path).mode)});
         }
     }
     return {OperationResult::ok({}), result};
@@ -470,16 +479,29 @@ BackupResult<PreparedSyncApply> BackupMerge::prepare()
     if (!saved.success) return {saved};
     PreparedSyncApply request{m_data[QLatin1String("backupId")].toString(), m_data[QLatin1String("id")].toString(), commit, treeOid.output.trimmed(), session().revision,
                              m_data[QLatin1String("generation")].toString().toULongLong(), fingerprintValue(m_data[QLatin1String("sourceFingerprint")].toObject()), {}};
-    const auto localSource = decodeTree(m_data[QLatin1String("localTree")].toObject());
+    const auto localRepository = decodeTree(m_data[QLatin1String("localTree")].toObject());
+    auto localSource = localRepository;
+    auto finalSource = assembled.value;
+    const auto extras = decodeTree(m_data[QLatin1String("extras")].toObject());
+    for (auto it = extras.cbegin(); it != extras.cend(); ++it)
+    {
+        localSource.insert(it.key(), it.value());
+        bool chosen = false;
+        for (const auto &file : m_data[QLatin1String("files")].toArray())
+            if (beneath(it.key(), file[QLatin1String("path")].toString())) { chosen = true; break; }
+        if (!chosen && !finalSource.contains(it.key())) finalSource.insert(it.key(), it.value());
+    }
     // Include repository-only changes as well as the changes to current source.
     QSet<QString> paths;
     for (const auto &path : localSource.keys()) paths.insert(path);
-    for (const auto &path : assembled.value.keys()) paths.insert(path);
+    for (const auto &path : finalSource.keys()) paths.insert(path);
     QStringList ordered = paths.values(); std::sort(ordered.begin(), ordered.end());
     for (const auto &path : ordered)
-        if (!localSource.contains(path) || !assembled.value.contains(path) || !(localSource[path] == assembled.value[path]))
-            request.changes.append({!localSource.contains(path) ? "A" : !assembled.value.contains(path) ? "D" : "M", path,
+        if (!localSource.contains(path) || !finalSource.contains(path) || !(localSource[path] == finalSource[path]))
+            request.changes.append({!localSource.contains(path) ? "A" : !finalSource.contains(path) ? "D" : "M", path,
                                     beneath(path, m_data[QLatin1String("managedPath")].toString()) ? QString() : "仅影响备份仓库"});
+        else if (!localRepository.contains(path) && assembled.value.contains(path))
+            request.changes.append({"A", path, "源内容不变，新增到备份仓库"});
     return {OperationResult::ok({}), request};
 }
 bool BackupMerge::validRequest(const PreparedSyncApply &request) const

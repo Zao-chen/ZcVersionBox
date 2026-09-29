@@ -132,6 +132,8 @@ struct SyncResolutionSession
     QDateTime localTime, remoteTime;
     bool stale{false};
     QString staleReason;
+    QString currentPath;
+    int currentHunk{0};
     int total() const { int n = 0; for (const auto &f : files) n += f.hunks.size(); return n; }
     int remaining() const { int n = 0; for (const auto &f : files) for (const auto &h : f.hunks) n += h.choice == ConflictChoice::Unresolved; return n; }
 };

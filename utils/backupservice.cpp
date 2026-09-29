@@ -477,7 +477,7 @@ BackupTaskId BackupService::syncResolution(const QString &id, QObject *c, Reply<
 }
 BackupTaskId BackupService::chooseSyncResolution(const QString &id, const QString &session, quint64 revision, const QString &path, int hunk, ConflictChoice choice, QObject *c, Reply<SyncResolutionSession> f)
 {
-    return d->submit<SyncResolutionSession>(id, c, std::move(f), [=](BackupEngine &e) { return e.chooseSyncResolution(id, session, revision, path, hunk, choice); });
+    return d->submit<SyncResolutionSession>(id, c, std::move(f), [=](BackupEngine &e) { return e.chooseSyncResolution(id, session, revision, path, hunk, choice); }, true);
 }
 BackupTaskId BackupService::prepareSyncApply(const QString &id, const QString &session, quint64 revision, QObject *c, Reply<PreparedSyncApply> f)
 {
