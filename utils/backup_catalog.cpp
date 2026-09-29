@@ -20,6 +20,8 @@ QString backupStateText(BackupSyncState state)
         return QStringLiteral("正常追踪");
     case BackupSyncState::RemotePending:
         return QStringLiteral("已拉取，源位置待处理");
+    case BackupSyncState::ResolutionPending:
+        return QStringLiteral("同步差异待处理");
     case BackupSyncState::NeedsAttention:
         return QStringLiteral("需要检查");
     }

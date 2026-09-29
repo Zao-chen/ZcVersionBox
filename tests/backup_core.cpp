@@ -1,5 +1,6 @@
 #include "backup_test_support.h"
 #include "utils/backup_engine.h"
+#include "utils/backup_merge.h"
 #include "utils/backupmonitor.h"
 #include "utils/backupmonitor_scheduler.h"
 #include <QCoreApplication>
@@ -198,6 +199,68 @@ class BackupCoreRegression : public QObject
         qputenv("GIT_CONFIG_NOSYSTEM", "1");
         qputenv("GIT_CONFIG_GLOBAL", (m_environment.path() + "/gitconfig").toUtf8());
         QVERIFY(runGit({}, {"--version"}).success());
+    }
+    void isolatedResolutionPreservesBytesAndChoices_data()
+    {
+        QTest::addColumn<QByteArray>("base");
+        QTest::addColumn<QByteArray>("local");
+        QTest::addColumn<QByteArray>("remote");
+        QTest::addColumn<bool>("whole");
+        QTest::newRow("text") << QByteArray("first\nbase\nlast\n") << QByteArray("first\nlocal\nlast\n") << QByteArray("first\ncloud\nlast\n") << false;
+        QTest::newRow("no-final-newline") << QByteArray("base") << QByteArray("local") << QByteArray("cloud") << false;
+        QTest::newRow("crlf-bom") << QByteArray("\xef\xbb\xbfheader\r\nbase\r\n") << QByteArray("\xef\xbb\xbfheader\r\nlocal\r\n") << QByteArray("\xef\xbb\xbfheader\r\ncloud\r\n") << false;
+        QTest::newRow("literal-marker") << QByteArray("<<<<<<< HEAD\nbase\n") << QByteArray("<<<<<<< HEAD\nlocal\n") << QByteArray("<<<<<<< HEAD\ncloud\n") << false;
+        QTest::newRow("binary") << QByteArray("base\0x", 6) << QByteArray("local\0x", 7) << QByteArray("cloud\0x", 7) << true;
+    }
+    void isolatedResolutionPreservesBytesAndChoices()
+    {
+        QFETCH(QByteArray, base); QFETCH(QByteArray, local); QFETCH(QByteArray, remote); QFETCH(bool, whole);
+        RemoteFixture f;
+        writeFile(f.source, base);
+        CHECK_OK(f.service->backup(f.id));
+        CHECK_OK(f.service->synchronize(f.id, true));
+        git(f.writer, {"pull", "--ff-only"});
+        const auto before = head(*f.service, f.id);
+        const auto cloud = f.commitRemote(remote);
+        writeFile(f.source, local);
+        const auto root = f.dir.path() + '/' + QUuid::createUuid().toString(QUuid::WithoutBraces);
+        BackupMerge merge(root, {});
+        CHECK_OK(merge.create(record(*f.service, f.id), f.service->repoPath(f.id)));
+        QCOMPARE(head(*f.service, f.id), before);
+        QCOMPARE(readFile(f.source), local);
+        QCOMPARE(merge.session().total(), 1);
+        QCOMPARE(merge.session().files[0].wholeFile, whole);
+        QVERIFY(!merge.prepare().result.success);
+        CHECK_OK(merge.choose(1, "source.txt", 0, ConflictChoice::Local));
+        BackupMerge resumed(root, {});
+        CHECK_OK(resumed.load());
+        QCOMPARE(resumed.session().remaining(), 0);
+        const auto prepared = resumed.prepare(); CHECK_OK(prepared.result);
+        CHECK_OK(resumed.exportSource(prepared.value, f.dir.path() + "/chosen-local"));
+        QCOMPARE(readFile(f.dir.path() + "/chosen-local"), local);
+        CHECK_OK(resumed.choose(2, "source.txt", 0, ConflictChoice::Remote));
+        QVERIFY(!resumed.validRequest(prepared.value));
+        const auto other = resumed.prepare(); CHECK_OK(other.result);
+        CHECK_OK(resumed.exportSource(other.value, f.dir.path() + "/chosen-remote"));
+        QCOMPARE(readFile(f.dir.path() + "/chosen-remote"), remote);
+        QVERIFY(git(resumed.repositoryPath(), {"merge-base", "--is-ancestor", cloud, other.value.commit}).success());
+        QCOMPARE(head(*f.service, f.id), before);
+        QCOMPARE(readFile(f.source), local);
+    }
+    void isolatedResolutionCombinesSeparateChanges()
+    {
+        RemoteFixture f;
+        writeFile(f.source, "a\nb\nc\nd\ne\nf\ng\n");
+        CHECK_OK(f.service->backup(f.id)); CHECK_OK(f.service->synchronize(f.id, true));
+        git(f.writer, {"pull", "--ff-only"});
+        f.commitRemote("a\nb\nc\nd\ne\nf\ncloud\n");
+        writeFile(f.source, "local\nb\nc\nd\ne\nf\ng\n");
+        BackupMerge merge(f.dir.path() + '/' + QUuid::createUuid().toString(QUuid::WithoutBraces), {});
+        CHECK_OK(merge.create(record(*f.service, f.id), f.service->repoPath(f.id)));
+        QCOMPARE(merge.session().total(), 0);
+        const auto result = merge.prepare(); CHECK_OK(result.result);
+        CHECK_OK(merge.exportSource(result.value, f.dir.path() + "/result"));
+        QCOMPARE(readFile(f.dir.path() + "/result"), QByteArray("local\nb\nc\nd\ne\nf\ncloud\n"));
     }
     void linuxCaseSensitiveNamesAndRename()
     {
