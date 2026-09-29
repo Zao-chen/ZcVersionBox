@@ -45,6 +45,7 @@
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStandardItemModel>
+#include <QStandardPaths>
 #include <QTableView>
 #include <QTemporaryDir>
 #include <QTest>
@@ -260,9 +261,39 @@ class Regression : public QObject
         if (!expectedIcon.isEmpty())
         {
             const auto originalTheme = QIcon::themeName();
+            const auto originalPaths = QIcon::themeSearchPaths();
+            auto paths = originalPaths;
+            const QStringList standardDirs = {
+                QStringLiteral("/usr/share/icons"),
+                QStringLiteral("/usr/local/share/icons"),
+                QDir::homePath() + QStringLiteral("/.local/share/icons")
+            };
+            for (const auto &dir : standardDirs)
+            {
+                if (!paths.contains(dir) && QDir(dir).exists())
+                    paths.prepend(dir);
+            }
+            const auto xdgDataDirs = qEnvironmentVariable("XDG_DATA_DIRS");
+            if (!xdgDataDirs.isEmpty())
+            {
+                for (const auto &rawDir : xdgDataDirs.split(u':', Qt::SkipEmptyParts))
+                {
+                    const auto iconDir = rawDir + QStringLiteral("/icons");
+                    if (!paths.contains(iconDir) && QDir(iconDir).exists())
+                        paths.prepend(iconDir);
+                }
+            }
+            for (const auto &dataDir : QStandardPaths::standardLocations(QStandardPaths::GenericDataLocation))
+            {
+                const auto iconDir = dataDir + QStringLiteral("/icons");
+                if (!paths.contains(iconDir) && QDir(iconDir).exists())
+                    paths.prepend(iconDir);
+            }
+            QIcon::setThemeSearchPaths(paths);
             QIcon::setThemeName("hicolor");
             const auto desktopIcon = QIcon::fromTheme(expectedIcon).pixmap(64);
             QIcon::setThemeName(originalTheme);
+            QIcon::setThemeSearchPaths(originalPaths);
             QVERIFY2(!desktopIcon.isNull(), "Installed desktop icon must resolve through the system theme");
         }
         TestDirectory dir;

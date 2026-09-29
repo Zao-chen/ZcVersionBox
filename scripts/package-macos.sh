@@ -31,8 +31,8 @@ cp "$project_root/LICENSE" "$licenses/ZcVersionBox.txt"
 
 IFS=';' read -r -a slices <<< "$architectures"
 for arch in "${slices[@]}"; do
-  lipo -verify_arch "$arch" "$app/Contents/MacOS/ZcVersionBox"
-  lipo -verify_arch "$arch" "$frameworks/libZcAiLib.1.dylib"
+  lipo "$app/Contents/MacOS/ZcVersionBox" -verify_arch "$arch"
+  lipo "$frameworks/libZcAiLib.1.dylib" -verify_arch "$arch"
 done
 if find "$app" -iname '*elawidget*' -o -iname '*zcwidget*' -o -iname '*qlementine*.dylib' | grep -q .; then
   echo 'Unexpected UI runtime in package'; exit 1
@@ -40,7 +40,7 @@ fi
 # All Mach-O dependencies must resolve within the bundle or macOS system libraries.
 while IFS= read -r -d '' binary; do
   file "$binary" | grep -q 'Mach-O' || continue
-  for arch in "${slices[@]}"; do lipo -verify_arch "$arch" "$binary"; done
+  for arch in "${slices[@]}"; do lipo "$binary" -verify_arch "$arch"; done
   if otool -L "$binary" | tail -n +2 | awk '{print $1}' | grep -vE '^(@rpath/|@executable_path/|@loader_path/|/System/Library/|/usr/lib/)' | grep -q .; then
     echo "Unbundled dependency: $binary"; otool -L "$binary"; exit 1
   fi

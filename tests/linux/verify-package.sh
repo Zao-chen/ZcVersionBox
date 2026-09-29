@@ -58,6 +58,7 @@ fi
 # Both test executables use temporary repositories, fake AI and isolated Git config.
 # The only extra Qt files in the validation archive are Qt Test and offscreen QPA.
 runuser -u tester -- env LANG=C.UTF-8 \
+    XDG_DATA_DIRS=/usr/local/share:/usr/share \
     ZCVERSIONBOX_EXPECTED_ICON=zcversionbox \
     LD_LIBRARY_PATH=/opt/zcversionbox/lib:/work/validation/lib \
     QT_PLUGIN_PATH=/opt/zcversionbox/plugins:/work/validation/plugins \
