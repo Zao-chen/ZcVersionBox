@@ -127,7 +127,7 @@ BackupResult<BackupRecord> BackupEngine::require(const QString &id, bool writing
         return {writing ? attention(r, checked.message) : checked};
     if (!writing)
         return {OperationResult::ok({}), r};
-    if (r.state == BackupSyncState::NeedsAttention || (r.state == BackupSyncState::RemotePending && !allowPending))
+    if (r.state == BackupSyncState::NeedsAttention || r.state == BackupSyncState::ResolutionPending || (r.state == BackupSyncState::RemotePending && !allowPending))
         return {paused(r)};
     const auto branch = git.branch();
     if (!branch.result.success)
@@ -659,7 +659,7 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
     auto git = repository(id);
     if (push)
     {
-        if (checked.value.state == BackupSyncState::NeedsAttention)
+        if (checked.value.state == BackupSyncState::NeedsAttention || checked.value.state == BackupSyncState::ResolutionPending)
             return paused(checked.value);
         const auto pushed = git.push();
         return pushed.success ? OperationResult::ok("上传完成", "已提交的历史已上传到云端", 2000) : pushed;
@@ -1036,7 +1036,7 @@ OperationResult BackupEngine::recheck(const QString &id)
     if (!checked.result.success)
         return checked.result;
     auto r = checked.value;
-    if (r.state == BackupSyncState::RemotePending)
+    if (r.state == BackupSyncState::RemotePending || r.state == BackupSyncState::ResolutionPending)
         return paused(r);
     auto git = repository(id);
     auto clean = git.clean();

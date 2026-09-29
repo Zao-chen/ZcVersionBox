@@ -62,7 +62,7 @@ struct BackupRecord
     QString stateDetail, lastCommit, pendingCommit, operation;
     SourceFingerprint fingerprint;
     QStringList recoveryPaths;
-    QString resolutionSession;
+    QString resolutionSession, resolutionHead;
     TrackedItem item() const;
 };
 

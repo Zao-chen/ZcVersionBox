@@ -102,7 +102,7 @@ OperationResult BackupCatalog::load()
         r.generation = obj["generation"].toString().toULongLong();
         const int state = obj["state"].toInt(-1);
         if (error.error != QJsonParseError::NoError || obj["format"].toInt() != 1 || r.id != entry.fileName() ||
-            !QDir::isAbsolutePath(r.sourcePath) || !validRepositoryPath(r.repositoryPath) || !r.generation || state < 0 || state > 2)
+            !QDir::isAbsolutePath(r.sourcePath) || !validRepositoryPath(r.repositoryPath) || !r.generation || state < 0 || state > 3)
         {
             invalid.append(entry.filePath());
             continue;
@@ -112,6 +112,10 @@ OperationResult BackupCatalog::load()
         r.lastCommit = obj["lastCommit"].toString();
         r.pendingCommit = obj["pendingCommit"].toString();
         r.operation = obj["operation"].toString();
+        r.resolutionSession = obj["resolutionSession"].toString();
+        r.resolutionHead = obj["resolutionHead"].toString();
+        if (!r.resolutionSession.isEmpty() && !validId(r.resolutionSession))
+        { invalid.append(entry.filePath()); continue; }
         const auto fingerprint = obj["fingerprint"].toObject();
         for (auto it = fingerprint.begin(); it != fingerprint.end(); ++it)
             r.fingerprint.insert(it.key(), it.value().toString());
@@ -139,7 +143,7 @@ OperationResult BackupCatalog::save(const BackupRecord &r)
     QJsonObject fingerprint;
     for (auto it = r.fingerprint.cbegin(); it != r.fingerprint.cend(); ++it)
         fingerprint.insert(it.key(), it.value());
-    QJsonObject obj{{"format", 1}, {"id", r.id}, {"sourcePath", r.sourcePath}, {"repositoryPath", r.repositoryPath}, {"directory", r.directory}, {"generation", QString::number(r.generation)}, {"state", int(r.state)}, {"stateDetail", r.stateDetail}, {"lastCommit", r.lastCommit}, {"pendingCommit", r.pendingCommit}, {"operation", r.operation}, {"fingerprint", fingerprint}, {"recoveryPaths", QJsonArray::fromStringList(r.recoveryPaths)}};
+    QJsonObject obj{{"format", 1}, {"id", r.id}, {"sourcePath", r.sourcePath}, {"repositoryPath", r.repositoryPath}, {"directory", r.directory}, {"generation", QString::number(r.generation)}, {"state", int(r.state)}, {"stateDetail", r.stateDetail}, {"lastCommit", r.lastCommit}, {"pendingCommit", r.pendingCommit}, {"operation", r.operation}, {"resolutionSession", r.resolutionSession}, {"resolutionHead", r.resolutionHead}, {"fingerprint", fingerprint}, {"recoveryPaths", QJsonArray::fromStringList(r.recoveryPaths)}};
     if (!QDir().mkpath(itemPath(r.id)))
         return OperationResult::fail("保存失败", "无法创建追踪记录目录");
     QSaveFile file(itemPath(r.id) + "/record.json");
