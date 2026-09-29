@@ -11,6 +11,16 @@ QT_QPA_PLATFORM=xcb ZCVERSIONBOX_EXPECTED_QPA=xcb ZCVERSIONBOX_SMOKE_OUTPUT="$ar
     xvfb-run -a -s '-screen 0 1280x900x24' bash -c '
         openbox >"$2/openbox.log" 2>&1 & wm_pid=$!
         trap "kill $wm_pid 2>/dev/null || true" EXIT
+        for ((i=0; i<50; ++i)); do
+            xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q "window id" && break
+            kill -0 "$wm_pid" 2>/dev/null || { cat "$2/openbox.log"; exit 1; }
+            sleep 0.1
+        done
+        xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q "window id" || {
+            cat "$2/openbox.log"
+            echo "Openbox did not become ready" >&2
+            exit 1
+        }
         "$1" platformRuntimeSmoke closingWithoutTrayExitsWindow -o "$2/x11.txt,txt"
     ' _ "$test_program" "$artifacts"
 

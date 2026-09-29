@@ -293,10 +293,19 @@ class Regression : public QObject
         line.setLineWidth(400);
         layout.endLayout();
         QStringList faces;
-        for (const auto &run : layout.glyphRuns())
-            faces.append(run.rawFont().familyName());
-        qInfo().noquote() << "Body fonts:" << body.families().join(", ") << "; resolved:" << faces.join(", ")
-                          << "; pixels:" << QFontInfo(body).pixelSize();
+        const bool nativeFonts = QGuiApplication::platformName() != "minimal";
+        if (nativeFonts)
+        {
+            for (const auto &run : layout.glyphRuns())
+            {
+                const auto rawFont = run.rawFont();
+                if (rawFont.isValid())
+                    faces.append(rawFont.familyName());
+            }
+        }
+        if (nativeFonts)
+            qInfo().noquote() << "Body fonts:" << body.families().join(", ") << "; resolved:" << faces.join(", ")
+                              << "; pixels:" << QFontInfo(body).pixelSize();
         m_theme->toggle();
         QCOMPARE(UiStyle::font(UiStyle::FontRole::Body), body);
         m_theme->toggle();
@@ -1028,6 +1037,10 @@ class Regression : public QObject
         contextMenu->close();
         QTRY_VERIFY(!QApplication::activePopupWidget());
         QCOMPARE(routes.count(), 2);
+#ifdef Q_OS_MACOS
+        if (QGuiApplication::platformName() == "offscreen")
+            QSKIP("The macOS offscreen plugin does not deliver keyboard focus after closing a popup");
+#endif
         table->setFocus();
         QTest::keyClick(table, Qt::Key_Return);
         QCOMPARE(routes.count(), 3);
@@ -1475,6 +1488,10 @@ class Regression : public QObject
         settle(service);
         QCOMPARE(table->model()->index(table->currentIndex().row(), 2).data(Qt::UserRole + 1).toString(), previous);
         QSignalSpy routes(&page, &HomePageBackupPage::navigate);
+#ifdef Q_OS_MACOS
+        if (QGuiApplication::platformName() == "offscreen")
+            QSKIP("The macOS offscreen plugin does not deliver keyboard focus to a hidden view");
+#endif
         table->setFocus();
         QTest::keyClick(table, Qt::Key_Return);
         QCOMPARE(routes.count(), 1);
@@ -1642,6 +1659,10 @@ class Regression : public QObject
         notification.showResult(OperationResult::fail("测试提示", message, 220));
         auto *detailsButton = notification.findChild<QPushButton *>("notificationDetailsButton");
         QVERIFY(detailsButton->isVisible());
+#ifdef Q_OS_MACOS
+        if (QGuiApplication::platformName() == "offscreen")
+            QSKIP("The macOS offscreen plugin does not deliver keyboard focus to a hidden host");
+#endif
         detailsButton->setFocus();
         QVERIFY(detailsButton->hasFocus());
         detailsButton->click();

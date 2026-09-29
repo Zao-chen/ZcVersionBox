@@ -1,12 +1,22 @@
-name: Build and package macOS
-description: Qt 6.8.3 / macOS 12.0 release with the pinned source AI SDK
+name: Build and test macOS
+description: Qt 6.8.3 / macOS 12.0 Universal build, tests and optional DMG packaging
 inputs:
+  package:
+    description: Build and validate the macOS DMG
+    required: false
+    default: 'false'
   tag:
-    description: Release tag
-    required: true
+    description: Release tag used for package filenames
+    required: false
+    default: v0.1.0
+  version:
+    description: Numeric application version override
+    required: false
+    default: ''
   architectures:
-    description: Architectures for the application and source AI SDK (arm64 release target)
-    default: arm64
+    description: macOS application and SDK architectures
+    required: false
+    default: arm64;x86_64
 runs:
   using: composite
   steps:
@@ -22,25 +32,39 @@ runs:
       shell: bash
       env:
         TARGET_ARCHS: ${{ inputs.architectures }}
+        PROJECT_VERSION: ${{ inputs.version }}
       run: |
+        set -euo pipefail
         test ! -e build/release || { echo 'Use a clean build/release directory'; exit 1; }
-        cmake -S . -B build/release -G Ninja \
-          -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
-          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
-          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 \
-          -DCMAKE_OSX_ARCHITECTURES="$TARGET_ARCHS"
+        cmake_args=(
+          -S .
+          -B build/release
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=ON
+          "-DCMAKE_PREFIX_PATH=$QT_ROOT_DIR"
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+          "-DCMAKE_OSX_ARCHITECTURES=$TARGET_ARCHS"
+        )
+        if [[ -n "$PROJECT_VERSION" ]]; then
+          cmake_args+=("-DZCVERSIONBOX_VERSION_OVERRIDE=$PROJECT_VERSION")
+        fi
+        cmake "${cmake_args[@]}"
     - name: Build and test
       shell: bash
       run: |
+        set -euo pipefail
         cmake --build build/release --parallel 4
         ctest --test-dir build/release --output-on-failure
-    - name: Package and verify bundle
+    - name: Package macOS DMG
+      if: ${{ inputs.package == 'true' }}
       shell: bash
       env:
         PACKAGE_TAG: ${{ inputs.tag }}
         TARGET_ARCHS: ${{ inputs.architectures }}
       run: bash scripts/package-macos.sh build/release dist/macos "$PACKAGE_TAG" "$TARGET_ARCHS"
     - uses: actions/upload-artifact@v4
+      if: ${{ inputs.package == 'true' }}
       with:
         name: pkg-macos-dmg
         path: dist/macos/ZcVersionBox-*.dmg
@@ -49,6 +73,7 @@ runs:
       if: always()
       with:
         name: tests-macos
+        if-no-files-found: warn
         path: |
           build/release/Testing/Temporary/LastTest.log
           build/release/tests/regression.txt

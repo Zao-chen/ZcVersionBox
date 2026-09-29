@@ -4,7 +4,7 @@ build_dir=$(cd "${1:?Build directory required}" && pwd)
 output_dir=${2:?New output directory required}
 tag=${3:?Release tag required}
 [[ $(uname -m) == x86_64 ]] || { echo 'This package targets x86_64'; exit 1; }
-[[ "$tag" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.+~-][0-9A-Za-z.+~-]+)?$ ]] || { echo 'Invalid Debian release version'; exit 1; }
+[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid Debian release version'; exit 1; }
 [[ ! -e "$output_dir" ]] || { echo 'Packaging requires a new output directory'; exit 1; }
 [[ -f "$build_dir/LinuxCPackConfig.cmake" ]] || { echo 'Configure with -DZCVERSIONBOX_DEPLOY_LINUX=ON'; exit 1; }
 for tool in cmake cpack dpkg-shlibdeps file readelf desktop-file-validate; do

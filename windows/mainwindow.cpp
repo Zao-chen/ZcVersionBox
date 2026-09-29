@@ -11,6 +11,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QGuiApplication>
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QMenu>
@@ -97,13 +98,26 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     UiStyle::text(ui->settingsEmptyTitle, UiStyle::FontRole::Object);
     UiStyle::text(ui->settingsEmptyDescription, UiStyle::FontRole::Caption, true);
     ui->settingsEmptyState->hide();
-    m_windowAgent = new QWK::WidgetWindowAgent(this);
-    m_windowAgent->setup(this);
-    m_windowAgent->setTitleBar(ui->titleBar);
+#ifdef Q_OS_MACOS
+    // QWindowKit's Cocoa agent requires a native NSWindow. Headless Qt
+    // platforms provide synthetic window IDs which are not Cocoa objects.
+    const bool useWindowAgent = QGuiApplication::platformName() == "cocoa";
+#else
+    const bool useWindowAgent = true;
+#endif
+    if (useWindowAgent)
+    {
+        m_windowAgent = new QWK::WidgetWindowAgent(this);
+        m_windowAgent->setup(this);
+        m_windowAgent->setTitleBar(ui->titleBar);
+    }
 #ifndef Q_OS_MAC
-    m_windowAgent->setSystemButton(QWK::WindowAgentBase::Minimize, ui->minimizeButton);
-    m_windowAgent->setSystemButton(QWK::WindowAgentBase::Maximize, ui->maximizeButton);
-    m_windowAgent->setSystemButton(QWK::WindowAgentBase::Close, ui->closeButton);
+    if (m_windowAgent)
+    {
+        m_windowAgent->setSystemButton(QWK::WindowAgentBase::Minimize, ui->minimizeButton);
+        m_windowAgent->setSystemButton(QWK::WindowAgentBase::Maximize, ui->maximizeButton);
+        m_windowAgent->setSystemButton(QWK::WindowAgentBase::Close, ui->closeButton);
+    }
     connect(ui->minimizeButton, &QToolButton::clicked, this, &QWidget::showMinimized);
     connect(ui->maximizeButton, &QToolButton::clicked, this, [this] {
         if (isMaximized())
@@ -128,11 +142,15 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     ui->titleBarLayout->setContentsMargins(0, 7, 4, 1);
     ui->titleBarLayout->setSpacing(2);
     ui->titleBarLayout->insertSpacing(1, 12);
-    m_windowAgent->setSystemButtonArea(macButtonsArea);
+    if (m_windowAgent)
+        m_windowAgent->setSystemButtonArea(macButtonsArea);
 #endif
-    m_windowAgent->setHitTestVisible(ui->collapseButton, true);
-    m_windowAgent->setHitTestVisible(ui->backButton, true);
-    m_windowAgent->setHitTestVisible(ui->forwardButton, true);
+    if (m_windowAgent)
+    {
+        m_windowAgent->setHitTestVisible(ui->collapseButton, true);
+        m_windowAgent->setHitTestVisible(ui->backButton, true);
+        m_windowAgent->setHitTestVisible(ui->forwardButton, true);
+    }
     for (auto *button : {ui->historyTab, ui->overviewTab, ui->returnHistoryButton, ui->generalTab, ui->aiTab, ui->aboutTab,
                          ui->backupsButton, ui->settingsButton, ui->returnApplicationButton,
                          ui->addSidebarButton, ui->collapseButton, ui->backButton, ui->forwardButton,
@@ -822,6 +840,7 @@ void MainWindow::showEvent(QShowEvent *event)
     QMainWindow::showEvent(event);
 #ifdef Q_OS_MACOS
     disableSafeAreaInsets(this);
-    setupMacTitleBar(winId());
+    if (QGuiApplication::platformName() == "cocoa")
+        setupMacTitleBar(winId());
 #endif
 }

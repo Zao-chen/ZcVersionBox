@@ -1,0 +1,127 @@
+name: Manual release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Release tag (example v1.0.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag_name || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.validate.outputs.tag }}
+      version: ${{ steps.validate.outputs.version }}
+      sha: ${{ steps.validate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate release ref and tag
+        id: validate
+        shell: bash
+        env:
+          TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF" == refs/heads/main ]] || {
+            echo 'Manual releases must be dispatched from main.' >&2
+            exit 1
+          }
+          [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo 'tag_name must match vMAJOR.MINOR.PATCH.' >&2
+            exit 1
+          }
+          version=${TAG_NAME#v}
+          if git rev-parse --verify --quiet "$TAG_NAME^{commit}" >/dev/null; then
+            existing_sha=$(git rev-parse "$TAG_NAME^{commit}")
+            [[ "$existing_sha" == "$GITHUB_SHA" ]] || {
+              echo "Tag $TAG_NAME already points to $existing_sha, expected $GITHUB_SHA." >&2
+              exit 1
+            }
+          fi
+          {
+            echo "tag=$TAG_NAME"
+            echo "version=$version"
+            echo "sha=$GITHUB_SHA"
+          } >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: prepare
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: ./.github/actions/build-windows
+        with:
+          package: 'true'
+          tag: ${{ needs.prepare.outputs.tag }}
+          version: ${{ needs.prepare.outputs.version }}
+
+  macos:
+    needs: prepare
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: ./.github/actions/build-macos
+        with:
+          package: 'true'
+          tag: ${{ needs.prepare.outputs.tag }}
+          version: ${{ needs.prepare.outputs.version }}
+          architectures: arm64;x86_64
+
+  linux:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+      - uses: ./.github/actions/build-linux
+        with:
+          package: 'true'
+          tag: ${{ needs.prepare.outputs.tag }}
+          version: ${{ needs.prepare.outputs.version }}
+
+  release:
+    needs: [prepare, windows, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pkg-*
+          path: release_assets
+          merge-multiple: true
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ needs.prepare.outputs.tag }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          set -euo pipefail
+          mapfile -t assets < <(find release_assets -maxdepth 1 -type f -print | sort)
+          [[ "${#assets[@]}" -eq 3 ]] || {
+            printf 'Expected three release assets, found %s:\n' "${#assets[@]}" >&2
+            printf '%s\n' "${assets[@]}" >&2
+            exit 1
+          }
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --title "ZcVersionBox $TAG_NAME"
+          else
+            gh release create "$TAG_NAME" --target "$RELEASE_SHA" \
+              --title "ZcVersionBox $TAG_NAME" --generate-notes
+          fi
+          gh release upload "$TAG_NAME" "${assets[@]}" --clobber

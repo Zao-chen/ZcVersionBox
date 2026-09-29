@@ -128,13 +128,15 @@ void BackupSourceWatcher::changed(const QStringList &paths)
             const auto root = key(target->sourcePath);
             const auto childPrefix = eventPath.endsWith('/') ? eventPath : eventPath + '/';
             const auto rootPrefix = root.endsWith('/') ? root : root + '/';
+            const bool sourceMissing = !QFileInfo::exists(target->sourcePath);
             // Normalize only ownership keys. Selection keeps the spelling used
             // by the source and native event, including the legacy build rule.
             const auto policyPath = QDir(target->sourcePath).filePath(QDir(root).relativeFilePath(path));
             // Ancestor events locate a deleted/recreated source. For an existing
             // source, unrelated siblings and excluded build/.git traffic do not
             // invalidate the content check.
-            if (root == eventPath || root.startsWith(childPrefix) ||
+            if (root == eventPath ||
+                (sourceMissing && root.startsWith(childPrefix)) ||
                 (target->directory && eventPath.startsWith(rootPrefix) &&
                  BackupSelectionPolicy::observes(policyPath) && !BackupFiles::isGitMetadataPath(policyPath)))
                 ids.insert(id);

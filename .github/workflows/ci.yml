@@ -1,0 +1,49 @@
+name: Desktop CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to test
+        type: choice
+        default: all
+        options: [all, windows, macos, linux]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows' }}
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-windows
+        with:
+          package: 'false'
+
+  macos:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos' }}
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-macos
+        with:
+          package: 'false'
+          architectures: arm64;x86_64
+
+  linux:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/build-linux
+        with:
+          package: 'false'

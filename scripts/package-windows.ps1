@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory)][string]$BuildDirectory,
     [Parameter(Mandatory)][string]$OutputDirectory,
-    [Parameter(Mandatory)][ValidatePattern('^[0-9A-Za-z][0-9A-Za-z._+-]*$')][string]$Tag,
+    [Parameter(Mandatory)][ValidatePattern('^v[0-9]+\.[0-9]+\.[0-9]+$')][string]$Tag,
     [switch]$SkipInstaller
 )
 $ErrorActionPreference = 'Stop'

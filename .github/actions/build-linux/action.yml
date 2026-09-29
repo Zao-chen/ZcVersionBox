@@ -1,16 +1,26 @@
-name: Build and package Linux
-description: Ubuntu 22.04 / Qt 6.8.3 with X11, Wayland and clean 22.04/24.04 package verification
+name: Build and test Linux
+description: Ubuntu 22.04 / Qt 6.8.3 build, tests and optional Debian package validation
 inputs:
+  package:
+    description: Build and validate the Linux package
+    required: false
+    default: 'false'
   tag:
-    description: Release tag
-    required: true
+    description: Release tag used for package filenames
+    required: false
+    default: v0.1.0
+  version:
+    description: Numeric application version override
+    required: false
+    default: ''
 runs:
   using: composite
   steps:
     - uses: seanmiddleditch/gha-setup-ninja@v5
-    - name: Build and desktop dependencies
+    - name: Install build and desktop dependencies
       shell: bash
       run: |
+        set -euo pipefail
         sudo apt-get update
         sudo apt-get install -y build-essential git libgl1-mesa-dev libegl1-mesa-dev \
           libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \
@@ -18,7 +28,7 @@ runs:
           libxcb-shape0 libxcb-xfixes0 libxcb-sync1 libxcb-xinerama0 \
           libx11-xcb-dev libfontconfig1-dev libdbus-1-dev libssl-dev libwayland-dev \
           libglib2.0-dev patchelf xvfb xauth openbox weston dbus-x11 desktop-file-utils \
-          dpkg-dev fakeroot file fonts-noto-cjk
+          dpkg-dev fakeroot file fonts-noto-cjk x11-utils
     - uses: jurplel/install-qt-action@v4
       with:
         version: '6.8.3'
@@ -26,28 +36,50 @@ runs:
         arch: linux_gcc_64
         archives: qtbase qtsvg qtwayland icu
         cache: true
-    - name: Configure, build and test
+    - name: Configure a clean Release build
+      shell: bash
+      env:
+        PROJECT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        test ! -e build/release || { echo 'Use a clean build/release directory'; exit 1; }
+        cmake_args=(
+          -S .
+          -B build/release
+          -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_TESTING=ON
+          -DZCVERSIONBOX_DEPLOY_LINUX=ON
+          -DCMAKE_INSTALL_LIBDIR=lib
+          "-DCMAKE_PREFIX_PATH=$QT_ROOT_DIR"
+        )
+        if [[ -n "$PROJECT_VERSION" ]]; then
+          cmake_args+=("-DZCVERSIONBOX_VERSION_OVERRIDE=$PROJECT_VERSION")
+        fi
+        cmake "${cmake_args[@]}"
+    - name: Build, test and run desktop smoke checks
       shell: bash
       run: |
-        test ! -e build/release || { echo 'Use a clean build/release directory'; exit 1; }
-        cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release \
-          -DBUILD_TESTING=ON -DZCVERSIONBOX_DEPLOY_LINUX=ON -DCMAKE_INSTALL_LIBDIR=lib \
-          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+        set -euo pipefail
         cmake --build build/release --parallel 4
         ctest --test-dir build/release --output-on-failure
         bash tests/linux/run-desktop-smoke.sh build/release/tests/zc_tests build/native-smoke
-    - name: Package
+    - name: Package Linux DEB
+      if: ${{ inputs.package == 'true' }}
       shell: bash
       env:
         PACKAGE_TAG: ${{ inputs.tag }}
       run: |
+        set -euo pipefail
         bash scripts/package-linux.sh build/release dist/linux "$PACKAGE_TAG"
         bash tests/linux/package-validation.sh build/release build/validation
-    - name: Install, upgrade, test and remove the same DEB on Ubuntu 22.04 and 24.04
+    - name: Verify package on Ubuntu 22.04 and 24.04
+      if: ${{ inputs.package == 'true' }}
       shell: bash
       env:
         PACKAGE_TAG: ${{ inputs.tag }}
       run: |
+        set -euo pipefail
         for ubuntu in 22.04 24.04; do
           docker build -f tests/linux/Dockerfile.runtime --build-arg "UBUNTU_IMAGE=ubuntu:$ubuntu" \
             -t "zcversionbox-runtime:$ubuntu" tests/linux
@@ -55,10 +87,12 @@ runs:
           docker run --rm -v "$PWD/dist/linux:/packages:ro" \
             -v "$PWD/build/validation:/validation:ro" -v "$PWD/tests/linux:/scripts:ro" \
             -v "$PWD/build/runtime-$ubuntu:/results" "zcversionbox-runtime:$ubuntu" \
-            bash /scripts/verify-package.sh "/packages/ZcVersionBox-$PACKAGE_TAG-linux-amd64.deb" \
-            /validation/validation.tar.gz /results
+            bash /scripts/verify-package.sh \
+            "/packages/ZcVersionBox-$PACKAGE_TAG-linux-amd64.deb" \
+            /validation/validation.tar.gz "/results"
         done
     - uses: actions/upload-artifact@v4
+      if: ${{ inputs.package == 'true' }}
       with:
         name: pkg-linux-deb
         path: dist/linux/ZcVersionBox-*.deb
@@ -67,6 +101,7 @@ runs:
       if: always()
       with:
         name: tests-linux
+        if-no-files-found: warn
         path: |
           build/release/Testing/Temporary/LastTest.log
           build/release/tests/regression.txt
