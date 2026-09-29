@@ -722,7 +722,7 @@
                  <item>
                   <widget class="QPushButton" name="pullButton">
                    <property name="text">
-                    <string>拉取</string>
+                    <string>获取云端更新</string>
                    </property>
                    <property name="autoDefault">
                     <bool>false</bool>

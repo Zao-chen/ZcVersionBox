@@ -6,6 +6,7 @@
 #include "windows/mainwindow_child/homepage/pages/homepage_page_backup.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_diff.h"
+#include "windows/mainwindow_child/homepage/pages/homepage_page_conflict.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.h"
 #include "windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.h"
 #include "windows/mainwindow_child/settingpage/settingpage.h"
@@ -41,6 +42,8 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
+#include <QStyleHints>
+#include <QScopeGuard>
 #include <QSignalSpy>
 #include <QSplitter>
 #include <QStackedWidget>
@@ -116,6 +119,59 @@ class FakeAi : public AiGateway
     void summarize(const AiConfigHelper::RuntimeConfig &, const QString &, QObject *, SummaryCallback callback) override { summaries.append(std::move(callback)); }
     void generateCommitMessage(const AiConfigHelper::RuntimeConfig &, const QString &, QObject *, SummaryCallback callback) override { messages.append(std::move(callback)); }
 };
+
+struct ResolutionFixture
+{
+    TestDirectory dir;
+    TestBackupService service{pathsIn(dir)};
+    QString source{dir.path() + "/project"}, id, remote{dir.path() + "/remote.git"}, writer{dir.path() + "/writer"};
+    explicit ResolutionFixture(bool conflicts = true)
+    {
+        const auto git = [](const QString &path, const QStringList &args)
+        {
+            const auto r = runGit(path, args);
+            if (!r.success()) qFatal("Conflict fixture: %s", qPrintable(r.error));
+        };
+        writeFile(source + "/使用说明.txt", "第一段\nb\nc\nd\ne\nf\n第二段\n");
+        writeFile(source + "/image.bin", QByteArray("base\0image", 10));
+        writeFile(source + "/remove.txt", "base\n");
+        if (!service.addLocal(source).success) qFatal("Cannot create conflict fixture");
+        id = service.idForSource(source);
+        git({}, {"init", "--bare", remote});
+        if (!service.setRemote(id, remote).success || !service.synchronize(id, true).success) qFatal("Cannot configure fixture remote");
+        git({}, {"clone", remote, writer});
+        git(writer, {"config", "user.name", "Fixture"});
+        git(writer, {"config", "user.email", "fixture@example.test"});
+        writeFile(writer + "/project/使用说明.txt", "云端第一段\nb\nc\nd\ne\nf\n云端第二段\n");
+        writeFile(writer + "/project/image.bin", QByteArray("remote\0image", 12));
+        git(writer, {"rm", "project/remove.txt"});
+        writeFile(writer + "/project/automatic.txt", "自动合并的新增文件\n");
+        git(writer, {"add", "--all"}); git(writer, {"commit", "-m", "cloud changes"}); git(writer, {"push"});
+        if (conflicts)
+        {
+            writeFile(source + "/使用说明.txt", "本地第一段\nb\nc\nd\ne\nf\n本地第二段\n");
+            writeFile(source + "/image.bin", QByteArray("local\0image", 11));
+            writeFile(source + "/remove.txt", "local changes\n");
+        }
+    }
+};
+bool answerConfirmation(QPushButton *button, BackupService &service, const std::function<void(QDialog *)> &answer)
+{
+    bool shown = false;
+    QTimer timer;
+    timer.setInterval(10);
+    QObject::connect(&timer, &QTimer::timeout, &timer, [&]
+    {
+        if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+        {
+            timer.stop(); shown = true; answer(dialog);
+        }
+    });
+    timer.start(); button->click();
+    if (!QTest::qWaitFor([&] { return shown; }, 5000)) return false;
+    settle(service);
+    return true;
+}
 } // namespace
 class Regression : public QObject
 {
@@ -1120,92 +1176,259 @@ class Regression : public QObject
         QFile::setPermissions(previewPath + "/行内操作.txt", QFileDevice::ReadOwner | QFileDevice::WriteOwner);
         QVERIFY(QDir(previewPath).removeRecursively());
     }
-    void pullStateActionsRespectConfirmation()
+    void conflictChoicesPreviewAndApply()
     {
-        TestDirectory dir;
-        TestBackupService service(pathsIn(dir));
-        const auto source = dir.path() + "/source.txt";
-        writeFile(source, "initial\n");
-        QVERIFY(service.addLocal(source).success);
-        const auto id = service.idForSource(source);
-        const auto remote = dir.path() + "/remote.git", writer = dir.path() + "/writer";
-        QVERIFY(runGit({}, {"init", "--bare", remote}).success());
-        QVERIFY(service.setRemote(id, remote).success);
-        QVERIFY(service.synchronize(id, true).success);
-        QVERIFY(runGit({}, {"clone", remote, writer}).success());
-        QVERIFY(runGit(writer, {"config", "user.name", "Fixture"}).success());
-        QVERIFY(runGit(writer, {"config", "user.email", "fixture@example.test"}).success());
-        writeFile(writer + "/source.txt", "pulled\n");
-        QVERIFY(runGit(writer, {"add", "--all"}).success());
-        QVERIFY(runGit(writer, {"commit", "-m", "remote"}).success());
-        QVERIFY(runGit(writer, {"push"}).success());
-        QVERIFY(service.synchronize(id, false).success);
-        const auto pulled = head(service, id);
-        HomePageDashboardPage page(&service);
+        ResolutionFixture f;
+        auto session = f.service.prepareSyncResolution(f.id);
+        QVERIFY2(session.result.success, qPrintable(session.result.message));
+        QCOMPARE(session.value.total(), 4);
+        HomePageConflictPage page(&f.service);
         page.setAttribute(Qt::WA_DontShowOnScreen);
-        page.resize(700, 600);
-        page.setBackup(id);
+        page.resize(900, 600);
+        page.setBackup(f.id);
         page.show();
-        settle(service);
-        auto *apply = page.findChild<QPushButton *>("applyPullButton");
-        auto *keep = page.findChild<QPushButton *>("keepSourceButton");
-        QVERIFY(apply->isVisible());
-        QVERIFY(keep->isVisible());
-        QVERIFY(!page.findChild<QPushButton *>("pullButton")->isEnabled());
-        QVERIFY(page.findChild<QPushButton *>("pushButton")->isEnabled());
-        QVERIFY(page.findChild<QLabel *>("syncDetailLabel")->text().contains("自动备份已暂停"));
-        const auto respond = [&](QPushButton *button, const auto &answer)
+        settle(f.service);
+        auto *files = page.findChild<QListView *>("files");
+        const auto select = [&](const QString &path)
         {
-            bool shown = false;
-            QTimer timer;
-            timer.setInterval(10);
-            connect(&timer, &QTimer::timeout, &timer, [&]
-                    {
-                if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
-                {
-                    timer.stop(); shown = true; answer(dialog);
-                } });
-            timer.start();
-            button->click();
-            if (!QTest::qWaitFor([&]
-                                 { return shown; }, 5000))
-                return false;
-            settle(service);
-            return true;
+            for (int i = 0; i < files->model()->rowCount(); ++i)
+                if (files->model()->index(i, 0).data().toString().contains(path))
+                    files->setCurrentIndex(files->model()->index(i, 0));
+            settle(f.service);
         };
-        QVERIFY(respond(apply, [](QDialog *dialog)
-                        { dialog->reject(); }));
-        QCOMPARE(service.syncState(id), BackupSyncState::RemotePending);
-        QCOMPARE(readFile(source), QByteArray("initial\n"));
-        QVERIFY(respond(apply, [&](QDialog *dialog)
-                        {
-            writeFile(source, "edited during confirmation\n");
-            dialog->accept(); }));
-        QCOMPARE(service.syncState(id), BackupSyncState::RemotePending);
-        QCOMPARE(readFile(source), QByteArray("edited during confirmation\n"));
-        QVERIFY(respond(keep, [](QDialog *dialog)
-                        { dialog->accept(); }));
-        QCOMPARE(service.syncState(id), BackupSyncState::Tracking);
-        QVERIFY(!apply->isVisible());
-        QVERIFY(!keep->isVisible());
-        QVERIFY(page.findChild<QPushButton *>("pullButton")->isEnabled());
-        QCOMPARE(runGit(service.repoPath(id), {"rev-parse", "HEAD^"}).output.trimmed(), pulled);
-
-        QVERIFY(service.synchronize(id, true).success);
-        QVERIFY(runGit(writer, {"pull", "--ff-only"}).success());
-        writeFile(writer + "/source.txt", "new remote version\n");
-        QVERIFY(runGit(writer, {"add", "--all"}).success());
-        QVERIFY(runGit(writer, {"commit", "-m", "second remote"}).success());
-        QVERIFY(runGit(writer, {"push"}).success());
-        QVERIFY(service.synchronize(id, false).success);
-        settle(service);
-        const auto latest = head(service, id);
-        QVERIFY(respond(apply, [](QDialog *dialog)
-                        { dialog->accept(); }));
-        QCOMPARE(service.syncState(id), BackupSyncState::Tracking);
-        QCOMPARE(readFile(source), QByteArray("new remote version\n"));
-        QCOMPARE(head(service, id), latest);
+        auto *local = page.findChild<QPushButton *>("localChoice");
+        auto *remote = page.findChild<QPushButton *>("remoteChoice");
+        auto *preview = page.findChild<QPushButton *>("previewButton");
+        QVERIFY(!preview->isEnabled());
+        QVERIFY(!local->isChecked());
+        QVERIFY(!remote->isChecked());
+        select("project/使用说明.txt");
+        QVERIFY(page.findChild<QPlainTextEdit *>("localContent")->toPlainText().contains("本地第一段"));
+        QTest::keyClick(local, Qt::Key_Space);
+        settle(f.service);
+        QVERIFY(local->isChecked());
+        QVERIFY(page.findChild<QLabel *>("questionTitle")->text().contains("第 1 / 2"));
+        remote->click(); settle(f.service);
+        QVERIFY(remote->isChecked()); QVERIFY(!local->isChecked());
+        local->click(); settle(f.service);
+        page.findChild<QPushButton *>("nextButton")->click();
+        QVERIFY(page.findChild<QLabel *>("questionTitle")->text().contains("第 2 / 2"));
+        remote->click(); settle(f.service);
+        page.findChild<QPushButton *>("previousButton")->click();
+        QVERIFY(local->isChecked());
+        page.findChild<QPushButton *>("expandContentButton")->click(); settle(f.service);
+        QVERIFY(page.findChild<QPlainTextEdit *>("localContent")->toPlainText().contains("本地第二段"));
+        select("project/image.bin");
+        QVERIFY(local->text().contains("本地文件"));
+        QVERIFY(page.findChild<QLabel *>("localMeta")->text().contains("BIN"));
+        PreviewUrls urls;
+        page.findChild<QPushButton *>("remoteOpen")->click(); settle(f.service);
+        QCOMPARE(urls.urls.size(), 1);
+        const auto copy = urls.urls.first().toLocalFile();
+        QCOMPARE(readFile(copy), QByteArray("remote\0image", 12));
+#ifndef Q_OS_WIN
+        QVERIFY(!QFileInfo(copy).permission(QFileDevice::WriteOwner));
+#endif
+        local->click(); settle(f.service);
+        select("project/remove.txt");
+        QVERIFY(remote->text().contains("删除文件"));
+        remote->click(); settle(f.service);
+        QVERIFY(preview->isEnabled());
+        preview->click(); settle(f.service);
+        QVERIFY(page.findChild<QPushButton *>("applyButton")->isVisible());
+        QVERIFY(page.findChild<QLabel *>("previewSummary")->text().contains("删除 1"));
+        bool automatic = false;
+        for (int i = 0; i < files->model()->rowCount(); ++i)
+            if (files->model()->index(i, 0).data().toString().contains("automatic.txt")) automatic = true;
+        QVERIFY(automatic);
+        // Every final text shown to the user is reconstructed content, never a patch.
+        for (int i = 0; i < files->model()->rowCount(); ++i)
+        {
+            files->setCurrentIndex(files->model()->index(i, 0)); settle(f.service);
+            QVERIFY(!page.findChild<QPlainTextEdit *>("resultContent")->toPlainText().contains("<<<<<<<"));
+        }
+        auto *apply = page.findChild<QPushButton *>("applyButton");
+        bool defaultCancel = false, correctScope = false;
+        QVERIFY(answerConfirmation(apply, f.service, [&](QDialog *dialog)
+        {
+            defaultCancel = dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Cancel)->isDefault();
+            correctScope = dialog->findChild<QLabel *>()->text().contains(f.source) && dialog->findChild<QLabel *>()->text().contains("1 个删除");
+            dialog->reject();
+        }));
+        QVERIFY(defaultCancel); QVERIFY(correctScope);
+        QCOMPARE(f.service.syncState(f.id), BackupSyncState::ResolutionPending);
+        QVERIFY(QFileInfo::exists(f.source + "/remove.txt"));
+        QSignalSpy navigation(&page, &HomePageConflictPage::navigate);
+        QVERIFY(answerConfirmation(apply, f.service, [](QDialog *dialog) { dialog->accept(); }));
+        QCOMPARE(f.service.syncState(f.id), BackupSyncState::Tracking);
+        QCOMPARE(readFile(f.source + "/使用说明.txt"), QByteArray("本地第一段\nb\nc\nd\ne\nf\n云端第二段\n"));
+        QCOMPARE(readFile(f.source + "/image.bin"), QByteArray("local\0image", 11));
+        QCOMPARE(readFile(f.source + "/automatic.txt"), QByteArray("自动合并的新增文件\n"));
+        QVERIFY(!QFileInfo::exists(f.source + "/remove.txt"));
+        QCOMPARE(navigation.size(), 1);
+        const auto route = qvariant_cast<Route>(navigation.first().first());
+        QCOMPARE(route.page, PageId::History);
+        QCOMPARE(route.commit, head(f.service, f.id));
     }
+    void conflictNavigationStalenessAndLateReplies()
+    {
+        ResolutionFixture f;
+        FakeAi gateway;
+        SettingsService settings(pathsIn(f.dir), &gateway);
+        MainWindow window(&f.service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen);
+        window.show();
+        window.navigate({PageId::Dashboard, f.id}); settle(f.service);
+        auto *dashboard = window.findChild<HomePageDashboardPage *>();
+        dashboard->findChild<QPushButton *>("pullButton")->click(); settle(f.service);
+        auto *page = window.findChild<HomePageConflictPage *>();
+        QVERIFY(page->isVisible());
+        auto *local = page->findChild<QPushButton *>("localChoice");
+        local->click(); settle(f.service);
+        const auto firstTitle = page->findChild<QLabel *>("questionTitle")->text();
+        window.navigate({PageId::GeneralSettings}); settle(f.service);
+        window.findChild<QToolButton *>("returnApplicationButton")->click(); settle(f.service);
+        QVERIFY(page->isVisible()); QVERIFY(local->isChecked());
+        QCOMPARE(page->findChild<QLabel *>("questionTitle")->text(), firstTitle);
+        window.findChild<QToolButton *>("backButton")->click(); settle(f.service);
+        QVERIFY(window.findChild<SettingPage *>()->isVisible());
+        window.findChild<QToolButton *>("forwardButton")->click(); settle(f.service);
+        QVERIFY(page->isVisible());
+        const auto other = f.dir.path() + "/other.txt";
+        writeFile(other, "other"); QVERIFY(f.service.addLocal(other).success);
+        const auto otherId = f.service.idForSource(other);
+        // Leaving while saving retains the choice but cannot navigate back or fill another object.
+        page->findChild<QPushButton *>("remoteChoice")->click();
+        window.navigate({PageId::History, otherId}); settle(f.service);
+        QVERIFY(!page->isVisible());
+        window.navigate({PageId::Conflict, f.id}); settle(f.service);
+        QVERIFY(page->findChild<QPushButton *>("remoteChoice")->isChecked());
+        writeFile(f.source + "/使用说明.txt", "源内容在选择期间变化\n");
+        window.navigate({PageId::Dashboard, f.id}); settle(f.service);
+        auto *resume = dashboard->findChild<QPushButton *>("continueResolutionButton");
+        QVERIFY(resume->isVisible()); resume->click(); settle(f.service);
+        QVERIFY(page->findChild<QPushButton *>("reanalyzeButton")->isVisible());
+        QVERIFY(!local->isEnabled());
+        QVERIFY(!page->findChild<QPushButton *>("previewButton")->isEnabled());
+        QVERIFY(page->findChild<QPushButton *>("remoteChoice")->isChecked());
+        QVERIFY(answerConfirmation(page->findChild<QPushButton *>("reanalyzeButton"), f.service, [](QDialog *dialog) { dialog->accept(); }));
+        QVERIFY(local->isEnabled()); QVERIFY(!local->isChecked());
+        QVERIFY(!page->findChild<QPushButton *>("remoteChoice")->isChecked());
+        // Removed objects invalidate a queued content reply and all navigation entries.
+        page->findChild<QPushButton *>("expandContentButton")->click();
+        QVERIFY(f.service.removeBackup(f.id).success); settle(f.service);
+        QVERIFY(window.findChild<HomePage *>()->isVisible());
+        window.findChild<QToolButton *>("backButton")->click(); settle(f.service);
+        QVERIFY(!page->isVisible());
+        QVERIFY(f.service.contains(otherId));
+    }
+    void conflictFastForwardAndChangedConfirmation()
+    {
+        ResolutionFixture f(false);
+        auto session = f.service.prepareSyncResolution(f.id);
+        QVERIFY(session.result.success); QCOMPARE(session.value.total(), 0);
+        HomePageConflictPage page(&f.service);
+        page.setAttribute(Qt::WA_DontShowOnScreen); page.resize(800, 600); page.show(); page.setBackup(f.id); settle(f.service);
+        auto *apply = page.findChild<QPushButton *>("applyButton");
+        QVERIFY(apply->isVisible()); QVERIFY(apply->isEnabled());
+        const auto previous = head(f.service, f.id);
+        QVERIFY(answerConfirmation(apply, f.service, [&](QDialog *dialog)
+        {
+            writeFile(f.source + "/使用说明.txt", "临时新修改\n");
+            dialog->accept();
+        }));
+        QCOMPARE(head(f.service, f.id), previous);
+        QCOMPARE(readFile(f.source + "/使用说明.txt"), QByteArray("临时新修改\n"));
+        QCOMPARE(f.service.syncState(f.id), BackupSyncState::ResolutionPending);
+        QVERIFY(page.findChild<QPushButton *>("reanalyzeButton")->isVisible());
+        QVERIFY(!apply->isEnabled());
+    }
+    void conflictKeyboardNavigation()
+    {
+        // Exercise full Tab traversal without changing the user's macOS setting.
+        auto *hints = QGuiApplication::styleHints();
+        const auto previousTabBehavior = hints->tabFocusBehavior();
+        hints->setTabFocusBehavior(Qt::TabFocusAllControls);
+        const auto restoreTabBehavior = qScopeGuard([=] { hints->setTabFocusBehavior(previousTabBehavior); });
+        ResolutionFixture f;
+        QVERIFY(f.service.prepareSyncResolution(f.id).result.success);
+        HomePageConflictPage page(&f.service);
+        page.resize(520, 540); page.show(); page.activateWindow();
+        page.setBackup(f.id); settle(f.service);
+        auto *local = page.findChild<QPushButton *>("localChoice");
+        auto *scroll = page.findChild<QScrollArea *>("contentScroll");
+        scroll->ensureWidgetVisible(local);
+        local->setFocus(Qt::TabFocusReason);
+        QTRY_VERIFY(local->hasFocus());
+        QTest::keyClick(local, Qt::Key_Space); settle(f.service);
+        QVERIFY(local->isChecked());
+        local->setFocus(Qt::TabFocusReason);
+        QTest::keyClick(local, Qt::Key_Tab);
+        QVERIFY(page.findChild<QPushButton *>("localOpen")->hasFocus());
+        QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+        QVERIFY(page.findChild<QPlainTextEdit *>("remoteContent")->hasFocus());
+        QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
+        auto *remote = page.findChild<QPushButton *>("remoteChoice");
+        QVERIFY(remote->hasFocus());
+        QTest::keyClick(remote, Qt::Key_Space); settle(f.service);
+        QVERIFY(remote->isChecked()); QVERIFY(!local->isChecked());
+        page.close();
+    }
+    void renderConflictPages()
+    {
+        ResolutionFixture f;
+        QVERIFY(f.service.prepareSyncResolution(f.id).result.success);
+        FakeAi gateway;
+        SettingsService settings(pathsIn(f.dir), &gateway);
+        MainWindow window(&f.service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen); window.show();
+        window.navigate({PageId::Conflict, f.id}); settle(f.service);
+        auto *page = window.findChild<HomePageConflictPage *>();
+        auto *fileList = page->findChild<QListView *>("files");
+        fileList->setCurrentIndex(fileList->model()->index(2, 0));
+        page->findChild<QPushButton *>("localChoice")->click(); settle(f.service);
+        const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS");
+        if (!output.isEmpty()) QDir().mkpath(output);
+        for (int theme = 0; theme < 2; ++theme)
+        {
+            for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+            {
+                window.resize(size); QTest::qWait(120);
+                QCOMPARE(window.size(), size);
+                auto *scroll = page->findChild<QScrollArea *>("contentScroll");
+                QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+                QCOMPARE(page->findChild<QSplitter *>("splitter")->orientation(), size.width() == 760 ? Qt::Vertical : Qt::Horizontal);
+                scroll->ensureWidgetVisible(page->findChild<QPushButton *>("remoteChoice"));
+                QVERIFY(!page->findChild<QPushButton *>("remoteChoice")->visibleRegion().isEmpty());
+                scroll->verticalScrollBar()->setValue(0);
+                if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/conflict-%1-%2.png").arg(theme).arg(size.width())));
+            }
+            m_theme->toggle();
+        }
+        auto session = f.service.syncResolution(f.id);
+        const auto files = session.value.files;
+        for (const auto &file : files)
+            for (int h = 0; h < file.hunks.size(); ++h)
+            {
+                session = f.service.chooseSyncResolution(session.value, file.path, h, ConflictChoice::Remote);
+                QVERIFY(session.result.success);
+            }
+        settle(f.service);
+        page->findChild<QPushButton *>("previewButton")->click(); settle(f.service);
+        for (int theme = 0; theme < 2; ++theme)
+        {
+            for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+            {
+                window.resize(size); QTest::qWait(120);
+                QCOMPARE(window.size(), size);
+                QCOMPARE(page->findChild<QScrollArea *>("contentScroll")->horizontalScrollBar()->maximum(), 0);
+                QVERIFY(page->findChild<QPushButton *>("applyButton")->isVisible());
+                if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/conflict-preview-%1-%2.png").arg(theme).arg(size.width())));
+            }
+            m_theme->toggle();
+        }
+    }
+
     void historyMenusAndRestoreKeepVersionContext()
     {
         TestDirectory dir;
@@ -1461,6 +1684,13 @@ class Regression : public QObject
             QVERIFY(page.findChildren<QWidget *>().size() <= initialWidgets + 8);
         }
         const QPersistentModelIndex retained(source.indexForId("125"));
+        items[125].state = BackupSyncState::ResolutionPending;
+        items[125].stateDetail = "还有 2 / 3 处内容需要选择。自动备份已暂停。";
+        source.setItems(items);
+        QVERIFY(retained.isValid());
+        QCOMPARE(retained.data(BackupListModel::StateRole).toInt(), int(BackupSyncState::ResolutionPending));
+        QCOMPARE(retained.data(BackupListModel::StateDetailRole).toString(), items[125].stateDetail);
+        QVERIFY(retained.data(Qt::ToolTipRole).toString().contains("2 / 3"));
         std::reverse(items.begin(), items.end());
         items[items.size() - 126].name = "重命名后仍保留 ID";
         source.setItems(items);
@@ -1506,7 +1736,7 @@ class Regression : public QObject
         QVERIFY(service.backup(id).success);
         settle(service);
         HomePageBackupPage page(&service);
-        page.setAttribute(Qt::WA_DontShowOnScreen);
+        page.setAttribute(Qt::WA_DontShowOnScreen, QGuiApplication::platformName() != "cocoa");
         page.resize(820, 640);
         page.setBackup(id);
         settle(service);
@@ -1518,12 +1748,20 @@ class Regression : public QObject
         QVERIFY(service.backup(id).success);
         settle(service);
         QCOMPARE(table->model()->index(table->currentIndex().row(), 2).data(Qt::UserRole + 1).toString(), previous);
+        page.setBackup(id, head(service, id));
+        settle(service);
+        QCOMPARE(table->currentIndex().row(), 0);
+        page.setBackup(id, previous);
+        settle(service);
+        QCOMPARE(table->model()->index(table->currentIndex().row(), 2).data(Qt::UserRole + 1).toString(), previous);
         QSignalSpy routes(&page, &HomePageBackupPage::navigate);
 #ifdef Q_OS_MACOS
         if (QGuiApplication::platformName() == "offscreen")
             QSKIP("The macOS offscreen plugin does not deliver keyboard focus to a hidden view");
 #endif
+        page.activateWindow();
         table->setFocus();
+        QTRY_VERIFY(table->hasFocus());
         QTest::keyClick(table, Qt::Key_Return);
         QCOMPARE(routes.count(), 1);
         QCOMPARE(qvariant_cast<Route>(routes.first().first()).commit, previous);

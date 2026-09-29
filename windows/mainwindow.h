@@ -18,6 +18,7 @@ class HomePage;
 class HomePageDashboardPage;
 class HomePageBackupPage;
 class HomePageDiffPage;
+class HomePageConflictPage;
 class SettingPage;
 class SettingPageAiPage;
 class AboutPage;
@@ -63,6 +64,7 @@ class MainWindow : public QMainWindow
     HomePageDashboardPage *m_dashboard;
     HomePageBackupPage *m_history;
     HomePageDiffPage *m_diff;
+    HomePageConflictPage *m_conflict;
     SettingPage *m_general;
     SettingPageAiPage *m_ai;
     AboutPage *m_about;

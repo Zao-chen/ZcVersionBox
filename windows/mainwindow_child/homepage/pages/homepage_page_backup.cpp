@@ -342,6 +342,11 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     m_more = UiStyle::action(this, "revisionMenuAction", "更多版本操作", "more");
     m_refresh = UiStyle::action(this, "refreshHistoryAction", "刷新历史", "refresh");
     m_refresh->setProperty("iconOnly", true);
+    // Cocoa treats Return as an edit key. Keep the advertised activation the
+    // same on every platform, while leaving Return inside editors untouched.
+    m_compare->setShortcuts({QKeySequence(Qt::Key_Return), QKeySequence(Qt::Key_Enter)});
+    m_compare->setShortcutContext(Qt::WidgetShortcut);
+    ui->table->addAction(m_compare);
     m_edit->setShortcut(QKeySequence(Qt::Key_F2));
     m_edit->setShortcutContext(Qt::WidgetShortcut);
     ui->table->addAction(m_edit);
@@ -425,12 +430,13 @@ void HomePageBackupPage::deactivate()
     ++m_refreshGeneration;
     closeRevisionMenu();
 }
-void HomePageBackupPage::setBackup(const QString &id)
+void HomePageBackupPage::setBackup(const QString &id, const QString &commit)
 {
     rememberState();
     ++m_contextGeneration;
     closeRevisionMenu();
     m_id = id;
+    m_requestedCommit = commit;
     refresh();
 }
 HomePageBackupPage::RevisionContext HomePageBackupPage::revisionContext(const QModelIndex &index) const
@@ -588,6 +594,12 @@ void HomePageBackupPage::refresh()
     auto state = m_states.value(id);
     if (state.generation != generation)
         state = {};
+    if (!m_requestedCommit.isEmpty())
+    {
+        state.commit = m_requestedCommit;
+        state.scroll = 0;
+        m_requestedCommit.clear();
+    }
     const auto &revisions = reply.value;
     QScopedValueRollback<bool> loading(m_loading, true);
     m_model.clear();

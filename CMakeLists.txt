@@ -121,6 +121,7 @@ add_library(zc_ui STATIC
     windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h windows/mainwindow_child/homepage/pages/homepage_page_dashboard.cpp windows/mainwindow_child/homepage/pages/homepage_page_dashboard.ui
     windows/mainwindow_child/homepage/pages/homepage_page_backup.h windows/mainwindow_child/homepage/pages/homepage_page_backup.cpp windows/mainwindow_child/homepage/pages/homepage_page_backup.ui
     windows/mainwindow_child/homepage/pages/homepage_page_diff.h windows/mainwindow_child/homepage/pages/homepage_page_diff.cpp windows/mainwindow_child/homepage/pages/homepage_page_diff.ui
+    windows/mainwindow_child/homepage/pages/homepage_page_conflict.h windows/mainwindow_child/homepage/pages/homepage_page_conflict.cpp windows/mainwindow_child/homepage/pages/homepage_page_conflict.ui
     windows/mainwindow_child/settingpage/settingpage.h windows/mainwindow_child/settingpage/settingpage.cpp windows/mainwindow_child/settingpage/settingpage.ui windows/mainwindow_child/settingpage/settingpage_page_ai.ui
     windows/mainwindow_child/aboutpage/aboutpage.h windows/mainwindow_child/aboutpage/aboutpage.cpp windows/mainwindow_child/aboutpage/aboutpage.ui)
 target_link_libraries(zc_ui PUBLIC zc_services qlementine Qt6::Widgets QWKWidgets)

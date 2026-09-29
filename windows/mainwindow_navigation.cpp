@@ -3,7 +3,7 @@ void Navigation::invalidateRevisions(const QString &id)
 {
     bool affected = false;
     for (auto &route : m_routes)
-        if (route.backupId == id && route.page == PageId::Diff)
+        if (route.backupId == id && (route.page == PageId::Diff || route.page == PageId::Conflict))
         {
             route = {PageId::History, id};
             affected = true;

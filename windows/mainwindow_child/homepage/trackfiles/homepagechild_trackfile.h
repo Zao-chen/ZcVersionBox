@@ -17,7 +17,9 @@ class BackupListModel : public QAbstractListModel
         IdRole = Qt::UserRole + 1,
         PathRole,
         ParentPathRole,
-        SearchRole
+        SearchRole,
+        StateRole,
+        StateDetailRole
     };
     explicit BackupListModel(QObject *parent = nullptr) : QAbstractListModel(parent) {}
     int rowCount(const QModelIndex &parent = {}) const override;

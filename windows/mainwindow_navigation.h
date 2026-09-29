@@ -12,7 +12,8 @@ enum class PageId
     Diff,
     GeneralSettings,
     AiSettings,
-    About
+    About,
+    Conflict
 };
 struct Route
 {
@@ -29,7 +30,7 @@ Q_DECLARE_METATYPE(Route)
 
 inline bool isObjectPage(PageId page)
 {
-    return page == PageId::Dashboard || page == PageId::History || page == PageId::Diff;
+    return page == PageId::Dashboard || page == PageId::History || page == PageId::Diff || page == PageId::Conflict;
 }
 inline bool isSettingsPage(PageId page)
 {

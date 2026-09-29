@@ -50,11 +50,10 @@ class HomePageDashboardPage : public QWidget
     oclero::qlementine::Expander *m_expander;
     QAction *m_refresh;
     QLabel *m_syncState, *m_syncDetail, *m_busy;
-    QPushButton *m_applyPull, *m_keepSource, *m_recheck;
+    QPushButton *m_continueResolution, *m_recheck;
     void remoteToggled(bool checked);
     void rememberState();
     void updateActions();
-    void resolvePull(bool applyToSource);
     bool isCurrent(const QString &id, quint64 generation, quint64 context) const;
     BackupService::Completion completion();
 };

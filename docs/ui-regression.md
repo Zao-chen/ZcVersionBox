@@ -14,8 +14,11 @@
 | 一万文件 | 100 个目录、10,000 个文件；真实空闲扫描次数、扫描阻塞期间 2,000 次写入、后续自动备份请求数和最大未完成请求数 |
 | 文件、目录、中文、空格、二进制 | 真实临时 Git 仓库，历史、初始 Diff、预览、源恢复与 HEAD 断言 |
 | pull 持久暂停 | 排队备份、源继续编辑、重启、修改地址、重复 pull、取消确认均不能覆盖拉取版本 |
-| 两种解决方式 | 应用到源不额外提交；保留源创建普通后继版本，远端提交保持祖先关系；相同内容不产生空提交 |
-| 确认上下文 | 源内容、对象、仓库代次或待处理版本变化时拒绝旧请求；UI 取消默认与两种操作均有交互回归 |
+| 旧 pull 兼容 | 保留低层整份处理接口和已有记录；产品入口迁移到同步差异会话，固定拉取前后版本 |
+| 确认上下文 | 源内容、对象、仓库代次或会话版本变化时拒绝旧请求；UI 默认取消，不更新源；成功返回历史并定位结果提交 |
+| 同步差异核心 | 分叉、快进、未备份修改、多处混合选择、自动合并、二进制、UTF-8 检验与大小/行数降级、BOM/CRLF/末尾换行、原文标记、执行位、忽略碰撞与删除清单 |
+| 同步差异生命周期 | 重启恢复、保存失败、排队任务暂停与其他对象继续、固定云端快照、过期选择和重复应用、源/外部仓库/远程配置变化、复制/提交/记录/部分替换失败 |
+| 同步差异界面 | 未完成限制、改选/跨文件跳转、完整正文、只读副本、结果预览、最终取消/应用、设置/前后退/对象切换、删除后旧响应失效、1080×740/760×520 和浅深色 |
 | pull 失败 | 保存暂停失败不拉取；无内容变化不推进源指纹；实际 upstream、不同分支、分叉与不确定结果 |
 | 映射失效 | 远端删除追踪路径时明确失败，源仍保留；普通恢复和重建不能绕过暂停 |
 | 文件/Git/记录故障 | 目录枚举、复制、替换、暂存、提交、初始/最终记录保存失败；基线不误推进，安全回滚，无法回滚保留具体路径 |
@@ -56,7 +59,7 @@ BackupMonitor 重构的约定范围是 `backup_core` 整组，以及 `regression
 $env:PATH = 'S:/Qt/6.8.3/msvc2022_64/bin;' + $env:PATH
 $env:QT_QPA_PLATFORM = 'offscreen'
 $env:QT_QPA_PLATFORM_PLUGIN_PATH = 'S:/Qt/6.8.3/msvc2022_64/plugins/platforms'
-& ./build/backup-core/Release/zc_tests.exe monitorSurvivesPageRefresh defaultFileSelectionKeepsBuildAndGitIgnoreSemantics automaticAiMessagesAndDeletedContext pullStateActionsRespectConfirmation confirmationsRespectObjectContext asyncControlsAndThemePreserveContext -o ./build/backup-core/monitor-ui-regression.txt,txt
+& ./build/backup-core/Release/zc_tests.exe monitorSurvivesPageRefresh defaultFileSelectionKeepsBuildAndGitIgnoreSemantics automaticAiMessagesAndDeletedContext conflictChoicesPreviewAndApply confirmationsRespectObjectContext asyncControlsAndThemePreserveContext -o ./build/backup-core/monitor-ui-regression.txt,txt
 ```
 
 `backup_core` 包含一万文件的完整备份事务，CTest 超时为 600 秒；小范围调试可指定 Qt Test 函数，避免每次运行压力用例。所有时间窗口策略用注入时钟验证；真实文件事件测试只缩短合并时间，不将平台事件延迟当作严格定时保证。原子保存测试在 Windows 使用 `ReplaceFileW`，其他平台使用 QSaveFile；另有持续 QSaveFile 清单保存测试，覆盖监听对应用自有记录的影响。
@@ -126,3 +129,34 @@ Qt Test 的 passed 计数包含初始化和清理。未运行 `regression` 的�
 该次重构未启动读取真实备份的正常应用，未安装、推送或合并；仅包含 Windows 执行结果。后续 Linux 移植已补齐源码 SDK、大小写与执行位回归及安装包验证，见上节。macOS CI 目标为 arm64、最低部署版本 12.0，但尚无本轮实际运行结果，不能据此宣称 macOS 已通过验收。
 
 以下仍需对应平台或隔离账户验证：真实远程认证与网络故障、Explorer/Finder 入口、自启动、托盘、安装/卸载、原生文件选择框和多显示器 DPI。当前流程不承诺自动崩溃重放，Ignore 产品设计和大目录增量扫描独立跟进，详见 [备份架构](backup-architecture.md)。
+
+
+## 同步冲突处理验证（2026-09-29）
+
+恢复 `feature/conflict-resolution` 上已有的两个核心阶段，复用 macOS / Qt 6.8.3 arm64 的 `build` 增量构建 `zc_backup_tests`、`zc_tests`、`ZcVersionBox`。全部回归使用临时仓库、隔离 Git 配置、本地远程和模拟 AI；没有用正常应用读取真实备份进行回归，也未打包、推送或合并。
+
+| 验证范围 | 实际结果 | 日志 |
+| --- | --- | --- |
+| 完整 `backup_core` | 110 passed、0 failed、5 Linux 专属 skipped；CTest 183.58 s | `build/tests/backup_core.txt`、`build/conflict-backup-core-final.log` |
+| 新页面 5 个用例 | 7 passed、0 failed、0 skipped（包含初始化/清理） | `build/conflict-ui-verified.txt` |
+| 相关导航、设置、历史选择、对象确认及全部页面渲染 | 12 passed、0 failed、1 macOS offscreen 焦点 skipped | `build/conflict-ui-final.txt` |
+| 历史快捷键修正后的集成回归 | 5 passed、0 failed、1 既有 macOS offscreen 弹窗焦点 skipped；原生相应用例已通过 | `build/conflict-integration-verified.txt` |
+| 最终列表状态、同名对象及冲突页面渲染 | 5 passed、0 failed、0 skipped | `build/conflict-model-render-verified.txt` |
+| 最终勾选标记与页面截图 | 3 passed、0 failed、0 skipped；应用和 UI 测试增量构建成功 | `build/conflict-render-final.txt`、`build/conflict-final-build.txt` |
+| Cocoa 原生补验 | 新页面键盘、历史选择、历史菜单/恢复通过；行操作单独复验通过 | `build/conflict-cocoa-verified.txt`、`build/conflict-cocoa-history-actions.txt` |
+
+新增用例为 `conflictChoicesPreviewAndApply`、`conflictNavigationStalenessAndLateReplies`、`conflictFastForwardAndChangedConfirmation`、`conflictKeyboardNavigation`、`renderConflictPages`。截图保存在 `build/conflict-screenshots/conflict-*.png`，覆盖两种尺寸的浅深色逐处选择和结果预览；已逐图检查正文、按钮及进度，没有整页横向滚动。正文超出窄窗口时使用纵向滚动，底部预览/应用入口保持可见。
+
+Cocoa 测试发现 Return 在原生历史表格中被当作编辑键，现通过表格自身的 Return/Enter 快捷键统一为“对比版本”，不影响编辑框中的提交操作。原生历史焦点用例改用可见测试窗口。完整 Tab 遍历测试只临时设置测试进程的 Tab 范围，并在结束时恢复；不修改系统设置。同进程连续运行时行操作用例曾无法激活测试窗口，单独复验通过；其余原生补验通过。
+
+首次完整核心运行中，既有 `periodicMonitorAuditFindsExternalGitChanges` 被迟到的原生目录事件提前触发审计，导致“29,999 ms 仍为 Tracking”的期限断言偶发失败；该函数单独复现通过。现由该用例停用目录事件通道，只测周期审计；目录事件另有独立覆盖。修正后完整核心组通过。编码边界用例发现并修正了惰性 UTF-8 解码导致的误分类。
+
+### 验收步骤
+
+1. 在隔离备份对象的概览点击“获取云端更新”，确认本地未备份修改被纳入比较；没有冲突直接预览，没有更新显示已是最新。
+2. 逐处选择本地或云端，改选、上一处、下一处和文件切换均可用；未选完时预览禁用。查看二进制元信息与只读副本、删除/保留的对应一方文案。
+3. 返回概览或设置，再前进/后退、切换对象；退出并重启后继续处理，确认选择仍在，当前对象自动备份仍暂停，其他对象正常备份。
+4. 查看最终文件和新增/修改/删除清单，确认自动合并也在清单中。取消确认不写源；“应用并保存版本”后进入结果历史版本、恢复自动备份，云端上传仍需单独操作。
+5. 选择期间修改源文件后重新打开：旧选择可查看，应用被禁用，重新分析清空旧选择。分别验收 1080×740、760×520、浅深色和完整键盘导航；macOS Tab 遍历范围遵循系统键盘偏好。
+
+跨平台新功能尚未实际运行 Windows/Linux 构建及原生桌面验证；本次也未验证真实远程认证或网络故障。Git 2.29 兼容通过所用命令范围约束，本机执行使用已安装的 Git，不宣称已在 2.29 二进制上运行。
