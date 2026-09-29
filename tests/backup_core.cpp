@@ -2,6 +2,7 @@
 #include "utils/backup_engine.h"
 #include "utils/backup_merge.h"
 #include "utils/backupmonitor.h"
+#include "utils/backupmonitor_catalog.h"
 #include "utils/backupmonitor_scheduler.h"
 #include <QCoreApplication>
 #include <QFile>
@@ -592,6 +593,31 @@ class BackupCoreRegression : public QObject
         QVERIFY(!f.service->chooseSyncResolution(session.value, "source.txt", 0, ConflictChoice::Remote).result.success);
         QCOMPARE(readFile(f.source), QByteArray("local\n"));
     }
+    void resolutionRejectsUnsupportedRemoteTrees_data()
+    {
+        QTest::addColumn<QString>("kind");
+        for (const auto *kind : {"deleted-root", "symlink", "submodule", "no-common-history"}) QTest::newRow(kind) << QString::fromLatin1(kind);
+    }
+    void resolutionRejectsUnsupportedRemoteTrees()
+    {
+        QFETCH(QString, kind);
+        RemoteFixture f;
+        const auto before = head(*f.service, f.id);
+        if (kind == "deleted-root") git(f.writer, {"rm", "source.txt"});
+        else if (kind == "no-common-history") git(f.writer, {"checkout", "--orphan", "unrelated"});
+        else
+        {
+            const auto oid = kind == "submodule" ? before : git(f.writer, {"rev-parse", "HEAD:source.txt"}).output.trimmed();
+            git(f.writer, {"update-index", "--add", "--cacheinfo", (kind == "submodule" ? "160000," : "120000,") + oid + ",source.txt"});
+        }
+        git(f.writer, {"commit", "-m", "unsupported remote tree"});
+        git(f.writer, {"push", "--force", "origin", "HEAD:main"});
+        const auto session = f.service->prepareSyncResolution(f.id);
+        QVERIFY(!session.result.success);
+        QCOMPARE(head(*f.service, f.id), before);
+        QCOMPARE(readFile(f.source), QByteArray("initial\n"));
+        QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
+    }
     void linuxCaseSensitiveNamesAndRename()
     {
 #ifdef Q_OS_LINUX
@@ -1167,6 +1193,11 @@ class BackupCoreRegression : public QObject
         BackupMonitor monitor(&service, nullptr, {}, dependencies);
         monitor.start();
         settle(monitor, service);
+        // This case isolates the periodic deadline. Delayed native startup record
+        // events may legitimately request an earlier audit; separate tests cover them.
+        auto *catalogWatcher = monitor.findChild<BackupCatalogWatcher *>();
+        QVERIFY(catalogWatcher);
+        catalogWatcher->stop();
         const auto repo = service.repoPath(target.id);
         writeFile(repo + "/source.txt", "external\n");
         git(repo, {"add", "--all"});
