@@ -18,6 +18,18 @@ install_name_tool -id '@rpath/libZcAiLib.1.dylib' "$frameworks/libZcAiLib.1.dyli
 # Copy the SDK before deployment so its QtNetwork dependency is also resolved.
 macdeployqt "$app" -always-overwrite -verbose=1
 
+# Some macdeployqt versions can drop the leading '@' when rewriting the
+# install name of a bundled non-Qt dylib. Repair only that known malformed
+# spelling before the dependency gate below; unrelated absolute paths must
+# still fail the package.
+while IFS= read -r -d '' binary; do
+  file "$binary" | grep -q 'Mach-O' || continue
+  if otool -L "$binary" | awk '{print $1}' | grep -Fxq 'rpath/libZcAiLib.1.dylib'; then
+    install_name_tool -change 'rpath/libZcAiLib.1.dylib' \
+      '@rpath/libZcAiLib.1.dylib' "$binary"
+  fi
+done < <(find "$app" -type f -print0)
+
 licenses="$app/Contents/Resources/licenses"
 mkdir -p "$licenses"
 cp "$project_root/3rdparty/qlementine/LICENSE" "$licenses/Qlementine.txt"
@@ -41,7 +53,10 @@ fi
 while IFS= read -r -d '' binary; do
   file "$binary" | grep -q 'Mach-O' || continue
   for arch in "${slices[@]}"; do lipo "$binary" -verify_arch "$arch"; done
-  if otool -L "$binary" | tail -n +2 | awk '{print $1}' | grep -vE '^(@rpath/|@executable_path/|@loader_path/|/System/Library/|/usr/lib/)' | grep -q .; then
+  if otool -L "$binary" \
+      | awk 'NR == 1 || $0 ~ / \(architecture [^)]+\):$/ { next } { print $1 }' \
+      | grep -vE '^(@rpath/|@executable_path/|@loader_path/|/System/Library/|/usr/lib/)' \
+      | grep -q .; then
     echo "Unbundled dependency: $binary"; otool -L "$binary"; exit 1
   fi
 done < <(find "$app" -type f -print0)
