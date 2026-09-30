@@ -128,7 +128,8 @@ class BackupService::Private
         return a.sourcePath == b.sourcePath && a.directory == b.directory && a.repositoryPath == b.repositoryPath &&
                a.generation == b.generation && a.state == b.state &&
                a.stateDetail == b.stateDetail && a.lastCommit == b.lastCommit && a.pendingCommit == b.pendingCommit &&
-               a.fingerprint == b.fingerprint && a.operation == b.operation && a.recoveryPaths == b.recoveryPaths;
+               a.fingerprint == b.fingerprint && a.operation == b.operation && a.recoveryPaths == b.recoveryPaths &&
+               a.resolutionSession == b.resolutionSession && a.resolutionHead == b.resolutionHead;
     }
     void publish(const QVector<BackupRecord> &records)
     {
@@ -464,4 +465,33 @@ void BackupService::cancel(BackupTaskId task)
         for (const auto &job : *queue)
             if (job->task == task)
                 job->cancelled->store(true);
+}
+
+BackupTaskId BackupService::prepareSyncResolution(const QString &id, QObject *c, Reply<SyncResolutionSession> f, bool restart)
+{
+    return d->submit<SyncResolutionSession>(id, c, std::move(f), [id, restart](BackupEngine &e) { return e.prepareSyncResolution(id, restart); });
+}
+BackupTaskId BackupService::syncResolution(const QString &id, QObject *c, Reply<SyncResolutionSession> f)
+{
+    return d->submit<SyncResolutionSession>(id, c, std::move(f), [id](BackupEngine &e) { return e.syncResolution(id); });
+}
+BackupTaskId BackupService::chooseSyncResolution(const QString &id, const QString &session, quint64 revision, const QString &path, int hunk, ConflictChoice choice, QObject *c, Reply<SyncResolutionSession> f)
+{
+    return d->submit<SyncResolutionSession>(id, c, std::move(f), [=](BackupEngine &e) { return e.chooseSyncResolution(id, session, revision, path, hunk, choice); }, true);
+}
+BackupTaskId BackupService::prepareSyncApply(const QString &id, const QString &session, quint64 revision, QObject *c, Reply<PreparedSyncApply> f)
+{
+    return d->submit<PreparedSyncApply>(id, c, std::move(f), [=](BackupEngine &e) { return e.prepareSyncApply(id, session, revision); });
+}
+BackupTaskId BackupService::applySync(const PreparedSyncApply &request, QObject *c, Completion f)
+{
+    return d->mutate(request.id, c, std::move(f), [request](BackupEngine &e) { return e.applySync(request); });
+}
+BackupTaskId BackupService::syncContent(const QString &id, const QString &session, const QString &path, ConflictSide side, QObject *c, Reply<ConflictContent> f)
+{
+    return d->submit<ConflictContent>(id, c, std::move(f), [=](BackupEngine &e) { return e.syncContent(id, session, path, side); });
+}
+BackupTaskId BackupService::previewSync(const QString &id, const QString &session, const QString &path, ConflictSide side, QObject *c, Completion f)
+{
+    return d->mutate(id, c, std::move(f), [=](BackupEngine &e) { return e.previewSync(id, session, path, side); }, false);
 }

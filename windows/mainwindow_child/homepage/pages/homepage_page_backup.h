@@ -17,7 +17,7 @@ class HomePageBackupPage : public QWidget
   public:
     HomePageBackupPage(BackupService *service, QWidget *parent = nullptr);
     ~HomePageBackupPage();
-    void setBackup(const QString &id);
+    void setBackup(const QString &id, const QString &commit = {});
     void refresh();
     void deactivate();
     QList<QAction *> toolbarActions() const;
@@ -48,6 +48,7 @@ class HomePageBackupPage : public QWidget
     BackupService *m_service;
     QString m_id;
     QString m_loadedId;
+    QString m_requestedCommit;
     quint64 m_loadedGeneration{0};
     QHash<QString, ViewState> m_states;
     QStandardItemModel m_model;

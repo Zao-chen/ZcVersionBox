@@ -66,6 +66,13 @@ void BackupUiActions::showObjectMenu(const QString &id, const QPoint &position, 
     QMenu menu(m_owner);
     menu.setObjectName("backupObjectMenu");
     menu.addActions({m_open, m_overview, m_copy});
+    const auto state = m_service->syncState(id);
+    if (state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending)
+    {
+        auto *resume = menu.addAction("继续处理同步差异…");
+        resume->setObjectName("continueResolutionAction");
+        connect(resume, &QAction::triggered, this, [this, id] { emit navigate({PageId::Conflict, id}); });
+    }
     if (maintenance)
     {
         menu.addSeparator();

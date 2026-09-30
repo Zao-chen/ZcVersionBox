@@ -77,6 +77,21 @@ class TestBackupService : public BackupService
   public:
     explicit TestBackupService(const AppPaths &paths, QObject *parent = nullptr, AiGateway *gateway = nullptr, BackupDependencies dependencies = {})
         : BackupService(paths, parent, gateway, testDependencies(std::move(dependencies))) { settle(*this); }
+    using BackupService::prepareSyncResolution;
+    using BackupService::syncResolution;
+    using BackupService::chooseSyncResolution;
+    using BackupService::prepareSyncApply;
+    using BackupService::applySync;
+    BackupResult<SyncResolutionSession> prepareSyncResolution(const QString &id, bool restart = false)
+    { return awaitBackup<BackupResult<SyncResolutionSession>>([&](auto f) { BackupService::prepareSyncResolution(id, this, f, restart); }); }
+    BackupResult<SyncResolutionSession> syncResolution(const QString &id)
+    { return awaitBackup<BackupResult<SyncResolutionSession>>([&](auto f) { BackupService::syncResolution(id, this, f); }); }
+    BackupResult<SyncResolutionSession> chooseSyncResolution(const SyncResolutionSession &s, const QString &path, int hunk, ConflictChoice choice)
+    { return awaitBackup<BackupResult<SyncResolutionSession>>([&](auto f) { BackupService::chooseSyncResolution(s.backupId, s.id, s.revision, path, hunk, choice, this, f); }); }
+    BackupResult<PreparedSyncApply> prepareSyncApply(const SyncResolutionSession &s)
+    { return awaitBackup<BackupResult<PreparedSyncApply>>([&](auto f) { BackupService::prepareSyncApply(s.backupId, s.id, s.revision, this, f); }); }
+    OperationResult applySync(const PreparedSyncApply &r)
+    { return awaitBackup<OperationResult>([&](auto f) { BackupService::applySync(r, this, f); }); }
     OperationResult reload()
     {
         return awaitBackup<OperationResult>([&](auto f)

@@ -5,6 +5,7 @@
 #include "windows/mainwindow_child/homepage/pages/homepage_page_backup.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_diff.h"
+#include "windows/mainwindow_child/homepage/pages/homepage_page_conflict.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.h"
 #include "windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.h"
 #include "windows/mainwindow_child/settingpage/settingpage.h"
@@ -226,7 +227,11 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     const auto open = [this](const QModelIndex &index)
     {
         if (index.isValid())
-            navigate({PageId::History, index.data(BackupListModel::IdRole).toString()});
+        {
+            const auto id = index.data(BackupListModel::IdRole).toString();
+            const auto state = m_backups->syncState(id);
+            navigate({state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending ? PageId::Conflict : PageId::History, id});
+        }
     };
     connect(ui->sidebarList, &QListView::clicked, this, open);
     connect(ui->sidebarList, &QListView::activated, this, open);
@@ -251,10 +256,11 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     m_dashboard = new HomePageDashboardPage(backups, this);
     m_history = new HomePageBackupPage(backups, this);
     m_diff = new HomePageDiffPage(backups, settings, gateway, this);
+    m_conflict = new HomePageConflictPage(backups, this);
     m_general = new SettingPage(settings, theme, this);
     m_ai = new SettingPageAiPage(settings, this);
     m_about = new AboutPage(this);
-    for (QWidget *page : QList<QWidget *>{m_list, m_dashboard, m_history, m_diff, m_general, m_ai, m_about})
+    for (QWidget *page : QList<QWidget *>{m_list, m_dashboard, m_history, m_diff, m_conflict, m_general, m_ai, m_about})
         ui->pages->addWidget(page);
     const auto wire = [this](auto *page)
     {
@@ -265,6 +271,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     wire(m_dashboard);
     wire(m_history);
     wire(m_diff);
+    wire(m_conflict);
     wire(m_general);
     wire(m_actions);
     connect(m_ai, &SettingPageAiPage::navigate, &m_navigation, &Navigation::go);
@@ -302,7 +309,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
             else
                 returnToApplication();
         }
-        else if (m_route.page == PageId::Diff)
+        else if (m_route.page == PageId::Diff || m_route.page == PageId::Conflict)
             navigate({PageId::History, m_route.backupId}); });
     connect(ui->settingsSearch, &QLineEdit::textChanged, this, &MainWindow::updateSettingsSearch);
     connect(ui->clearSettingsSearchButton, &QPushButton::clicked, ui->settingsSearch, &QLineEdit::clear);
@@ -346,11 +353,12 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
             {
         updateIcons();
         m_diff->refreshTheme();
+        m_conflict->refreshTheme();
         updateHeaderLayout(); });
     connect(backups, &BackupService::trackedItemsChanged, this, &MainWindow::syncBackups);
     connect(backups, &BackupService::repositoryInvalidated, this, [this](const QString &id)
             {
-        if (m_applicationRoute.page == PageId::Diff && m_applicationRoute.backupId == id)
+        if ((m_applicationRoute.page == PageId::Diff || m_applicationRoute.page == PageId::Conflict) && m_applicationRoute.backupId == id)
             m_applicationRoute = {PageId::History, id};
         m_navigation.invalidateRevisions(id); });
     if (trayEnabled)
@@ -606,6 +614,8 @@ void MainWindow::displayRoute(const Route &route)
         m_dashboard->deactivate();
     if (m_route.page == PageId::Diff)
         m_diff->deactivate();
+    if (m_route.page == PageId::Conflict)
+        m_conflict->deactivate();
     const bool settingsMode = isSettingsPage(route.page);
     const bool wasSettingsMode = isSettingsPage(m_route.page);
     if (settingsMode && !wasSettingsMode)
@@ -682,13 +692,17 @@ void MainWindow::displayRoute(const Route &route)
         break;
     case PageId::History:
         page = m_history;
-        m_history->setBackup(route.backupId);
+        m_history->setBackup(route.backupId, route.commit);
         actions = m_history->toolbarActions();
         break;
     case PageId::Diff:
         page = m_diff;
         m_diff->setRevision(route.backupId, route.commit);
         actions = m_diff->toolbarActions();
+        break;
+    case PageId::Conflict:
+        page = m_conflict;
+        m_conflict->setBackup(route.backupId);
         break;
     case PageId::GeneralSettings:
         page = m_general;

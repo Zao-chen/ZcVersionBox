@@ -39,6 +39,13 @@ class BackupEngine
     OperationResult setRemote(const QString &id, const QString &url);
     OperationResult removeRemote(const QString &id);
     OperationResult synchronize(const QString &id, bool push);
+    BackupResult<SyncResolutionSession> prepareSyncResolution(const QString &id, bool restart = false);
+    BackupResult<SyncResolutionSession> syncResolution(const QString &id);
+    BackupResult<SyncResolutionSession> chooseSyncResolution(const QString &id, const QString &sessionId, quint64 revision, const QString &path, int hunk, ConflictChoice choice);
+    BackupResult<PreparedSyncApply> prepareSyncApply(const QString &id, const QString &sessionId, quint64 revision);
+    OperationResult applySync(const PreparedSyncApply &request);
+    BackupResult<ConflictContent> syncContent(const QString &id, const QString &sessionId, const QString &path, ConflictSide side);
+    OperationResult previewSync(const QString &id, const QString &sessionId, const QString &path, ConflictSide side);
     OperationResult removeBackup(const QString &id);
     OperationResult rebuild(const QString &id);
     OperationResult checkRemote(const QString &url);
@@ -69,4 +76,6 @@ class BackupEngine
     OperationResult verifyRequest(const RestoreRequest &request, BackupRecord &record);
     OperationResult validateSource(const QString &path, bool mustExist) const;
     QString newId(const QString &source) const;
+    QString resolutionPath(const BackupRecord &record) const;
+    BackupResult<BackupRecord> resolutionRecord(const QString &id, const QString &sessionId = {});
 };

@@ -1,9 +1,13 @@
 #include "backup_test_support.h"
 #include "utils/backup_engine.h"
+#include "utils/backup_merge.h"
 #include "utils/backupmonitor.h"
+#include "utils/backupmonitor_catalog.h"
 #include "utils/backupmonitor_scheduler.h"
 #include <QCoreApplication>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QLockFile>
 #include <QProcess>
 #include <QSaveFile>
@@ -198,6 +202,487 @@ class BackupCoreRegression : public QObject
         qputenv("GIT_CONFIG_NOSYSTEM", "1");
         qputenv("GIT_CONFIG_GLOBAL", (m_environment.path() + "/gitconfig").toUtf8());
         QVERIFY(runGit({}, {"--version"}).success());
+    }
+    void isolatedResolutionPreservesBytesAndChoices_data()
+    {
+        QTest::addColumn<QByteArray>("base");
+        QTest::addColumn<QByteArray>("local");
+        QTest::addColumn<QByteArray>("remote");
+        QTest::addColumn<bool>("whole");
+        QTest::newRow("text") << QByteArray("first\nbase\nlast\n") << QByteArray("first\nlocal\nlast\n") << QByteArray("first\ncloud\nlast\n") << false;
+        QTest::newRow("no-final-newline") << QByteArray("base") << QByteArray("local") << QByteArray("cloud") << false;
+        QTest::newRow("crlf-bom") << QByteArray("\xef\xbb\xbfheader\r\nbase\r\n") << QByteArray("\xef\xbb\xbfheader\r\nlocal\r\n") << QByteArray("\xef\xbb\xbfheader\r\ncloud\r\n") << false;
+        QTest::newRow("literal-marker") << QByteArray("<<<<<<< HEAD\nbase\n") << QByteArray("<<<<<<< HEAD\nlocal\n") << QByteArray("<<<<<<< HEAD\ncloud\n") << false;
+        QTest::newRow("invalid-utf8") << QByteArray("base") << QByteArray("local\xff", 6) << QByteArray("cloud") << true;
+        QTest::newRow("incomplete-utf8") << QByteArray("base") << QByteArray("local\xe4", 6) << QByteArray("cloud") << true;
+        QTest::newRow("large-file") << QByteArray("base") << QByteArray(2 * 1024 * 1024 + 1, 'a') << QByteArray("cloud") << true;
+        QTest::newRow("many-lines") << QByteArray("base") << QByteArray(20001, '\n') << QByteArray("cloud") << true;
+        QTest::newRow("many-lines-without-final-newline") << QByteArray("base") << (QByteArray(20000, '\n') + 'a') << QByteArray("cloud") << true;
+        QTest::newRow("binary") << QByteArray("base\0x", 6) << QByteArray("local\0x", 7) << QByteArray("cloud\0x", 7) << true;
+    }
+    void isolatedResolutionPreservesBytesAndChoices()
+    {
+        QFETCH(QByteArray, base); QFETCH(QByteArray, local); QFETCH(QByteArray, remote); QFETCH(bool, whole);
+        RemoteFixture f;
+        writeFile(f.source, base);
+        CHECK_OK(f.service->backup(f.id));
+        CHECK_OK(f.service->synchronize(f.id, true));
+        git(f.writer, {"pull", "--ff-only"});
+        const auto before = head(*f.service, f.id);
+        const auto cloud = f.commitRemote(remote);
+        writeFile(f.source, local);
+        const auto root = f.dir.path() + '/' + QUuid::createUuid().toString(QUuid::WithoutBraces);
+        BackupMerge merge(root, {});
+        CHECK_OK(merge.create(record(*f.service, f.id), f.service->repoPath(f.id)));
+        QCOMPARE(head(*f.service, f.id), before);
+        QCOMPARE(readFile(f.source), local);
+        QCOMPARE(merge.session().total(), 1);
+        QCOMPARE(merge.session().files[0].wholeFile, whole);
+        QVERIFY(!merge.prepare().result.success);
+        CHECK_OK(merge.choose(1, "source.txt", 0, ConflictChoice::Local));
+        BackupMerge resumed(root, {});
+        CHECK_OK(resumed.load());
+        QCOMPARE(resumed.session().remaining(), 0);
+        const auto prepared = resumed.prepare(); CHECK_OK(prepared.result);
+        CHECK_OK(resumed.exportSource(prepared.value, f.dir.path() + "/chosen-local"));
+        QCOMPARE(readFile(f.dir.path() + "/chosen-local"), local);
+        CHECK_OK(resumed.choose(2, "source.txt", 0, ConflictChoice::Remote));
+        QVERIFY(!resumed.validRequest(prepared.value));
+        const auto other = resumed.prepare(); CHECK_OK(other.result);
+        CHECK_OK(resumed.exportSource(other.value, f.dir.path() + "/chosen-remote"));
+        QCOMPARE(readFile(f.dir.path() + "/chosen-remote"), remote);
+        QVERIFY(git(resumed.repositoryPath(), {"merge-base", "--is-ancestor", cloud, other.value.commit}).success());
+        QCOMPARE(head(*f.service, f.id), before);
+        QCOMPARE(readFile(f.source), local);
+    }
+    void isolatedResolutionCombinesSeparateChanges()
+    {
+        RemoteFixture f;
+        writeFile(f.source, "a\nb\nc\nd\ne\nf\ng\n");
+        CHECK_OK(f.service->backup(f.id)); CHECK_OK(f.service->synchronize(f.id, true));
+        git(f.writer, {"pull", "--ff-only"});
+        f.commitRemote("a\nb\nc\nd\ne\nf\ncloud\n");
+        writeFile(f.source, "local\nb\nc\nd\ne\nf\ng\n");
+        BackupMerge merge(f.dir.path() + '/' + QUuid::createUuid().toString(QUuid::WithoutBraces), {});
+        CHECK_OK(merge.create(record(*f.service, f.id), f.service->repoPath(f.id)));
+        QCOMPARE(merge.session().total(), 0);
+        const auto result = merge.prepare(); CHECK_OK(result.result);
+        CHECK_OK(merge.exportSource(result.value, f.dir.path() + "/result"));
+        QCOMPARE(readFile(f.dir.path() + "/result"), QByteArray("local\nb\nc\nd\ne\nf\ncloud\n"));
+    }
+    void resolutionRejectsDamagedProgress()
+    {
+        RemoteFixture f;
+        f.commitRemote("cloud\n"); writeFile(f.source, "local\n");
+        const auto session = f.service->prepareSyncResolution(f.id); CHECK_OK(session.result);
+        const auto root = f.paths.backupRoot + "/items/" + f.id + "/resolutions/" + session.value.id;
+        const auto path = root + "/session.json";
+        const auto original = readFile(path);
+        const auto baseline = head(*f.service, f.id);
+        const auto mutate = [&](const std::function<void(QJsonObject &)> &change)
+        {
+            auto data = QJsonDocument::fromJson(original).object();
+            change(data); writeFile(path, QJsonDocument(data).toJson());
+            return f.service->syncResolution(f.id).result;
+        };
+        QVERIFY(!mutate([](QJsonObject &data) { data.remove("automatic"); }).success);
+        QVERIFY(!mutate([](QJsonObject &data) { data["files"] = QJsonObject{}; }).success);
+        for (const auto &fault : {QString("empty-hunks"), QString("short-common"), QString("bad-bytes"), QString("duplicate-file")})
+        {
+            const auto result = mutate([&](QJsonObject &data)
+            {
+                auto files = data["files"].toArray(); auto file = files[0].toObject();
+                if (fault == "empty-hunks") file["hunks"] = QJsonArray{};
+                if (fault == "short-common") file["common"] = QJsonArray{};
+                if (fault == "bad-bytes")
+                {
+                    auto hunks = file["hunks"].toArray(); auto hunk = hunks[0].toObject();
+                    hunk["local"] = "%%%"; hunks[0] = hunk; file["hunks"] = hunks;
+                }
+                files[0] = file;
+                if (fault == "duplicate-file") files.append(file);
+                data["files"] = files;
+            });
+            QVERIFY2(!result.success, qPrintable(fault));
+        }
+        writeFile(path, original);
+        CHECK_OK(f.service->syncResolution(f.id).result);
+        QCOMPARE(head(*f.service, f.id), baseline);
+        QCOMPARE(readFile(f.source), QByteArray("local\n"));
+    }
+    void resolutionLargeFilesAvoidTextReads()
+    {
+        RemoteFixture f;
+        f.commitRemote(QByteArray(2 * 1024 * 1024 + 1, 'r'));
+        writeFile(f.source, QByteArray(2 * 1024 * 1024 + 1, 'l'));
+        int blobReads = 0;
+        BackupDependencies deps;
+        deps.git = [&](const QString &path, const QStringList &args, const GitOptions &options)
+        {
+            if (args.contains("cat-file") && args.contains("blob")) ++blobReads;
+            return runGit(path, args, options);
+        };
+        BackupMerge merge(f.dir.path() + '/' + QUuid::createUuid().toString(QUuid::WithoutBraces), deps);
+        CHECK_OK(merge.create(record(*f.service, f.id), f.service->repoPath(f.id)));
+        QCOMPARE(merge.session().total(), 1);
+        QVERIFY(merge.session().files[0].wholeFile);
+        QCOMPARE(blobReads, 0);
+    }
+    void resolutionSurvivesRestartAndRejectsStaleInputs()
+    {
+        RemoteFixture f;
+        const auto before = head(*f.service, f.id);
+        const auto cloud = f.commitRemote("cloud\n");
+        writeFile(f.source, "current local\n");
+        auto session = f.service->prepareSyncResolution(f.id); CHECK_OK(session.result);
+        QCOMPARE(f.service->syncState(f.id), BackupSyncState::ResolutionPending);
+        QCOMPARE(head(*f.service, f.id), before);
+        QVERIFY(!f.service->backup(f.id).success);
+        QVERIFY(!f.service->synchronize(f.id, true).success);
+        auto choice = f.service->chooseSyncResolution(session.value, "source.txt", 0, ConflictChoice::Remote); CHECK_OK(choice.result);
+        f.service.reset(); f.service = std::make_unique<TestBackupService>(f.paths);
+        session = f.service->syncResolution(f.id); CHECK_OK(session.result);
+        QCOMPARE(session.value.remaining(), 0); QVERIFY(!session.value.stale);
+        auto prepared = f.service->prepareSyncApply(session.value); CHECK_OK(prepared.result);
+        writeFile(f.source, "edited after preview\n");
+        QVERIFY(!f.service->applySync(prepared.value).success);
+        QCOMPARE(head(*f.service, f.id), before);
+        session = f.service->syncResolution(f.id); CHECK_OK(session.result); QVERIFY(session.value.stale);
+        session = f.service->prepareSyncResolution(f.id, true); CHECK_OK(session.result); QCOMPARE(session.value.remaining(), 1);
+        choice = f.service->chooseSyncResolution(session.value, "source.txt", 0, ConflictChoice::Local); CHECK_OK(choice.result);
+        prepared = f.service->prepareSyncApply(choice.value); CHECK_OK(prepared.result);
+        CHECK_OK(f.service->applySync(prepared.value));
+        QCOMPARE(readFile(f.source), QByteArray("edited after preview\n"));
+        QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
+        QCOMPARE(head(*f.service, f.id), prepared.value.commit);
+        QVERIFY(git(f.service->repoPath(f.id), {"merge-base", "--is-ancestor", cloud, "HEAD"}).success());
+        QVERIFY(!f.service->applySync(prepared.value).success);
+        const auto resolved = head(*f.service, f.id);
+        BackupMonitor monitor(f.service.get()); monitor.start(); monitor.scanNow(); settle(monitor, *f.service);
+        QCOMPARE(head(*f.service, f.id), resolved);
+    }
+    void resolutionFastForwardAndLegacyPending()
+    {
+        RemoteFixture f;
+        const auto cloud = f.commitRemote("cloud\n");
+        const auto session = f.service->prepareSyncResolution(f.id); CHECK_OK(session.result); QCOMPARE(session.value.total(), 0);
+        const auto prepared = f.service->prepareSyncApply(session.value); CHECK_OK(prepared.result); QCOMPARE(prepared.value.commit, cloud);
+        CHECK_OK(f.service->applySync(prepared.value)); QCOMPARE(readFile(f.source), QByteArray("cloud\n"));
+        const auto none = f.service->prepareSyncResolution(f.id); CHECK_OK(none.result); QVERIFY(none.value.id.isEmpty());
+        f.commitRemote("second\n"); CHECK_OK(f.service->synchronize(f.id, false));
+        QCOMPARE(f.service->syncState(f.id), BackupSyncState::RemotePending);
+        writeFile(f.source, "local after old pull\n");
+        auto legacy = f.service->syncResolution(f.id); CHECK_OK(legacy.result);
+        legacy = f.service->chooseSyncResolution(legacy.value, "source.txt", 0, ConflictChoice::Remote); CHECK_OK(legacy.result);
+        const auto ready = f.service->prepareSyncApply(legacy.value); CHECK_OK(ready.result);
+        CHECK_OK(f.service->applySync(ready.value)); QCOMPARE(readFile(f.source), QByteArray("second\n"));
+    }
+    void resolutionDurablePauseAndApplyFailures()
+    {
+        bool rejectPrepare = true, rejectFinal = false;
+        BackupDependencies deps;
+        deps.allowSave = [&](const BackupRecord &r) { return !(rejectPrepare && r.operation == "prepare-resolution") && !(rejectFinal && r.state == BackupSyncState::Tracking); };
+        RemoteFixture f(deps);
+        const auto previous = head(*f.service, f.id);
+        f.commitRemote("cloud\n");
+        QVERIFY(!f.service->prepareSyncResolution(f.id).result.success);
+        QCOMPARE(head(*f.service, f.id), previous); QCOMPARE(readFile(f.source), QByteArray("initial\n"));
+        rejectPrepare = false;
+        const auto session = f.service->prepareSyncResolution(f.id); CHECK_OK(session.result);
+        const auto prepared = f.service->prepareSyncApply(session.value); CHECK_OK(prepared.result);
+        rejectFinal = true;
+        QVERIFY(!f.service->applySync(prepared.value).success);
+        QCOMPARE(f.service->syncState(f.id), BackupSyncState::NeedsAttention);
+        QCOMPARE(readFile(f.source), QByteArray("cloud\n"));
+        QVERIFY(!record(*f.service, f.id).recoveryPaths.isEmpty());
+        QVERIFY(!f.service->backup(f.id).success);
+    }
+    void resolutionMultipleHunksAndDirectoryChoices()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/project";
+        writeFile(source + "/notes.txt", "one\nb\nc\nd\ne\nf\ntwo\n");
+        writeFile(source + "/node", "old file");
+        writeFile(source + "/.gitignore", "ignored.dat\n");
+        writeFile(source + "/ignored.dat", "local ignored");
+        writeFile(source + "/keep.dat", "kept");
+        CHECK_OK(service.addLocal(source)); const auto id = service.idForSource(source);
+        const auto remote = dir.path() + "/remote.git", writer = dir.path() + "/writer";
+        git({}, {"init", "--bare", "--initial-branch=main", remote}); CHECK_OK(service.setRemote(id, remote)); CHECK_OK(service.synchronize(id, true));
+        git({}, {"clone", remote, writer});
+        writeFile(writer + "/project/notes.txt", "cloud one\nb\nc\nd\ne\nf\ncloud two\n");
+        git(writer, {"rm", "project/node"}); writeFile(writer + "/project/node/child.txt", "cloud directory");
+        writeFile(writer + "/project/ignored.dat", "cloud ignored collision");
+        git(writer, {"add", "-f", "project/ignored.dat"}); git(writer, {"add", "--all"}); git(writer, {"commit", "-m", "cloud"}); git(writer, {"push"});
+        writeFile(source + "/notes.txt", "local one\nb\nc\nd\ne\nf\nlocal two\n");
+        writeFile(source + "/node", "local file");
+        auto session = service.prepareSyncResolution(id); CHECK_OK(session.result);
+        QCOMPARE(session.value.total(), 4);
+        const auto files = session.value.files;
+        for (const auto &file : files)
+            for (int i = 0; i < file.hunks.size(); ++i)
+            {
+                const auto choice = file.path.endsWith("notes.txt") && i == 1 ? ConflictChoice::Remote : ConflictChoice::Local;
+                session = service.chooseSyncResolution(session.value, file.path, i, choice); CHECK_OK(session.result);
+            }
+        const auto prepared = service.prepareSyncApply(session.value); CHECK_OK(prepared.result);
+        CHECK_OK(service.applySync(prepared.value));
+        QCOMPARE(readFile(source + "/notes.txt"), QByteArray("local one\nb\nc\nd\ne\nf\ncloud two\n"));
+        QCOMPARE(readFile(source + "/node"), QByteArray("local file"));
+        QCOMPARE(readFile(source + "/ignored.dat"), QByteArray("local ignored"));
+        QCOMPARE(readFile(source + "/keep.dat"), QByteArray("kept"));
+    }
+    void resolutionPreservesModesAndDisablesUnionMerge()
+    {
+        RemoteFixture f;
+        writeFile(f.writer + "/.gitattributes", "source.txt merge=union\n");
+        writeFile(f.writer + "/source.txt", "cloud\n");
+        git(f.writer, {"add", "--all"});
+        git(f.writer, {"update-index", "--chmod=+x", "source.txt"});
+        git(f.writer, {"commit", "-m", "executable cloud version"}); git(f.writer, {"push"});
+        writeFile(f.source, "local\n");
+        auto session = f.service->prepareSyncResolution(f.id); CHECK_OK(session.result);
+        QCOMPARE(session.value.total(), 1); // union must never silently combine the two paragraphs.
+        session = f.service->chooseSyncResolution(session.value, "source.txt", 0, ConflictChoice::Local); CHECK_OK(session.result);
+        QCOMPARE(session.value.currentPath, QString("source.txt"));
+        const auto prepared = f.service->prepareSyncApply(session.value); CHECK_OK(prepared.result);
+        CHECK_OK(f.service->applySync(prepared.value));
+        QCOMPARE(readFile(f.source), QByteArray("local\n"));
+        QVERIFY(git(f.service->repoPath(f.id), {"ls-tree", "HEAD", "source.txt"}).output.startsWith("100755"));
+#ifndef Q_OS_WIN
+        QVERIFY(QFileInfo(f.source).permission(QFileDevice::ExeOwner));
+#endif
+    }
+    void resolutionQueueAndPinnedSnapshot()
+    {
+        RemoteFixture f;
+        const auto cloud = f.commitRemote("cloud snapshot\n");
+        writeFile(f.source, "local\n");
+        const auto other = f.dir.path() + "/other.txt";
+        writeFile(other, "one\n"); CHECK_OK(f.service->addLocal(other));
+        const auto otherId = f.service->idForSource(other);
+        writeFile(other, "two\n");
+        BackupResult<SyncResolutionSession> session;
+        OperationResult queued, independent;
+        f.service->BackupService::prepareSyncResolution(f.id, f.service.get(), [&](const auto &r) { session = r; });
+        f.service->BackupService::backup(f.id, f.service.get(), [&](const auto &r) { queued = r; });
+        f.service->BackupService::backup(otherId, f.service.get(), [&](const auto &r) { independent = r; });
+        settle(*f.service);
+        CHECK_OK(session.result); QVERIFY(!queued.success); CHECK_OK(independent);
+        // User choices release the process lock and queue, and pin the fetched cloud snapshot.
+        QLockFile lock(f.paths.backupRoot + "/.writer.lock"); QVERIFY(lock.tryLock()); lock.unlock();
+        f.commitRemote("later cloud update\n");
+        session = f.service->chooseSyncResolution(session.value, "source.txt", 0, ConflictChoice::Remote); CHECK_OK(session.result);
+        const auto prepared = f.service->prepareSyncApply(session.value); CHECK_OK(prepared.result);
+        CHECK_OK(f.service->applySync(prepared.value));
+        QCOMPARE(readFile(f.source), QByteArray("cloud snapshot\n"));
+        QVERIFY(git(f.service->repoPath(f.id), {"merge-base", "--is-ancestor", cloud, "HEAD"}).success());
+        QCOMPARE(readFile(f.service->repoPath(otherId) + "/other.txt"), QByteArray("two\n"));
+    }
+    void resolutionRefusesExternalRepositoryAndConfigurationChanges()
+    {
+        RemoteFixture f;
+        f.commitRemote("cloud\n"); writeFile(f.source, "local\n");
+        auto session = f.service->prepareSyncResolution(f.id); CHECK_OK(session.result);
+        session = f.service->chooseSyncResolution(session.value, "source.txt", 0, ConflictChoice::Remote); CHECK_OK(session.result);
+        const auto prepared = f.service->prepareSyncApply(session.value); CHECK_OK(prepared.result);
+        const auto live = f.service->repoPath(f.id), before = head(*f.service, f.id);
+        git(live, {"config", "remote.origin.url", f.remote + ".changed"});
+        auto resumed = f.service->syncResolution(f.id); CHECK_OK(resumed.result); QVERIFY(resumed.value.stale);
+        QVERIFY(!f.service->applySync(prepared.value).success);
+        git(live, {"config", "remote.origin.url", f.remote});
+        writeFile(live + "/external.txt", "external staged content"); git(live, {"add", "external.txt"});
+        QVERIFY(!f.service->applySync(prepared.value).success);
+        QCOMPARE(readFile(live + "/external.txt"), QByteArray("external staged content"));
+        QVERIFY(git(live, {"diff", "--cached", "--name-only"}).output.contains("external.txt"));
+        git(live, {"commit", "-m", "external commit"});
+        const auto external = head(*f.service, f.id); QVERIFY(external != before);
+        QVERIFY(!f.service->prepareSyncResolution(f.id, true).result.success);
+        QVERIFY(!f.service->applySync(prepared.value).success);
+        QCOMPARE(head(*f.service, f.id), external); QCOMPARE(readFile(f.source), QByteArray("local\n"));
+    }
+    void resolutionInjectedFailures_data()
+    {
+        QTest::addColumn<QString>("fault");
+        for (const auto *name : {"capture", "snapshot-commit", "result-commit", "before-apply-save", "live-merge", "source-install"})
+            QTest::newRow(name) << QString::fromLatin1(name);
+    }
+    void resolutionInjectedFailures()
+    {
+        QFETCH(QString, fault);
+        auto files = std::make_shared<FaultFiles>();
+        bool enabled = false;
+        BackupDependencies deps; deps.files = files;
+        deps.allowSave = [&](const BackupRecord &r) { return !(enabled && fault == "before-apply-save" && r.operation == "apply-resolution"); };
+        deps.git = [&](const QString &path, const QStringList &args, const GitOptions &options)
+        {
+            if (enabled && ((fault == "snapshot-commit" && args.contains("commit") && path.contains("/resolutions/")) ||
+                (fault == "result-commit" && args.contains("commit-tree")) ||
+                (fault == "live-merge" && args.contains("merge") && !path.contains("/resolutions/")))) return failedGit();
+            return runGit(path, args, options);
+        };
+        RemoteFixture f(deps);
+        files->failCopy = [&](const QString &, const QString &) { return enabled && fault == "capture"; };
+        files->failRename = [&](const QString &, const QString &to) { return enabled && fault == "source-install" && to == f.source; };
+        f.commitRemote("cloud\n"); writeFile(f.source, "local\n");
+        const auto before = head(*f.service, f.id);
+        enabled = true;
+        auto session = f.service->prepareSyncResolution(f.id);
+        if (fault == "capture" || fault == "snapshot-commit")
+        {
+            QVERIFY(!session.result.success);
+            QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
+        }
+        else
+        {
+            CHECK_OK(session.result);
+            session = f.service->chooseSyncResolution(session.value, "source.txt", 0, ConflictChoice::Remote); CHECK_OK(session.result);
+            const auto prepared = f.service->prepareSyncApply(session.value);
+            if (fault == "result-commit") QVERIFY(!prepared.result.success);
+            else
+            {
+                CHECK_OK(prepared.result);
+                QVERIFY(!f.service->applySync(prepared.value).success);
+            }
+            QCOMPARE(f.service->syncState(f.id), fault == "source-install" ? BackupSyncState::NeedsAttention : BackupSyncState::ResolutionPending);
+        }
+        if (fault != "source-install") QCOMPARE(head(*f.service, f.id), before);
+        else QVERIFY(!record(*f.service, f.id).recoveryPaths.isEmpty());
+        // A failed rollback intentionally retains the original in its recovery location.
+        if (QFileInfo::exists(f.source)) QCOMPARE(readFile(f.source), QByteArray("local\n"));
+        else
+        {
+            bool retained = false;
+            for (const auto &path : record(*f.service, f.id).recoveryPaths)
+                if (readFile(path + "/old") == QByteArray("local\n")) retained = true;
+            QVERIFY(retained);
+        }
+    }
+    void resolutionImportedScopeAndIgnoredDeletionPreview()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto original = dir.path() + "/original", source = dir.path() + "/local";
+        QDir().mkpath(original); git(original, {"init"});
+        writeFile(original + "/managed/keep.txt", "base\n");
+        writeFile(original + "/outside.txt", "base\n");
+        writeFile(original + "/managed/.gitignore", "node\nuntouched.bin\n");
+        git(original, {"add", "--all"}); git(original, {"commit", "-m", "initial"});
+        const auto imported = service.prepareImport(original); CHECK_OK(imported.result);
+        CHECK_OK(service.finishImport(imported.value.sessionId, "managed", source));
+        const auto id = service.idForSource(source), live = service.repoPath(id);
+        writeFile(live + "/outside.txt", "local repository\n");
+        git(live, {"add", "outside.txt"}); git(live, {"commit", "-m", "previous local repository change"});
+        BackupCatalog catalog(service.paths()); CHECK_OK(catalog.load());
+        auto baseline = *catalog.find(id); baseline.lastCommit = head(service, id); CHECK_OK(catalog.save(baseline)); CHECK_OK(service.reload());
+        writeFile(source + "/node", "ignored file\n");
+        writeFile(source + "/untouched.bin", "ignored retained\n");
+        writeFile(source + "/.git/config", "protected source metadata");
+        writeFile(original + "/outside.txt", "cloud repository\n");
+        writeFile(original + "/managed/node/child.txt", "cloud directory\n");
+        writeFile(original + "/managed/-' 空格[1]$.txt", "special path\n");
+        git(original, {"add", "-f", "managed/node/child.txt"});
+        git(original, {"add", "--all"}); git(original, {"commit", "-m", "cloud"});
+        auto session = service.prepareSyncResolution(id); CHECK_OK(session.result);
+        QCOMPARE(session.value.total(), 2);
+        const auto files = session.value.files;
+        bool outside = false;
+        for (const auto &file : files)
+        {
+            if (file.path == "outside.txt") { QVERIFY(!file.managed); outside = true; }
+            session = service.chooseSyncResolution(session.value, file.path, 0, ConflictChoice::Remote); CHECK_OK(session.result);
+        }
+        QVERIFY(outside);
+        const auto ready = service.prepareSyncApply(session.value); CHECK_OK(ready.result);
+        bool deletion = false, repoOnly = false;
+        for (const auto &change : ready.value.changes)
+        {
+            if (change.path == "managed/node") { QCOMPARE(change.status, QString("D")); deletion = true; }
+            if (change.path == "outside.txt") { QCOMPARE(change.summary, QString("仅影响备份仓库")); repoOnly = true; }
+            QVERIFY(change.path != "managed/untouched.bin");
+        }
+        QVERIFY(deletion); QVERIFY(repoOnly);
+        const auto root = service.paths().backupRoot + "/items/" + id + "/resolutions/" + session.value.id;
+        BackupMerge preview(root, {}); CHECK_OK(preview.load());
+        const auto ignored = preview.content("managed/untouched.bin", ConflictSide::Result); CHECK_OK(ignored.result);
+        QCOMPARE(ignored.value.text, QString("ignored retained\n"));
+        CHECK_OK(preview.exportSide("managed", ConflictSide::Result, dir.path() + "/preview"));
+        QCOMPARE(readFile(dir.path() + "/preview/untouched.bin"), QByteArray("ignored retained\n"));
+        CHECK_OK(service.applySync(ready.value));
+        QCOMPARE(readFile(source + "/node/child.txt"), QByteArray("cloud directory\n"));
+        QCOMPARE(readFile(source + "/untouched.bin"), QByteArray("ignored retained\n"));
+        QCOMPARE(readFile(source + "/.git/config"), QByteArray("protected source metadata"));
+        QCOMPARE(readFile(source + "/-' 空格[1]$.txt"), QByteArray("special path\n"));
+        QVERIFY(!QFileInfo::exists(source + "/outside.txt"));
+        QCOMPARE(readFile(live + "/outside.txt"), QByteArray("cloud repository\n"));
+    }
+    void resolutionPartialReplacementKeepsRecovery()
+    {
+        auto files = std::make_shared<FaultFiles>(); BackupDependencies deps; deps.files = files;
+        TestDirectory dir; TestBackupService service(pathsIn(dir), nullptr, nullptr, deps);
+        const auto source = dir.path() + "/source", remote = dir.path() + "/remote.git", writer = dir.path() + "/writer";
+        writeFile(source + "/a.txt", "old a\n"); writeFile(source + "/b.txt", "old b\n");
+        writeFile(source + "/.git/config", "source metadata");
+        CHECK_OK(service.addLocal(source)); const auto id = service.idForSource(source);
+        git({}, {"init", "--bare", remote}); CHECK_OK(service.setRemote(id, remote)); CHECK_OK(service.synchronize(id, true));
+        git({}, {"clone", remote, writer});
+        writeFile(writer + "/source/a.txt", "cloud a\n"); writeFile(writer + "/source/b.txt", "cloud b\n");
+        git(writer, {"add", "--all"}); git(writer, {"commit", "-m", "cloud"}); git(writer, {"push"});
+        const auto session = service.prepareSyncResolution(id); CHECK_OK(session.result);
+        const auto ready = service.prepareSyncApply(session.value); CHECK_OK(ready.result);
+        bool failedOnce = false;
+        files->failRename = [&](const QString &from, const QString &to)
+        {
+            if (!failedOnce && from.contains("/new/") && to == source + "/b.txt") { failedOnce = true; return true; }
+            return false;
+        };
+        QVERIFY(!service.applySync(ready.value).success);
+        QVERIFY(failedOnce);
+        QCOMPARE(service.syncState(id), BackupSyncState::NeedsAttention);
+        QCOMPARE(readFile(source + "/a.txt"), QByteArray("old a\n"));
+        QCOMPARE(readFile(source + "/b.txt"), QByteArray("old b\n"));
+        QCOMPARE(readFile(source + "/.git/config"), QByteArray("source metadata"));
+        QVERIFY(!record(service, id).recoveryPaths.isEmpty());
+    }
+    void resolutionChoiceSaveFailureKeepsDurableSelection()
+    {
+        bool fail = false;
+        BackupDependencies deps; deps.allowSave = [&](const BackupRecord &r)
+        { return !(fail && r.state == BackupSyncState::ResolutionPending && r.operation.isEmpty()); };
+        RemoteFixture f(deps); f.commitRemote("cloud\n"); writeFile(f.source, "local\n");
+        const auto session = f.service->prepareSyncResolution(f.id); CHECK_OK(session.result);
+        fail = true;
+        QVERIFY(!f.service->chooseSyncResolution(session.value, "source.txt", 0, ConflictChoice::Local).result.success);
+        fail = false;
+        const auto recovered = f.service->syncResolution(f.id); CHECK_OK(recovered.result);
+        QCOMPARE(recovered.value.files[0].hunks[0].choice, ConflictChoice::Local);
+        QVERIFY(recovered.value.revision > session.value.revision);
+        QVERIFY(!f.service->chooseSyncResolution(session.value, "source.txt", 0, ConflictChoice::Remote).result.success);
+        QCOMPARE(readFile(f.source), QByteArray("local\n"));
+    }
+    void resolutionRejectsUnsupportedRemoteTrees_data()
+    {
+        QTest::addColumn<QString>("kind");
+        for (const auto *kind : {"deleted-root", "symlink", "submodule", "no-common-history"}) QTest::newRow(kind) << QString::fromLatin1(kind);
+    }
+    void resolutionRejectsUnsupportedRemoteTrees()
+    {
+        QFETCH(QString, kind);
+        RemoteFixture f;
+        const auto before = head(*f.service, f.id);
+        if (kind == "deleted-root") git(f.writer, {"rm", "source.txt"});
+        else if (kind == "no-common-history") git(f.writer, {"checkout", "--orphan", "unrelated"});
+        else
+        {
+            const auto oid = kind == "submodule" ? before : git(f.writer, {"rev-parse", "HEAD:source.txt"}).output.trimmed();
+            git(f.writer, {"update-index", "--add", "--cacheinfo", (kind == "submodule" ? "160000," : "120000,") + oid + ",source.txt"});
+        }
+        git(f.writer, {"commit", "-m", "unsupported remote tree"});
+        git(f.writer, {"push", "--force", "origin", "HEAD:main"});
+        const auto session = f.service->prepareSyncResolution(f.id);
+        QVERIFY(!session.result.success);
+        QCOMPARE(head(*f.service, f.id), before);
+        QCOMPARE(readFile(f.source), QByteArray("initial\n"));
+        QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
     }
     void linuxCaseSensitiveNamesAndRename()
     {
@@ -773,6 +1258,12 @@ class BackupCoreRegression : public QObject
         { return now; };
         BackupMonitor monitor(&service, nullptr, {}, dependencies);
         monitor.start();
+        // This case isolates the periodic deadline. Delayed native startup record
+        // events may legitimately request an earlier audit; stop them before
+        // processing events so they cannot leave a pending catalog deadline.
+        auto *catalogWatcher = monitor.findChild<BackupCatalogWatcher *>();
+        QVERIFY(catalogWatcher);
+        catalogWatcher->stop();
         settle(monitor, service);
         const auto repo = service.repoPath(target.id);
         writeFile(repo + "/source.txt", "external\n");

@@ -97,6 +97,8 @@ add_library(zc_services STATIC
     utils/backup_catalog.h utils/backup_catalog.cpp
     utils/backup_files.h utils/backup_files.cpp
     utils/backup_git.h utils/backup_git.cpp
+    utils/backup_merge.h utils/backup_merge.cpp
+    utils/backup_engine_resolution.cpp
     utils/backup_engine.h utils/backup_engine.cpp
     utils/aigateway.h utils/aigateway.cpp
     utils/settingsservice.h utils/settingsservice.cpp
@@ -119,6 +121,7 @@ add_library(zc_ui STATIC
     windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h windows/mainwindow_child/homepage/pages/homepage_page_dashboard.cpp windows/mainwindow_child/homepage/pages/homepage_page_dashboard.ui
     windows/mainwindow_child/homepage/pages/homepage_page_backup.h windows/mainwindow_child/homepage/pages/homepage_page_backup.cpp windows/mainwindow_child/homepage/pages/homepage_page_backup.ui
     windows/mainwindow_child/homepage/pages/homepage_page_diff.h windows/mainwindow_child/homepage/pages/homepage_page_diff.cpp windows/mainwindow_child/homepage/pages/homepage_page_diff.ui
+    windows/mainwindow_child/homepage/pages/homepage_page_conflict.h windows/mainwindow_child/homepage/pages/homepage_page_conflict.cpp windows/mainwindow_child/homepage/pages/homepage_page_conflict.ui
     windows/mainwindow_child/settingpage/settingpage.h windows/mainwindow_child/settingpage/settingpage.cpp windows/mainwindow_child/settingpage/settingpage.ui windows/mainwindow_child/settingpage/settingpage_page_ai.ui
     windows/mainwindow_child/aboutpage/aboutpage.h windows/mainwindow_child/aboutpage/aboutpage.cpp windows/mainwindow_child/aboutpage/aboutpage.ui)
 target_link_libraries(zc_ui PUBLIC zc_services qlementine Qt6::Widgets QWKWidgets)

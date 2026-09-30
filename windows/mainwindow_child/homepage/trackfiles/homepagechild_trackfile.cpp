@@ -24,9 +24,13 @@ QVariant BackupListModel::data(const QModelIndex &index, int role) const
     case Qt::DisplayRole:
         return item.name;
     case Qt::ToolTipRole:
-        return item.sourcePath;
+        return item.sourcePath + (item.stateDetail.isEmpty() ? QString() : '\n' + item.stateDetail);
     case Qt::AccessibleTextRole:
-        return item.name + ", " + item.sourcePath;
+        return item.name + ", " + item.sourcePath + (item.stateDetail.isEmpty() ? QString() : ", " + item.stateDetail);
+    case StateRole:
+        return static_cast<int>(item.state);
+    case StateDetailRole:
+        return item.stateDetail;
     case IdRole:
         return item.id;
     case PathRole:
@@ -79,7 +83,7 @@ void BackupListModel::setItems(const QVector<TrackedItem> &items)
                 m_items.move(old.row(), row);
                 endMoveRows();
             }
-            if (m_items[row].name != item.name || m_items[row].sourcePath != item.sourcePath)
+            if (m_items[row].name != item.name || m_items[row].sourcePath != item.sourcePath || m_items[row].state != item.state || m_items[row].stateDetail != item.stateDetail)
             {
                 m_items[row] = item;
                 emit dataChanged(index(row), index(row));
@@ -145,9 +149,13 @@ void BackupItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &op
                       QFontMetrics(mainFont).elidedText(index.data().toString(), Qt::ElideRight, content.width()));
     painter->setFont(captionFont);
     painter->setPen(colors.secondary);
-    const auto path = index.data(m_sidebar ? BackupListModel::ParentPathRole : BackupListModel::PathRole).toString();
+    auto path = QDir::toNativeSeparators(index.data(m_sidebar ? BackupListModel::ParentPathRole : BackupListModel::PathRole).toString());
+    const auto state = static_cast<BackupSyncState>(index.data(BackupListModel::StateRole).toInt());
+    const bool pending = state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending;
+    if (pending)
+        path = "继续处理 · " + index.data(BackupListModel::StateDetailRole).toString();
     painter->drawText(QRect(content.x(), content.y() + mainHeight + 2, content.width(), QFontMetrics(captionFont).height()), Qt::AlignLeft | Qt::AlignVCenter,
-                      QFontMetrics(captionFont).elidedText(QDir::toNativeSeparators(path), Qt::ElideMiddle, content.width()));
+                      QFontMetrics(captionFont).elidedText(path, pending ? Qt::ElideRight : Qt::ElideMiddle, content.width()));
     if (hovered || selected)
         UiStyle::icon("more").paint(painter, QRect(menuRect(row).center() - QPoint(8, 8), QSize(16, 16)));
     painter->restore();

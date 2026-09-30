@@ -45,6 +45,13 @@ class BackupService : public QObject
     BackupTaskId setRemote(const QString &id, const QString &url, QObject *context, Completion callback = {});
     BackupTaskId removeRemote(const QString &id, QObject *context, Completion callback = {});
     BackupTaskId synchronize(const QString &id, bool push, QObject *context, Completion callback = {});
+    BackupTaskId prepareSyncResolution(const QString &id, QObject *context, Reply<SyncResolutionSession> callback, bool restart = false);
+    BackupTaskId syncResolution(const QString &id, QObject *context, Reply<SyncResolutionSession> callback);
+    BackupTaskId chooseSyncResolution(const QString &id, const QString &sessionId, quint64 revision, const QString &path, int hunk, ConflictChoice choice, QObject *context, Reply<SyncResolutionSession> callback);
+    BackupTaskId prepareSyncApply(const QString &id, const QString &sessionId, quint64 revision, QObject *context, Reply<PreparedSyncApply> callback);
+    BackupTaskId applySync(const PreparedSyncApply &request, QObject *context, Completion callback);
+    BackupTaskId syncContent(const QString &id, const QString &sessionId, const QString &path, ConflictSide side, QObject *context, Reply<ConflictContent> callback);
+    BackupTaskId previewSync(const QString &id, const QString &sessionId, const QString &path, ConflictSide side, QObject *context, Completion callback);
     BackupTaskId removeBackup(const QString &id, QObject *context, Completion callback = {});
     BackupTaskId rebuild(const QString &id, QObject *context, Completion callback = {});
     BackupTaskId checkRemote(const QString &url, QObject *context, Completion callback = {});
