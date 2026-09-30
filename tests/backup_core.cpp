@@ -6,6 +6,8 @@
 #include "utils/backupmonitor_scheduler.h"
 #include <QCoreApplication>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonDocument>
 #include <QLockFile>
 #include <QProcess>
 #include <QSaveFile>
@@ -267,6 +269,64 @@ class BackupCoreRegression : public QObject
         const auto result = merge.prepare(); CHECK_OK(result.result);
         CHECK_OK(merge.exportSource(result.value, f.dir.path() + "/result"));
         QCOMPARE(readFile(f.dir.path() + "/result"), QByteArray("local\nb\nc\nd\ne\nf\ncloud\n"));
+    }
+    void resolutionRejectsDamagedProgress()
+    {
+        RemoteFixture f;
+        f.commitRemote("cloud\n"); writeFile(f.source, "local\n");
+        const auto session = f.service->prepareSyncResolution(f.id); CHECK_OK(session.result);
+        const auto root = f.paths.backupRoot + "/items/" + f.id + "/resolutions/" + session.value.id;
+        const auto path = root + "/session.json";
+        const auto original = readFile(path);
+        const auto baseline = head(*f.service, f.id);
+        const auto mutate = [&](const std::function<void(QJsonObject &)> &change)
+        {
+            auto data = QJsonDocument::fromJson(original).object();
+            change(data); writeFile(path, QJsonDocument(data).toJson());
+            return f.service->syncResolution(f.id).result;
+        };
+        QVERIFY(!mutate([](QJsonObject &data) { data.remove("automatic"); }).success);
+        QVERIFY(!mutate([](QJsonObject &data) { data["files"] = QJsonObject{}; }).success);
+        for (const auto &fault : {QString("empty-hunks"), QString("short-common"), QString("bad-bytes"), QString("duplicate-file")})
+        {
+            const auto result = mutate([&](QJsonObject &data)
+            {
+                auto files = data["files"].toArray(); auto file = files[0].toObject();
+                if (fault == "empty-hunks") file["hunks"] = QJsonArray{};
+                if (fault == "short-common") file["common"] = QJsonArray{};
+                if (fault == "bad-bytes")
+                {
+                    auto hunks = file["hunks"].toArray(); auto hunk = hunks[0].toObject();
+                    hunk["local"] = "%%%"; hunks[0] = hunk; file["hunks"] = hunks;
+                }
+                files[0] = file;
+                if (fault == "duplicate-file") files.append(file);
+                data["files"] = files;
+            });
+            QVERIFY2(!result.success, qPrintable(fault));
+        }
+        writeFile(path, original);
+        CHECK_OK(f.service->syncResolution(f.id).result);
+        QCOMPARE(head(*f.service, f.id), baseline);
+        QCOMPARE(readFile(f.source), QByteArray("local\n"));
+    }
+    void resolutionLargeFilesAvoidTextReads()
+    {
+        RemoteFixture f;
+        f.commitRemote(QByteArray(2 * 1024 * 1024 + 1, 'r'));
+        writeFile(f.source, QByteArray(2 * 1024 * 1024 + 1, 'l'));
+        int blobReads = 0;
+        BackupDependencies deps;
+        deps.git = [&](const QString &path, const QStringList &args, const GitOptions &options)
+        {
+            if (args.contains("cat-file") && args.contains("blob")) ++blobReads;
+            return runGit(path, args, options);
+        };
+        BackupMerge merge(f.dir.path() + '/' + QUuid::createUuid().toString(QUuid::WithoutBraces), deps);
+        CHECK_OK(merge.create(record(*f.service, f.id), f.service->repoPath(f.id)));
+        QCOMPARE(merge.session().total(), 1);
+        QVERIFY(merge.session().files[0].wholeFile);
+        QCOMPARE(blobReads, 0);
     }
     void resolutionSurvivesRestartAndRejectsStaleInputs()
     {
@@ -541,6 +601,12 @@ class BackupCoreRegression : public QObject
             QVERIFY(change.path != "managed/untouched.bin");
         }
         QVERIFY(deletion); QVERIFY(repoOnly);
+        const auto root = service.paths().backupRoot + "/items/" + id + "/resolutions/" + session.value.id;
+        BackupMerge preview(root, {}); CHECK_OK(preview.load());
+        const auto ignored = preview.content("managed/untouched.bin", ConflictSide::Result); CHECK_OK(ignored.result);
+        QCOMPARE(ignored.value.text, QString("ignored retained\n"));
+        CHECK_OK(preview.exportSide("managed", ConflictSide::Result, dir.path() + "/preview"));
+        QCOMPARE(readFile(dir.path() + "/preview/untouched.bin"), QByteArray("ignored retained\n"));
         CHECK_OK(service.applySync(ready.value));
         QCOMPARE(readFile(source + "/node/child.txt"), QByteArray("cloud directory\n"));
         QCOMPARE(readFile(source + "/untouched.bin"), QByteArray("ignored retained\n"));

@@ -123,6 +123,14 @@ OperationResult BackupMerge::load()
         !BackupCatalog::validId(data[QLatin1String("backupId")].toString()) || data[QLatin1String("revision")].toString().toULongLong() == 0)
         return failure("处理记录已损坏，原文件未修改。请重新分析。");
     static const QRegularExpression oid("^[0-9a-f]{40}(?:[0-9a-f]{24})?$");
+    for (const auto *name : {"localTree", "remoteTree", "automatic", "extras"})
+        if (!data[name].isObject()) return failure("处理记录缺少版本内容，请重新分析。");
+    if (!data["files"].isArray() || data["id"].toString() != QFileInfo(m_root).fileName() ||
+        !BackupCatalog::validRepositoryPath(data["managedPath"].toString()) ||
+        !data["directory"].isBool() || !data["sourceFingerprint"].isObject() || !data["capturedFingerprint"].isObject())
+        return failure("处理记录结构无效，请重新分析。");
+    for (const auto *name : {"localCommit", "remoteCommit", "expectedHead"})
+        if (!oid.match(data[name].toString()).hasMatch()) return failure("处理记录中的版本无效。");
     for (const auto *name : {"localTree", "remoteTree", "automatic", "extras", "resultTree"})
     {
         const auto entries = decodeTree(data[name].toObject());
@@ -130,11 +138,35 @@ OperationResult BackupMerge::load()
             if (!BackupCatalog::validRepositoryPath(it.key()) || it.key() == "." || !oid.match(it->oid).hasMatch() ||
                 (it->mode != "100644" && it->mode != "100755")) return failure("处理记录包含无效文件信息。");
     }
+    const auto validBytes = [](const QJsonValue &value)
+    {
+        if (!value.isString()) return false;
+        const auto encoded = value.toString().toLatin1();
+        const auto decoded = QByteArray::fromBase64Encoding(encoded, QByteArray::AbortOnBase64DecodingErrors);
+        return decoded && QString::fromLatin1(decoded.decoded.toBase64()) == value.toString();
+    };
+    QSet<QString> paths;
     for (const auto &value : data[QLatin1String("files")].toArray())
     {
-        if (!BackupCatalog::validRepositoryPath(value[QLatin1String("path")].toString()) || value[QLatin1String("path")].toString() == ".") return failure("处理记录中的路径无效。");
-        for (const auto &hunk : value[QLatin1String("hunks")].toArray())
+        const auto path = value[QLatin1String("path")].toString();
+        if (!BackupCatalog::validRepositoryPath(path) || path == "." || paths.contains(path)) return failure("处理记录中的路径无效。");
+        paths.insert(path);
+        const auto hunks = value[QLatin1String("hunks")].toArray(), common = value[QLatin1String("common")].toArray();
+        if (!value[QLatin1String("whole")].isBool() || hunks.isEmpty() ||
+            (value[QLatin1String("whole")].toBool() ? hunks.size() != 1 : !value[QLatin1String("common")].isArray() || common.size() != hunks.size() + 1))
+            return failure("处理记录中的差异片段不完整，请重新分析。");
+        for (const auto &hunk : hunks)
+        {
             if (hunk[QLatin1String("choice")].toInt(-1) < 0 || hunk[QLatin1String("choice")].toInt(-1) > 2) return failure("处理记录中的选择无效。");
+            if (!value[QLatin1String("whole")].toBool() && (!validBytes(hunk[QLatin1String("local")]) || !validBytes(hunk[QLatin1String("remote")])))
+                return failure("处理记录中的文本内容已损坏，请重新分析。");
+        }
+        if (!value[QLatin1String("whole")].toBool())
+        {
+            if (value[QLatin1String("mode")] != "100644" && value[QLatin1String("mode")] != "100755") return failure("处理记录中的文件权限无效。");
+            for (const auto &part : common)
+                if (!validBytes(part)) return failure("处理记录中的上下文已损坏，请重新分析。");
+        }
     }
     m_data = data;
     return git().validate();
@@ -220,6 +252,15 @@ OperationResult BackupMerge::create(const BackupRecord &record, const QString &l
 
 OperationResult BackupMerge::mergeText(QJsonObject &file, const Entry &base, const Entry &local, const Entry &remote)
 {
+    // Check object sizes before loading blobs: whole-file choices must also be
+    // usable for multi-gigabyte files without allocating their contents here.
+    for (const auto &entry : {base, local, remote})
+    {
+        if (entry.oid.isEmpty()) continue;
+        const auto size = git().run({"cat-file", "-s", entry.oid});
+        MERGE_TRY(GitRepository::outcome(size));
+        if (size.output.trimmed().toLongLong() > 2 * 1024 * 1024) return OperationResult::ok({});
+    }
     const auto b = blob(base), l = blob(local), r = blob(remote);
     if (!b.result.success) return b.result;
     if (!l.result.success) return l.result;
@@ -481,15 +522,11 @@ BackupResult<PreparedSyncApply> BackupMerge::prepare()
                              m_data[QLatin1String("generation")].toString().toULongLong(), fingerprintValue(m_data[QLatin1String("sourceFingerprint")].toObject()), {}};
     const auto localRepository = decodeTree(m_data[QLatin1String("localTree")].toObject());
     auto localSource = localRepository;
-    auto finalSource = assembled.value;
+    const auto finalSource = withRetainedExtras(assembled.value);
     const auto extras = decodeTree(m_data[QLatin1String("extras")].toObject());
     for (auto it = extras.cbegin(); it != extras.cend(); ++it)
     {
         localSource.insert(it.key(), it.value());
-        bool chosen = false;
-        for (const auto &file : m_data[QLatin1String("files")].toArray())
-            if (beneath(it.key(), file[QLatin1String("path")].toString())) { chosen = true; break; }
-        if (!chosen && !finalSource.contains(it.key())) finalSource.insert(it.key(), it.value());
     }
     // Include repository-only changes as well as the changes to current source.
     QSet<QString> paths;
@@ -533,7 +570,10 @@ OperationResult BackupMerge::exportTree(const Tree &entries, const QString &pref
 OperationResult BackupMerge::exportSource(const PreparedSyncApply &request, const QString &target) const
 {
     if (!validRequest(request)) return failure("结果预览已失效，请重新预览。");
-    auto entries = decodeTree(m_data[QLatin1String("resultTree")].toObject());
+    return exportTree(sideTree(ConflictSide::Result), m_data[QLatin1String("managedPath")].toString(), target);
+}
+BackupMerge::Tree BackupMerge::withRetainedExtras(Tree entries) const
+{
     const auto extras = decodeTree(m_data[QLatin1String("extras")].toObject());
     for (auto it = extras.cbegin(); it != extras.cend(); ++it)
     {
@@ -541,13 +581,19 @@ OperationResult BackupMerge::exportSource(const PreparedSyncApply &request, cons
         for (const auto &file : m_data[QLatin1String("files")].toArray()) if (beneath(it.key(), file[QLatin1String("path")].toString())) { chosen = true; break; }
         if (!chosen && !entries.contains(it.key())) entries.insert(it.key(), it.value());
     }
-    return exportTree(entries, m_data[QLatin1String("managedPath")].toString(), target);
+    return entries;
 }
-BackupResult<ConflictContent> BackupMerge::content(const QString &path, ConflictSide side) const
+BackupMerge::Tree BackupMerge::sideTree(ConflictSide side) const
 {
     auto entries = decodeTree(m_data[side == ConflictSide::Result ? "resultTree" : side == ConflictSide::Local ? "localTree" : "remoteTree"].toObject());
     if (side == ConflictSide::Local)
     { const auto extras = decodeTree(m_data[QLatin1String("extras")].toObject()); for (auto it = extras.cbegin(); it != extras.cend(); ++it) entries.insert(it.key(), it.value()); }
+    if (side == ConflictSide::Result) entries = withRetainedExtras(std::move(entries));
+    return entries;
+}
+BackupResult<ConflictContent> BackupMerge::content(const QString &path, ConflictSide side) const
+{
+    const auto entries = sideTree(side);
     if (!entries.contains(path)) return {OperationResult::ok({}), {"此版本中没有该文件，或此项为文件夹。", false}};
     const auto size = git().run({"cat-file", "-s", entries[path].oid});
     if (!size.success()) return {GitRepository::outcome(size)};
@@ -559,9 +605,7 @@ BackupResult<ConflictContent> BackupMerge::content(const QString &path, Conflict
 }
 OperationResult BackupMerge::exportSide(const QString &path, ConflictSide side, const QString &target) const
 {
-    auto entries = decodeTree(m_data[side == ConflictSide::Result ? "resultTree" : side == ConflictSide::Local ? "localTree" : "remoteTree"].toObject());
-    if (side == ConflictSide::Local)
-    { const auto extras = decodeTree(m_data[QLatin1String("extras")].toObject()); for (auto it = extras.cbegin(); it != extras.cend(); ++it) entries.insert(it.key(), it.value()); }
+    const auto entries = sideTree(side);
     if (std::none_of(entries.keyBegin(), entries.keyEnd(), [&](const QString &entry) { return beneath(entry, path); })) return failure("此版本中不存在该文件。");
     return exportTree(entries, path, target);
 }

@@ -36,6 +36,8 @@ class BackupMerge
     BackupResult<QByteArray> blob(const Entry &entry) const;
     OperationResult exportTree(const Tree &tree, const QString &prefix, const QString &target) const;
     BackupResult<Tree> resultTree() const;
+    Tree withRetainedExtras(Tree entries) const;
+    Tree sideTree(ConflictSide side) const;
     OperationResult analyze();
     OperationResult mergeText(QJsonObject &file, const Entry &base, const Entry &local, const Entry &remote);
     static QJsonObject encodeTree(const Tree &tree);
