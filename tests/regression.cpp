@@ -1810,7 +1810,8 @@ class Regression : public QObject
         QVERIFY(service.backup(id).success);
         settle(service);
         HomePageBackupPage page(&service);
-        page.setAttribute(Qt::WA_DontShowOnScreen, QGuiApplication::platformName() != "cocoa");
+        // WidgetShortcut activation needs an active window. Even the Linux
+        // offscreen plugin cannot activate a WA_DontShowOnScreen window.
         page.resize(820, 640);
         page.setBackup(id);
         settle(service);
