@@ -1258,12 +1258,13 @@ class BackupCoreRegression : public QObject
         { return now; };
         BackupMonitor monitor(&service, nullptr, {}, dependencies);
         monitor.start();
-        settle(monitor, service);
         // This case isolates the periodic deadline. Delayed native startup record
-        // events may legitimately request an earlier audit; separate tests cover them.
+        // events may legitimately request an earlier audit; stop them before
+        // processing events so they cannot leave a pending catalog deadline.
         auto *catalogWatcher = monitor.findChild<BackupCatalogWatcher *>();
         QVERIFY(catalogWatcher);
         catalogWatcher->stop();
+        settle(monitor, service);
         const auto repo = service.repoPath(target.id);
         writeFile(repo + "/source.txt", "external\n");
         git(repo, {"add", "--all"});
