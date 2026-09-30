@@ -191,3 +191,5 @@ Cocoa 测试发现 Return 在原生历史表格中被当作编辑键，现通过
 验收可沿用上一节流程，重点补验 CRLF 文本第二处差异的高亮、展开全文提示、窗口缩窄后的文件定位，以及含忽略文件的结果只读副本。临时失败和损坏记录由隔离故障注入用例验证，无需修改真实备份来制造故障。
 
 PR #22 首轮 CI 中，macOS 完整构建与回归通过，Linux 构建和 `backup_core` 通过；Linux `regression` 在历史页键盘测试的焦点断言失败。`revisionTimeAndSelection` 的窗口此前设置 `WA_DontShowOnScreen`，无法可靠获得 `WidgetShortcut` 所需的活动窗口焦点。现让该用例正常显示隔离窗口，保留焦点与 Return 键行为断言；本地 Cocoa 定向复验 3 passed、0 failed（`build/conflict-pr-focus-cocoa.txt`），跨平台结果以 PR 最新检查为准。
+
+首轮 Windows 日志还显示相同的焦点失败，以及确认弹窗路径断言未适配本机分隔符：界面使用反斜杠，测试却匹配正斜杠。现按 `QDir::toNativeSeparators` 比较完整源路径，继续校验删除数量，生产弹窗内容不变。

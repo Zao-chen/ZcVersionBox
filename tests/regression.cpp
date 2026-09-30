@@ -1254,7 +1254,7 @@ class Regression : public QObject
         QVERIFY(answerConfirmation(apply, f.service, [&](QDialog *dialog)
         {
             defaultCancel = dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Cancel)->isDefault();
-            correctScope = dialog->findChild<QLabel *>()->text().contains(f.source) && dialog->findChild<QLabel *>()->text().contains("1 个删除");
+            correctScope = dialog->findChild<QLabel *>()->text().contains(QDir::toNativeSeparators(f.source)) && dialog->findChild<QLabel *>()->text().contains("1 个删除");
             dialog->reject();
         }));
         QVERIFY(defaultCancel); QVERIFY(correctScope);
