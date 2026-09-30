@@ -38,8 +38,8 @@ class HomePageConflictPage : public QWidget
     Context context() const;
     bool current(const Context &context) const;
     void rememberPosition();
-    void load(bool restart = false);
-    void acceptSession(const SyncResolutionSession &session, bool restorePosition);
+    void load(bool restart = false, bool resumePreview = true);
+    void acceptSession(const SyncResolutionSession &session, bool restorePosition, bool resumePreview = true);
     void populateFiles();
     void selectFile();
     void showQuestion();

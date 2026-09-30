@@ -160,3 +160,32 @@ Cocoa 测试发现 Return 在原生历史表格中被当作编辑键，现通过
 5. 选择期间修改源文件后重新打开：旧选择可查看，应用被禁用，重新分析清空旧选择。分别验收 1080×740、760×520、浅深色和完整键盘导航；macOS Tab 遍历范围遵循系统键盘偏好。
 
 跨平台新功能尚未实际运行 Windows/Linux 构建及原生桌面验证；本次也未验证真实远程认证或网络故障。Git 2.29 兼容通过所用命令范围约束，本机执行使用已安装的 Git，不宣称已在 2.29 二进制上运行。
+
+## 同步冲突页面审查与修复（2026-09-30）
+
+审查范围包括功能分支的合并核心、持久化和应用事务、服务队列、页面交互及导航接入。沿用 `feature/conflict-resolution`，复用 macOS / Qt 6.8.3 arm64 的 `build`；所有回归使用隔离测试程序。
+
+修复了以下问题：
+
+- 损坏的进度记录缺少结构校验，可能造成片段越界或遗漏自动合并内容。现在拒绝缺少必要树、空片段、上下文数量错误、非法原文编码及重复路径等记录。
+- 超限文件先被完整读入后才降级。现在先读取对象大小，超过 2 MiB 不再为文本分析加载 blob。
+- 结果只读副本遗漏应用时会保留的忽略文件。现在预览和源导出使用相同规则。
+- 临时预览失败被误判为会话过期。现在重新核验输入，选择仍有效时允许重试；无冲突会话也不会自动循环重试。
+- CRLF 使差异高亮偏移甚至越界。现在按显示文本计算位置，保存字节不变。
+- 窗口缩窄后当前文件可能不可见；全文与空差异提示不准确；最后一处仍允许无效“下一处”。均已修正。
+
+新增核心用例 `resolutionRejectsDamagedProgress`、`resolutionLargeFilesAvoidTextReads`，扩展忽略文件预览验证；新增 UI 用例 `conflictPreviewFailurePreservesChoices`（手动选择/自动预览两种场景）、`conflictCrlfHighlightMatchesSelectedText`，并在页面渲染用例检查当前行可见性。核心三个复现用例及页面三个数据场景均在修复前失败、修复后通过，日志分别为 `build/conflict-review-core-before.txt` 和 `build/conflict-review-ui-before.txt`。
+
+| 验证范围 | 实际结果 | 日志 |
+| --- | --- | --- |
+| 核心针对性回归 | 16 passed、0 failed | `build/conflict-review-core-targeted.txt` |
+| 完整 `backup_core` | 112 passed、0 failed、5 Linux 专属 skipped；148.90 s | `build/tests/backup_core.txt`、`build/conflict-review-backup-core-final.log` |
+| 冲突页面、失败重试、高亮、导航与键盘 | 10 passed、0 failed | `build/conflict-review-ui.txt` |
+| 最终尺寸及浅深色渲染 | 3 passed、0 failed | `build/conflict-review-render-final.txt` |
+| Cocoa 原生键盘操作 | 3 passed、0 failed | `build/conflict-review-cocoa.txt` |
+
+通过数包含初始化和清理。`zc_backup_tests`、`zc_tests`、`ZcVersionBox` 增量构建成功；8 张最终截图位于 `build/conflict-review-screenshots/`，已检查 1080×740、760×520 的浅深色选择页和结果页。
+
+首次完整核心回归暴露已有周期审计用例的隔离时序问题：在 `settle()` 后停用目录监听，已经无法清除启动事件留下的提前审计期限。现改为事件处理前停用该测试的目录监听，单项与完整核心组均通过；生产监控行为未改变。本轮未运行完整 `regression`、Windows/Linux 构建、真实云端认证或打包。
+
+验收可沿用上一节流程，重点补验 CRLF 文本第二处差异的高亮、展开全文提示、窗口缩窄后的文件定位，以及含忽略文件的结果只读副本。临时失败和损坏记录由隔离故障注入用例验证，无需修改真实备份来制造故障。

@@ -123,16 +123,18 @@ class FakeAi : public AiGateway
 struct ResolutionFixture
 {
     TestDirectory dir;
-    TestBackupService service{pathsIn(dir)};
+    TestBackupService service;
     QString source{dir.path() + "/project"}, id, remote{dir.path() + "/remote.git"}, writer{dir.path() + "/writer"};
-    explicit ResolutionFixture(bool conflicts = true)
+    explicit ResolutionFixture(bool conflicts = true, BackupDependencies dependencies = {}, bool crlf = false)
+        : service(pathsIn(dir), nullptr, nullptr, std::move(dependencies))
     {
         const auto git = [](const QString &path, const QStringList &args)
         {
             const auto r = runGit(path, args);
             if (!r.success()) qFatal("Conflict fixture: %s", qPrintable(r.error));
         };
-        writeFile(source + "/使用说明.txt", "第一段\nb\nc\nd\ne\nf\n第二段\n");
+        const auto text = [crlf](QByteArray bytes) { return crlf ? bytes.replace("\n", "\r\n") : bytes; };
+        writeFile(source + "/使用说明.txt", text("第一段\nb\nc\nd\ne\nf\n第二段\n"));
         writeFile(source + "/image.bin", QByteArray("base\0image", 10));
         writeFile(source + "/remove.txt", "base\n");
         if (!service.addLocal(source).success) qFatal("Cannot create conflict fixture");
@@ -142,14 +144,14 @@ struct ResolutionFixture
         git({}, {"clone", remote, writer});
         git(writer, {"config", "user.name", "Fixture"});
         git(writer, {"config", "user.email", "fixture@example.test"});
-        writeFile(writer + "/project/使用说明.txt", "云端第一段\nb\nc\nd\ne\nf\n云端第二段\n");
+        writeFile(writer + "/project/使用说明.txt", text("云端第一段\nb\nc\nd\ne\nf\n云端第二段\n"));
         writeFile(writer + "/project/image.bin", QByteArray("remote\0image", 12));
         git(writer, {"rm", "project/remove.txt"});
         writeFile(writer + "/project/automatic.txt", "自动合并的新增文件\n");
         git(writer, {"add", "--all"}); git(writer, {"commit", "-m", "cloud changes"}); git(writer, {"push"});
         if (conflicts)
         {
-            writeFile(source + "/使用说明.txt", "本地第一段\nb\nc\nd\ne\nf\n本地第二段\n");
+            writeFile(source + "/使用说明.txt", text("本地第一段\nb\nc\nd\ne\nf\n本地第二段\n"));
             writeFile(source + "/image.bin", QByteArray("local\0image", 11));
             writeFile(source + "/remove.txt", "local changes\n");
         }
@@ -1343,6 +1345,75 @@ class Regression : public QObject
         QVERIFY(page.findChild<QPushButton *>("reanalyzeButton")->isVisible());
         QVERIFY(!apply->isEnabled());
     }
+    void conflictPreviewFailurePreservesChoices_data()
+    {
+        QTest::addColumn<bool>("conflicts");
+        QTest::newRow("manual-choices") << true;
+        QTest::newRow("automatic-preview") << false;
+    }
+    void conflictPreviewFailurePreservesChoices()
+    {
+        QFETCH(bool, conflicts);
+        bool failPreview = false;
+        int failedAttempts = 0;
+        BackupDependencies deps;
+        deps.git = [&](const QString &path, const QStringList &args, const GitOptions &options)
+        {
+            if (failPreview && args.contains("write-tree"))
+            {
+                ++failedAttempts;
+                GitResult result; result.started = result.finished = true; result.exitCode = 1;
+                result.error = "模拟临时预览失败"; return result;
+            }
+            return runGit(path, args, options);
+        };
+        ResolutionFixture f(conflicts, deps);
+        auto session = f.service.prepareSyncResolution(f.id); QVERIFY(session.result.success);
+        const auto files = session.value.files;
+        for (const auto &file : files)
+            for (int h = 0; h < file.hunks.size(); ++h)
+            {
+                session = f.service.chooseSyncResolution(session.value, file.path, h, ConflictChoice::Local);
+                QVERIFY(session.result.success);
+            }
+        HomePageConflictPage page(&f.service);
+        page.setAttribute(Qt::WA_DontShowOnScreen); page.show();
+        failPreview = true;
+        page.setBackup(f.id); settle(f.service);
+        auto *preview = page.findChild<QPushButton *>("previewButton");
+        if (conflicts) { preview->click(); settle(f.service); }
+        QCOMPARE(failedAttempts, 1);
+        QVERIFY(!page.findChild<QPushButton *>("reanalyzeButton")->isVisible());
+        QVERIFY(preview->isEnabled()); QVERIFY(preview->isVisible());
+        const auto resumed = f.service.syncResolution(f.id);
+        QVERIFY(resumed.result.success); QCOMPARE(resumed.value.revision, session.value.revision);
+        QCOMPARE(resumed.value.remaining(), 0);
+        failPreview = false;
+        preview->click(); settle(f.service);
+        QVERIFY(page.findChild<QPushButton *>("applyButton")->isEnabled());
+        QVERIFY(page.findChild<QPushButton *>("applyButton")->isVisible());
+    }
+    void conflictCrlfHighlightMatchesSelectedText()
+    {
+        ResolutionFixture f(true, {}, true);
+        QVERIFY(f.service.prepareSyncResolution(f.id).result.success);
+        HomePageConflictPage page(&f.service);
+        page.setAttribute(Qt::WA_DontShowOnScreen); page.show(); page.setBackup(f.id); settle(f.service);
+        auto *files = page.findChild<QListView *>("files");
+        for (int i = 0; i < files->model()->rowCount(); ++i)
+            if (files->model()->index(i, 0).data().toString().contains("使用说明.txt"))
+                files->setCurrentIndex(files->model()->index(i, 0));
+        page.findChild<QPushButton *>("localChoice")->click(); settle(f.service);
+        page.findChild<QPushButton *>("nextButton")->click();
+        QVERIFY(page.findChild<QLabel *>("questionTitle")->text().contains("第 2 / 2"));
+        for (const auto &name : {QString("localContent"), QString("remoteContent")})
+        {
+            const auto selections = page.findChild<QPlainTextEdit *>(name)->extraSelections();
+            QCOMPARE(selections.size(), 1);
+            const auto selected = selections[0].cursor.selectedText().replace(QChar::ParagraphSeparator, '\n');
+            QCOMPARE(selected, name == "localContent" ? QString("本地第二段\n") : QString("云端第二段\n"));
+        }
+    }
     void conflictKeyboardNavigation()
     {
         // Exercise full Tab traversal without changing the user's macOS setting.
@@ -1395,6 +1466,9 @@ class Regression : public QObject
             {
                 window.resize(size); QTest::qWait(120);
                 QCOMPARE(window.size(), size);
+                const auto selectedRect = fileList->visualRect(fileList->currentIndex());
+                QVERIFY2(selectedRect.top() >= 0 && selectedRect.bottom() < fileList->viewport()->height(),
+                         qPrintable(QString("selected row y=%1..%2, viewport height=%3").arg(selectedRect.top()).arg(selectedRect.bottom()).arg(fileList->viewport()->height())));
                 auto *scroll = page->findChild<QScrollArea *>("contentScroll");
                 QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
                 QCOMPARE(page->findChild<QSplitter *>("splitter")->orientation(), size.width() == 760 ? Qt::Vertical : Qt::Horizontal);

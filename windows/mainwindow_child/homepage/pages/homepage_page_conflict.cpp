@@ -12,7 +12,12 @@
 
 namespace
 {
-QString displayBytes(const QByteArray &bytes) { return QString::fromUtf8(bytes); }
+QString displayBytes(const QByteArray &bytes)
+{
+    // QTextDocument normalizes line endings. Use the same text for both the
+    // display and cursor offsets; keep the original bytes in the saved choice.
+    return QString::fromUtf8(bytes).replace("\r\n", "\n").replace('\r', '\n');
+}
 QString sideDescription(const ConflictFile &file, bool local, const QDateTime &time)
 {
     const bool exists = local ? file.localExists : file.remoteExists;
@@ -148,7 +153,7 @@ void HomePageConflictPage::setBackup(const QString &id)
     ui->resultContent->clear();
     load();
 }
-void HomePageConflictPage::load(bool restart)
+void HomePageConflictPage::load(bool restart, bool resumePreview)
 {
     if (!m_active || m_busy) return;
     if (!restart && m_service->syncState(m_id) == BackupSyncState::Tracking)
@@ -164,7 +169,7 @@ void HomePageConflictPage::load(bool restart)
     ++m_contentRequest;
     ui->statusLabel->setText(restart ? "正在重新分析，本地源内容保持原样…" : "正在读取并核验处理进度…");
     updateActions();
-    const auto reply = [this, ctx](const BackupResult<SyncResolutionSession> &result)
+    const auto reply = [this, ctx, resumePreview](const BackupResult<SyncResolutionSession> &result)
     {
         if (!current(ctx)) return;
         m_busy = false;
@@ -183,12 +188,12 @@ void HomePageConflictPage::load(bool restart)
             emit navigate({PageId::History, m_id});
             return;
         }
-        acceptSession(result.value, true);
+        acceptSession(result.value, true, resumePreview);
     };
     if (restart) m_service->prepareSyncResolution(m_id, this, reply, true);
     else m_service->syncResolution(m_id, this, reply);
 }
-void HomePageConflictPage::acceptSession(const SyncResolutionSession &session, bool restorePosition)
+void HomePageConflictPage::acceptSession(const SyncResolutionSession &session, bool restorePosition, bool resumePreview)
 {
     m_session = session;
     m_prepared = {};
@@ -201,7 +206,7 @@ void HomePageConflictPage::acceptSession(const SyncResolutionSession &session, b
             if (session.files[i].path == path) m_file = i;
         m_hunk = qBound(0, position.session == session.id ? position.hunk : session.currentHunk,
                         qMax(0, int(session.files.value(m_file).hunks.size()) - 1));
-        m_preview = !session.stale && session.remaining() == 0 && (session.total() == 0 || (position.session == session.id && position.preview));
+        m_preview = resumePreview && !session.stale && session.remaining() == 0 && (session.total() == 0 || (position.session == session.id && position.preview));
     }
     if (m_preview && !session.stale)
     {
@@ -284,9 +289,15 @@ void HomePageConflictPage::showQuestion()
     ui->localChoice->setChecked(hunk.choice == ConflictChoice::Local);
     ui->remoteChoice->setChecked(hunk.choice == ConflictChoice::Remote);
     ui->selectionLabel->setText(hunk.choice == ConflictChoice::Unresolved ? "尚未选择" : hunk.choice == ConflictChoice::Local ? "已选择本地" : "已选择云端");
-    ui->localMeta->setText(file.wholeFile ? sideDescription(file, true, m_session.localTime) : "高亮为本处差异，前后各显示三行上下文");
-    ui->remoteMeta->setText(file.wholeFile ? sideDescription(file, false, m_session.remoteTime) : "高亮为本处差异，前后各显示三行上下文");
     const bool full = file.wholeFile || ui->expandContentButton->isChecked();
+    const auto description = [&](bool local)
+    {
+        if (file.wholeFile) return sideDescription(file, local, local ? m_session.localTime : m_session.remoteTime);
+        const auto scope = full ? QStringLiteral("正在显示完整文件内容") : QStringLiteral("高亮为本处差异，前后各显示三行上下文");
+        return (local ? hunk.local : hunk.remote).isEmpty() ? "本处没有内容（删除或未添加）\n" + scope : scope;
+    };
+    ui->localMeta->setText(description(true));
+    ui->remoteMeta->setText(description(false));
     ui->expandContentButton->setVisible(!file.wholeFile);
     ui->expandContentButton->setText(full ? "收起完整内容" : "展开完整内容");
     for (auto *editor : {ui->localContent, ui->remoteContent}) editor->setExtraSelections({});
@@ -387,9 +398,9 @@ void HomePageConflictPage::preparePreview()
         {
             emit notification(reply.result);
             m_preview = false;
-            m_session.stale = true;
-            m_session.staleReason = reply.result.message;
-            showQuestion();
+            // A failed Git/write operation need not invalidate the choices.
+            // Revalidate without automatically retrying a conflict-free preview.
+            load(false, false);
             return;
         }
         m_prepared = reply.value;
@@ -487,7 +498,9 @@ void HomePageConflictPage::updateActions()
     ui->localChoice->setEnabled(editable && question);
     ui->remoteChoice->setEnabled(editable && question);
     ui->previousButton->setEnabled(valid && !m_busy && question && (m_file > 0 || m_hunk > 0));
-    ui->nextButton->setEnabled(valid && !m_busy && m_session.total() > 1);
+    const bool laterQuestion = m_file + 1 < m_session.files.size() || m_hunk + 1 < m_session.files.value(m_file).hunks.size();
+    const bool otherUnresolved = m_session.remaining() > (m_session.files.value(m_file).hunks.value(m_hunk).choice == ConflictChoice::Unresolved ? 1 : 0);
+    ui->nextButton->setEnabled(valid && !m_busy && question && (laterQuestion || otherUnresolved));
     ui->expandContentButton->setEnabled(valid && !m_busy);
     const auto file = m_session.files.value(m_file);
     ui->localOpen->setEnabled(valid && !m_busy && file.localExists);
@@ -532,4 +545,9 @@ void HomePageConflictPage::updateLayout()
     }
     const int margin = narrow ? 16 : 24;
     ui->pageLayout->setContentsMargins(margin, 12, margin, 16);
+    QTimer::singleShot(0, this, [this]
+    {
+        // The list's viewport shrinks after the splitter/layout update.
+        ui->files->scrollTo(ui->files->currentIndex());
+    });
 }
