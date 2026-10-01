@@ -296,7 +296,19 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     ui->returnHistoryButton->setCursor(Qt::PointingHandCursor);
     UiStyle::text(ui->diffTitleLabel, UiStyle::FontRole::Caption, true);
     connect(ui->returnHistoryButton, &QToolButton::clicked, this, [this]
-            { navigate({PageId::History, m_route.backupId}); });
+    {
+        if (m_route.page == PageId::Conflict)
+        {
+            if (m_navigation.canBack() && m_navigation.previous().page == PageId::History)
+                m_navigation.back();
+            else
+                navigate({PageId::Dashboard, m_route.backupId});
+        }
+        else
+        {
+            navigate({PageId::History, m_route.backupId});
+        }
+    });
     connect(m_diff, &HomePageDiffPage::titleChanged, ui->diffTitleLabel, &QLabel::setText);
     connect(new QShortcut(QKeySequence(Qt::Key_Escape), this), &QShortcut::activated, this, [this]
             {
@@ -309,8 +321,15 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
             else
                 returnToApplication();
         }
-        else if (m_route.page == PageId::Diff || m_route.page == PageId::Conflict)
-            navigate({PageId::History, m_route.backupId}); });
+        else if (m_route.page == PageId::Diff)
+            navigate({PageId::History, m_route.backupId});
+        else if (m_route.page == PageId::Conflict)
+        {
+            if (m_navigation.canBack() && m_navigation.previous().page == PageId::History)
+                m_navigation.back();
+            else
+                navigate({PageId::Dashboard, m_route.backupId});
+        } });
     connect(ui->settingsSearch, &QLineEdit::textChanged, this, &MainWindow::updateSettingsSearch);
     connect(ui->clearSettingsSearchButton, &QPushButton::clicked, ui->settingsSearch, &QLineEdit::clear);
     connect(ui->collapseButton, &QToolButton::clicked, this, &MainWindow::toggleSidebar);
@@ -727,10 +746,26 @@ void MainWindow::displayRoute(const Route &route)
     const bool isObject = isObjectPage(route.page);
     ui->tabs->setVisible(isObject);
     const bool isDiff = (route.page == PageId::Diff);
-    ui->returnHistoryButton->setVisible(isDiff);
+    const bool isConflict = (route.page == PageId::Conflict);
+    const bool isStandalone = isDiff || isConflict;
+    ui->returnHistoryButton->setVisible(isStandalone);
+    if (isConflict)
+    {
+        const bool fromHistory = (m_navigation.canBack() && m_navigation.previous().page == PageId::History);
+        const QString text = fromHistory ? "返回历史版本" : "返回概览";
+        ui->returnHistoryButton->setText(text);
+        ui->returnHistoryButton->setToolTip(text + " (Esc)");
+        ui->returnHistoryButton->setAccessibleName(text);
+    }
+    else
+    {
+        ui->returnHistoryButton->setText("返回历史版本");
+        ui->returnHistoryButton->setToolTip("返回历史版本 (Esc)");
+        ui->returnHistoryButton->setAccessibleName("返回历史版本");
+    }
     ui->diffTitleLabel->setVisible(isDiff);
-    ui->historyTab->setVisible(!isDiff && isObject);
-    ui->overviewTab->setVisible(!isDiff && isObject);
+    ui->historyTab->setVisible(!isStandalone && isObject);
+    ui->overviewTab->setVisible(!isStandalone && isObject);
     ui->historyTab->setChecked(route.page == PageId::History);
     ui->overviewTab->setChecked(route.page == PageId::Dashboard);
     ui->generalTab->setChecked(route.page == PageId::GeneralSettings);

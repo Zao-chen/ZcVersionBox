@@ -43,6 +43,7 @@ class Navigation : public QObject
   public:
     explicit Navigation(QObject *parent = nullptr) : QObject(parent) { m_routes.append(Route{}); }
     Route current() const { return m_routes.at(m_index); }
+    Route previous() const { return m_index > 0 ? m_routes.at(m_index - 1) : Route{}; }
     bool canBack() const { return m_index > 0; }
     bool canForward() const { return m_index + 1 < m_routes.size(); }
     void go(const Route &route);

@@ -1289,6 +1289,11 @@ class Regression : public QObject
         dashboard->findChild<QPushButton *>("pullButton")->click(); settle(f.service);
         auto *page = window.findChild<HomePageConflictPage *>();
         QVERIFY(page->isVisible());
+        auto *returnHistory = window.findChild<QToolButton *>("returnHistoryButton");
+        QVERIFY(returnHistory && returnHistory->isVisible());
+        QCOMPARE(returnHistory->text(), QString("返回概览"));
+        QVERIFY(!window.findChild<QToolButton *>("historyTab")->isVisible());
+        QVERIFY(!window.findChild<QToolButton *>("overviewTab")->isVisible());
         auto *local = page->findChild<QPushButton *>("localChoice");
         local->click(); settle(f.service);
         const auto firstTitle = page->findChild<QLabel *>("questionTitle")->text();
