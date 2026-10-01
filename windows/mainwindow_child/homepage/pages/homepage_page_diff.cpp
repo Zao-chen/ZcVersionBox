@@ -133,20 +133,18 @@ class FileDelegate : public QStyledItemDelegate
                           Qt::AlignVCenter | Qt::AlignLeft,
                           QFontMetrics(font).elidedText(index.data().toString(), Qt::ElideRight, titleW));
 
-        // 副标题：父路径与统计 (如 +8 -2)
-        const auto path = index.data(PathRole).toString();
-        const auto parent = path.contains('/') ? path.left(path.lastIndexOf('/')) : QString();
+        // 副标题：仅纯粹统计 (如 +2 / -1)
         const auto summary = index.data(SummaryRole).toString();
+        const QString subText = (!summary.isEmpty() && summary != "-") ? summary : QString();
 
-        QString subText = parent.isEmpty() ? QStringLiteral("/") : parent;
-        if (!summary.isEmpty() && summary != "-")
-            subText += " · " + summary;
-
-        painter->setFont(caption);
-        painter->setPen(colors.secondary);
-        painter->drawText(QRect(textRect.x(), textRect.y() + QFontMetrics(font).height() + 3, textRect.width(), QFontMetrics(caption).height()),
-                          Qt::AlignVCenter | Qt::AlignLeft,
-                          QFontMetrics(caption).elidedText(subText, Qt::ElideMiddle, textRect.width()));
+        if (!subText.isEmpty())
+        {
+            painter->setFont(caption);
+            painter->setPen(colors.secondary);
+            painter->drawText(QRect(textRect.x(), textRect.y() + QFontMetrics(font).height() + 3, textRect.width(), QFontMetrics(caption).height()),
+                              Qt::AlignVCenter | Qt::AlignLeft,
+                              subText);
+        }
 
         painter->restore();
     }
