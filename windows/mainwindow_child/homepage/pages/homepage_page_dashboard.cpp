@@ -70,8 +70,6 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
         button->setIcon(UiStyle::icon("copy"));
     for (auto *button : {ui->openSourceButton, ui->openRepositoryButton})
         button->setIcon(UiStyle::icon("external"));
-    ui->expandButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    ui->expandButton->setIcon(UiStyle::icon("chevron_right"));
     connect(ui->copySourceButton, &QToolButton::clicked, this, [this]
             { QApplication::clipboard()->setText(ui->sourcePathEdit->text()); });
     connect(ui->copyRepositoryButton, &QToolButton::clicked, this, [this]
@@ -86,17 +84,12 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
     m_remoteSwitch->setFocusPolicy(Qt::TabFocus);
     m_remoteSwitch->setAccessibleName("云端同步");
     ui->remoteHeaderLayout->addWidget(m_remoteSwitch);
+    ui->remoteHeaderLayout->setAlignment(m_remoteSwitch, Qt::AlignVCenter);
     ui->remoteLayout->removeWidget(ui->remoteContent);
     m_expander = new oclero::qlementine::Expander(this);
     m_expander->setObjectName("remoteExpander");
     m_expander->setContent(ui->remoteContent);
     ui->remoteLayout->addWidget(m_expander);
-    connect(ui->expandButton, &QToolButton::clicked, m_expander, &oclero::qlementine::Expander::toggleExpanded);
-    connect(m_expander, &oclero::qlementine::Expander::expandedChanged, this, [this]
-            {
-        ui->expandButton->setText(m_expander->expanded() ? "收起配置" : "展开配置");
-        ui->expandButton->setIcon(UiStyle::icon(m_expander->expanded() ? "arrow_down" : "chevron_right"));
-        ui->expandButton->setAccessibleDescription(m_expander->expanded() ? "已展开" : "已折叠"); });
     connect(m_remoteSwitch, &QAbstractButton::toggled, this, &HomePageDashboardPage::remoteToggled);
     connect(ui->remoteUrl, &QLineEdit::editingFinished, this, [this]
             {
@@ -135,6 +128,8 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
             ++m_contextGeneration;
             ++m_requestGeneration;
             ui->remoteUrl->setModified(false);
+            const QSignalBlocker blocker(m_remoteSwitch);
+            m_remoteSwitch->setChecked(false);
             m_expander->setExpanded(false);
         } });
     updateActions();
@@ -169,7 +164,12 @@ void HomePageDashboardPage::setBackup(const QString &id)
     m_active = true;
     refresh();
     const auto state = m_states.value(id);
-    m_expander->setExpanded(state.generation == m_repositoryGeneration && state.expanded);
+    const bool expanded = state.generation == m_repositoryGeneration && state.expanded;
+    m_expander->setExpanded(expanded);
+    {
+        const QSignalBlocker blocker(m_remoteSwitch);
+        m_remoteSwitch->setChecked(expanded);
+    }
     QTimer::singleShot(0, this, [this, id, state]
                        {
         if (m_id == id)
@@ -211,21 +211,29 @@ void HomePageDashboardPage::refresh()
     ui->sizeValue->setText(formatBytes(stats.fileSize));
     ui->cacheValue->setText(formatBytes(stats.cacheSize));
     ui->stateValue->setText(stats.sourceState);
-    const QSignalBlocker blocker(m_remoteSwitch);
-    m_remoteSwitch->setChecked(!stats.remoteUrl.isEmpty());
+    const bool hasRemote = !stats.remoteUrl.isEmpty();
+    const bool editing = (ui->remoteUrl->hasFocus() || ui->remoteUrl->isModified()) && m_remoteSwitch->isChecked();
+    const bool active = hasRemote || editing;
+    {
+        const QSignalBlocker blocker(m_remoteSwitch);
+        m_remoteSwitch->setChecked(active);
+    }
+    m_expander->setExpanded(active);
     if (!ui->remoteUrl->hasFocus() || !ui->remoteUrl->isModified())
     {
         ui->remoteUrl->setText(stats.remoteUrl);
         ui->remoteUrl->setModified(false);
     }
-    ui->openRemoteButton->setEnabled(!stats.remoteUrl.isEmpty());
+    ui->openRemoteButton->setEnabled(hasRemote);
     updateActions(); });
 }
 void HomePageDashboardPage::remoteToggled(bool checked)
 {
     if (!checked)
     {
+        ui->remoteUrl->clearFocus();
         ui->remoteUrl->setModified(false);
+        ui->remoteUrl->clear();
         m_service->removeRemote(m_id, this, completion());
         m_expander->setExpanded(false);
     }
@@ -273,6 +281,7 @@ void HomePageDashboardPage::updateActions()
     m_recheck->setVisible(present && state == BackupSyncState::NeedsAttention);
     for (auto *button : {m_continueResolution, m_recheck})
         button->setEnabled(!busy);
+    m_remoteSwitch->setEnabled(!busy);
     const bool remote = present && !ui->remoteUrl->text().isEmpty();
     ui->pullButton->setEnabled(remote && !busy && state == BackupSyncState::Tracking);
     ui->pushButton->setEnabled(remote && !busy && state == BackupSyncState::Tracking);

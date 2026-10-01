@@ -28,7 +28,7 @@ Navigation 继续使用 PageId / Route 和明确的备份 ID，不依赖显示�
 | windows/mainwindow_presentation.* | 字体/颜色角色、Qlementine 主题、少量样式钩子、通知与 Popover、标准确认 |
 | windows/mainwindow_child/homepage/homepage.* | QListView、数量、名称/路径筛选、空状态 |
 | windows/mainwindow_child/homepage/pages/homepage_page_backup.* | 持久历史模型、提交时间、选择和滚动保持、预览/恢复/对比/编辑反馈 |
-| windows/mainwindow_child/homepage/pages/homepage_page_dashboard.* | 无边框可复制路径、紧凑统计、独立远程 Switch 和 Expander |
+| windows/mainwindow_child/homepage/pages/homepage_page_dashboard.* | 无边框可复制路径、紧凑统计、Switch 统一联动远程 Expander |
 | windows/mainwindow_child/homepage/pages/homepage_page_diff.* | 文件列表、响应式 QSplitter、原始 QPlainTextEdit、语法高亮、AI 展开区 |
 | windows/mainwindow_child/homepage/pages/homepage_page_conflict.* | Designer 冲突页面、逐处选择、保存进度、只读结果预览与最终确认 |
 | windows/mainwindow_child/settingpage/settingpage.* | 独立常规和 AI 页面、即时保存、单个可筛选/可编辑模型框及加载状态 |
@@ -59,7 +59,7 @@ Navigation 继续使用 PageId / Route 和明确的备份 ID，不依赖显示�
 - 内容宽度不足 640 时，文件列表移到 Diff 上方。AI Expander 内容及宿主同时限高，至多 200 且不超过正文宿主的三分之一，避免 sizeHint 额外占用空间。
 - AI 分析请求绑定页面代次、备份 ID、仓库代次。切换路由或仓库失效会停止加载并丢弃旧响应；置顶引起的原生窗口重建不改变业务上下文。隐藏窗口停止 Spinner 动画，原有请求机制不变。
 - AI 模型请求由 SettingsService 管理，绑定服务商和请求代次。Key、URL 或服务商变化使旧请求失效；手动模型名称不要求出现在获取列表中。Spinner 表达异步 AI 请求；Git 和文件操作通过独立后台队列执行，概览另显示忙态。
-- 回填 Switch 不写配置；展开/收起远程 Expander 只改变展示状态。关闭远程 Switch 仍移除已保存的地址，并在附近明确说明。
+- 回填 Switch 不写配置；云端同步由 Switch 统一控制展开与收起，开启时展开配置并聚焦地址输入框，已有配置时默认展开，关闭时收起配置并移除已保存的地址。
 - 删除、重建确认在打开时捕获对象 ID 和仓库代次，默认按钮和焦点均为取消。导航变化不会将确认应用到另一个对象。
 - 通知是主区子浮层，不参与页面布局。长消息在 Popover 中完整、可选择复制；展开详情暂停自动隐藏，关闭后恢复剩余计时。新通知关闭旧详情，Escape/外部点击可关闭，释放弹出窗口后返回焦点。浮层不拥有后台请求或业务提交的生命周期。
 - BackupMonitor 属于应用，由 `main.cpp` 显式启动；500 ms 静默窗口合并事件，最长合并 5 s，完整检查后 30 s 再校验。独立扫描不占服务忙态；自动备份/审计走后台优先级，页面任务默认前台。创建/销毁页面、筛选、刷新和滚动不重建监控。

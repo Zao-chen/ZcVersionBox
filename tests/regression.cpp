@@ -1019,8 +1019,10 @@ class Regression : public QObject
         HomePageDashboardPage dashboard(&service);
         dashboard.setBackup(id);
         settle(service);
-        dashboard.findChild<QToolButton *>("expandButton")->click();
-        dashboard.findChild<QToolButton *>("expandButton")->click();
+        auto *expander = dashboard.findChild<oclero::qlementine::Expander *>("remoteExpander");
+        auto *toggle = dashboard.findChild<oclero::qlementine::Switch *>("remoteSwitch");
+        QVERIFY(!toggle->isChecked());
+        QVERIFY(!expander->expanded());
         QVERIFY(!runGit(service.repoPath(id), {"remote", "get-url", "origin"}).success());
         const auto other = dir.path() + "/other.txt";
         writeFile(other, "other");
@@ -1033,14 +1035,17 @@ class Regression : public QObject
         dashboard.setBackup(otherId);
         settle(service);
         QCOMPARE(url->text(), QString("https://example.test/second.git"));
-        dashboard.findChild<QToolButton *>("expandButton")->click();
-        dashboard.findChild<QToolButton *>("expandButton")->click();
+        QVERIFY(toggle->isChecked());
+        QVERIFY(expander->expanded());
         QCOMPARE(runGit(service.repoPath(otherId), {"remote", "get-url", "origin"}).output.trimmed(), QString("https://example.test/second.git"));
-        auto *toggle = dashboard.findChild<oclero::qlementine::Switch *>("remoteSwitch");
         QTest::keyClick(toggle, Qt::Key_Space);
         QVERIFY(!toggle->isChecked());
+        QVERIFY(!expander->expanded());
         settle(service);
         QVERIFY(!runGit(service.repoPath(otherId), {"remote", "get-url", "origin"}).success());
+        QTest::keyClick(toggle, Qt::Key_Space);
+        QVERIFY(toggle->isChecked());
+        QVERIFY(expander->expanded());
     }
     void historyRowActionsUseClickedVersion()
     {
@@ -2267,7 +2272,7 @@ class Regression : public QObject
         window.navigate({PageId::Dashboard, id});
         settle(service);
         auto *dashboard = window.findChild<HomePageDashboardPage *>();
-        dashboard->findChild<QToolButton *>("expandButton")->click();
+        dashboard->findChild<oclero::qlementine::Switch *>("remoteSwitch")->click();
         QTest::qWait(160);
         capture("compact-expanded");
         auto *sourceField = dashboard->findChild<QLineEdit *>("sourcePathEdit");
