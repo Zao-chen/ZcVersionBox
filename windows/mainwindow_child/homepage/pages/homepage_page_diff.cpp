@@ -2,7 +2,6 @@
 #include "ui_homepage_page_diff.h"
 #include "windows/mainwindow_presentation.h"
 #include <QAction>
-#include <QButtonGroup>
 #include <QClipboard>
 #include <QFileInfo>
 #include <QGuiApplication>
@@ -171,9 +170,7 @@ HomePageDiffPage::HomePageDiffPage(BackupService *service, SettingsService *sett
     UiStyle::text(ui->currentFilePath, UiStyle::FontRole::Body, false);
     UiStyle::text(ui->fileStatusBadge, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->fileStatsBadge, UiStyle::FontRole::Caption, true);
-    UiStyle::text(ui->aiTitle, UiStyle::FontRole::Section, false);
-    UiStyle::text(ui->aiStatus, UiStyle::FontRole::Caption, true);
-    UiStyle::text(ui->analysis, UiStyle::FontRole::Body, false);
+    UiStyle::text(ui->analysisStatus, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->imageNoticeTitle, UiStyle::FontRole::Section, false);
     UiStyle::text(ui->imageNoticeDesc, UiStyle::FontRole::Caption, true);
 
@@ -187,38 +184,24 @@ HomePageDiffPage::HomePageDiffPage(BackupService *service, SettingsService *sett
     m_spinner->setObjectName("analysisSpinner");
     m_spinner->setAccessibleName("AI 正在分析");
     m_spinner->setFixedSize(16, 16);
-    ui->aiHeaderLayout->insertWidget(3, m_spinner);
+    ui->editorToolbarLayout->insertWidget(ui->editorToolbarLayout->indexOf(ui->expandAnalysisButton), m_spinner);
 
-    // AI 卡片装饰与图标
-    ui->aiIcon->setPixmap(UiStyle::icon("sparkles").pixmap(20, 20));
-
-    // Expander 折叠动画容器
+    // 底部 Expander 折叠动画容器（收纳 AI 分析结果，平时不占用主区高度）
     m_expander = new oclero::qlementine::Expander(this);
     m_expander->setObjectName("analysisExpander");
-    ui->aiCardLayout->removeWidget(ui->analysisContent);
+    ui->editorLayout->removeWidget(ui->analysisContent);
     m_expander->setContent(ui->analysisContent);
-    ui->aiCardLayout->addWidget(m_expander);
+    ui->editorLayout->addWidget(m_expander);
 
     ui->expandAnalysisButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-    ui->expandAnalysisButton->setIcon(UiStyle::icon("arrow_down"));
+    ui->expandAnalysisButton->setIcon(UiStyle::icon("chevron_right"));
     connect(ui->expandAnalysisButton, &QToolButton::clicked, m_expander, &oclero::qlementine::Expander::toggleExpanded);
     connect(m_expander, &oclero::qlementine::Expander::expandedChanged, this, [this] {
-        ui->expandAnalysisButton->setText(m_expander->expanded() ? QStringLiteral("收起") : QStringLiteral("展开"));
         ui->expandAnalysisButton->setIcon(UiStyle::icon(m_expander->expanded() ? "arrow_down" : "chevron_right"));
         ui->expandAnalysisButton->setAccessibleDescription(m_expander->expanded() ? "已展开" : "已折叠");
         updateResponsiveLayout();
     });
 
-    // 视图模式单选组
-    m_viewModeGroup = new QButtonGroup(this);
-    m_viewModeGroup->setExclusive(true);
-    m_viewModeGroup->addButton(ui->btnSideBySide);
-    m_viewModeGroup->addButton(ui->btnUnified);
-    m_viewModeGroup->addButton(ui->btnRaw);
-
-    ui->btnSideBySide->setIcon(UiStyle::icon("compare"));
-    ui->btnUnified->setIcon(UiStyle::icon("menu"));
-    ui->btnRaw->setIcon(UiStyle::icon("file"));
     ui->btnCopyPath->setIcon(UiStyle::icon("copy"));
 
     // 页面 Splitter
@@ -231,16 +214,6 @@ HomePageDiffPage::HomePageDiffPage(BackupService *service, SettingsService *sett
     connect(ui->files->selectionModel(), &QItemSelectionModel::currentChanged, this, &HomePageDiffPage::loadFile);
     connect(m_analyze, &QAction::triggered, this, &HomePageDiffPage::analyze);
     connect(ui->btnCopyPath, &QToolButton::clicked, this, &HomePageDiffPage::copyCurrentPath);
-
-    connect(ui->btnSideBySide, &QToolButton::clicked, this, [this] {
-        setViewMode(DiffParser::ViewMode::SideBySide, false);
-    });
-    connect(ui->btnUnified, &QToolButton::clicked, this, [this] {
-        setViewMode(DiffParser::ViewMode::Unified, false);
-    });
-    connect(ui->btnRaw, &QToolButton::clicked, this, [this] {
-        setViewMode(DiffParser::ViewMode::SideBySide, true);
-    });
 
     if (settings)
         connect(settings, &SettingsService::changed, this, &HomePageDiffPage::updateLoadingState);
@@ -283,9 +256,7 @@ void HomePageDiffPage::rememberState()
         m_currentFile,
         m_hasAnalysis && !m_loading ? m_analysisText : QString(),
         ui->files->verticalScrollBar()->value(),
-        m_expander ? m_expander->expanded() : true,
-        m_viewMode,
-        m_rawMode,
+        m_expander ? m_expander->expanded() : false,
         m_fileScrolls};
 }
 
@@ -347,16 +318,6 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
             state = {};
 
         m_fileScrolls = state.scrolls;
-        m_aiExpanded = state.aiExpanded;
-        m_viewMode = state.viewMode;
-        m_rawMode = state.rawMode;
-
-        if (m_rawMode)
-            ui->btnRaw->setChecked(true);
-        else if (m_viewMode == DiffParser::ViewMode::Unified)
-            ui->btnUnified->setChecked(true);
-        else
-            ui->btnSideBySide->setChecked(true);
 
         emit titleChanged(QString("版本对比 · %1 → %2 · %3 个变更文件")
                               .arg(m_diff.oldCommit.isEmpty() ? "初始版本" : m_diff.oldCommit.left(8),
@@ -392,7 +353,8 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
         m_hasAnalysis = !state.analysis.isEmpty();
         m_analysisText = state.analysis;
         ui->analysis->setPlainText(m_analysisText);
-        m_expander->setExpanded(m_hasAnalysis && state.aiExpanded);
+        m_analysisStatus = m_hasAnalysis ? "分析完成" : QString();
+        m_expander->setExpanded(m_hasAnalysis && state.expanded);
 
         updateLoadingState();
         updateResponsiveLayout();
@@ -501,13 +463,7 @@ void HomePageDiffPage::renderCurrentDiff()
     if (ui->content->toPlainText() != m_currentRawDiff)
         ui->content->setPlainText(m_currentRawDiff);
 
-    if (m_rawMode)
-    {
-        ui->diffStack->setCurrentWidget(ui->rawPage);
-        return;
-    }
-
-    // 正常文本或常规二进制提示
+    // 统一永远展示纯正的左右对比结构 (Side-by-Side)
     ui->diffStack->setCurrentWidget(ui->visualPage);
 
     DiffParser::RenderColors renderColors;
@@ -517,27 +473,19 @@ void HomePageDiffPage::renderCurrentDiff()
     renderColors.secondaryText = colors.secondary;
     renderColors.border = colors.separator;
 
-    // 浅淡柔和背景与高亮背景
-    renderColors.addedBg = QColor(colors.added.red(), colors.added.green(), colors.added.blue(), 28);
+    renderColors.addedBg = colors.added;
     renderColors.addedText = colors.added;
-    renderColors.addedWordBg = QColor(colors.added.red(), colors.added.green(), colors.added.blue(), 72);
+    renderColors.addedWordBg = colors.added;
 
-    renderColors.removedBg = QColor(colors.removed.red(), colors.removed.green(), colors.removed.blue(), 28);
+    renderColors.removedBg = colors.removed;
     renderColors.removedText = colors.removed;
-    renderColors.removedWordBg = QColor(colors.removed.red(), colors.removed.green(), colors.removed.blue(), 72);
+    renderColors.removedWordBg = colors.removed;
 
-    renderColors.headerBg = QColor(colors.secondary.red(), colors.secondary.green(), colors.secondary.blue(), 20);
-    renderColors.emptyBg = QColor(colors.secondary.red(), colors.secondary.green(), colors.secondary.blue(), 12);
+    renderColors.headerBg = colors.sidebar;
+    renderColors.emptyBg = colors.sidebar;
 
-    const QString html = DiffParser::renderHtml(m_currentParsedDiff, m_viewMode, renderColors, codeFontFamily);
+    const QString html = DiffParser::renderHtml(m_currentParsedDiff, DiffParser::ViewMode::SideBySide, renderColors, codeFontFamily);
     ui->visualBrowser->setHtml(html);
-}
-
-void HomePageDiffPage::setViewMode(DiffParser::ViewMode mode, bool raw)
-{
-    m_viewMode = mode;
-    m_rawMode = raw;
-    renderCurrentDiff();
 }
 
 void HomePageDiffPage::copyCurrentPath()
@@ -550,17 +498,6 @@ void HomePageDiffPage::copyCurrentPath()
 
 void HomePageDiffPage::refreshTheme()
 {
-    const auto colors = UiStyle::colors();
-
-    // 顶部 AI 卡片边框与背景样式
-    const QColor cardBg = QColor(colors.sidebar.red(), colors.sidebar.green(), colors.sidebar.blue(), 180);
-    ui->aiCard->setStyleSheet(QString("#aiCard { background-color: %1; border: 1px solid %2; border-radius: 12px; }")
-                                  .arg(cardBg.name(QColor::HexArgb), colors.separator.name()));
-
-    // 视图模式分段容器
-    ui->viewModeGroup->setStyleSheet(QString("#viewModeGroup { background-color: %1; border: 1px solid %2; border-radius: 8px; }")
-                                         .arg(colors.sidebar.name(), colors.separator.name()));
-
     m_highlighter->rehighlight();
     ui->files->viewport()->update();
     renderCurrentDiff();
@@ -638,32 +575,32 @@ void HomePageDiffPage::updateLoadingState()
 
     const bool showAnalysis = m_loading || m_hasAnalysis;
     ui->expandAnalysisButton->setVisible(showAnalysis);
-    ui->aiStatus->setVisible(showAnalysis);
-    ui->aiStatus->setText(m_loading ? "正在分析…" : m_analysisStatus);
+    ui->analysisStatus->setVisible(showAnalysis);
+    ui->analysisStatus->setText(m_loading ? "正在分析…" : m_analysisStatus);
     m_expander->setVisible(showAnalysis);
 }
 
 void HomePageDiffPage::updateResponsiveLayout()
 {
-    const bool compact = width() < 680;
+    const bool compact = width() < 640;
     const auto orientation = compact ? Qt::Vertical : Qt::Horizontal;
 
     ui->filesPane->setMinimumWidth(compact ? 0 : 180);
     ui->filesPane->setMinimumHeight(compact ? 120 : 0);
-    ui->filesPane->setMaximumWidth(compact ? QWIDGETSIZE_MAX : 300);
-    ui->filesPane->setMaximumHeight(compact ? 160 : QWIDGETSIZE_MAX);
+    ui->filesPane->setMaximumWidth(compact ? QWIDGETSIZE_MAX : 280);
+    ui->filesPane->setMaximumHeight(compact ? 150 : QWIDGETSIZE_MAX);
 
     if (ui->splitter->orientation() != orientation)
     {
         ui->splitter->setOrientation(orientation);
-        ui->splitter->setSizes(compact ? QList<int>{140, qMax(160, height() - 140)} : QList<int>{240, qMax(240, width() - 240)});
+        ui->splitter->setSizes(compact ? QList<int>{140, qMax(160, height() - 140)} : QList<int>{220, qMax(240, width() - 220)});
     }
     else if (!compact && ui->splitter->sizes().value(0) < 180)
     {
-        ui->splitter->setSizes({240, qMax(240, width() - 240)});
+        ui->splitter->setSizes({220, qMax(240, width() - 220)});
     }
 
-    const auto analysisHeight = qMin(120, qMax(1, ui->editorPane->height() / 3));
+    const auto analysisHeight = qMin(180, qMax(1, ui->editorPane->height() / 3));
     ui->analysisContent->setFixedHeight(analysisHeight);
     m_expander->setMaximumHeight(analysisHeight);
 }
@@ -671,8 +608,8 @@ void HomePageDiffPage::updateResponsiveLayout()
 void HomePageDiffPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-    const auto margin = width() < 680 ? 16 : 24;
-    ui->pageLayout->setContentsMargins(margin, 12, margin, 16);
+    const auto margin = width() < 640 ? 12 : 20;
+    ui->pageLayout->setContentsMargins(margin, 8, margin, 12);
     updateResponsiveLayout();
 }
 

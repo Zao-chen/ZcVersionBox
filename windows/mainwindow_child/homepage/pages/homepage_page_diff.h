@@ -3,7 +3,6 @@
 #include "utils/diff_parser.h"
 #include "utils/settingsservice.h"
 #include "windows/mainwindow_navigation.h"
-#include <QButtonGroup>
 #include <QStandardItemModel>
 #include <QWidget>
 #include <memory>
@@ -48,9 +47,7 @@ class HomePageDiffPage : public QWidget
         quint64 generation{0};
         QString file, analysis;
         int fileScroll{0};
-        bool aiExpanded{true};
-        DiffParser::ViewMode viewMode{DiffParser::ViewMode::SideBySide};
-        bool rawMode{false};
+        bool expanded{false};
         QHash<QString, QPoint> scrolls;
     };
 
@@ -63,7 +60,6 @@ class HomePageDiffPage : public QWidget
     QSyntaxHighlighter *m_highlighter;
     oclero::qlementine::LoadingSpinner *m_spinner;
     oclero::qlementine::Expander *m_expander{nullptr};
-    QButtonGroup *m_viewModeGroup{nullptr};
 
     QHash<QString, ViewState> m_states;
     QHash<QString, QPoint> m_fileScrolls;
@@ -73,9 +69,6 @@ class HomePageDiffPage : public QWidget
     QString m_currentRawDiff;
     quint64 m_generation{0}, m_repositoryGeneration{0}, m_fileGeneration{0};
     bool m_active{false}, m_valid{false}, m_loading{false}, m_hasAnalysis{false};
-    bool m_aiExpanded{true};
-    DiffParser::ViewMode m_viewMode{DiffParser::ViewMode::SideBySide};
-    bool m_rawMode{false};
 
     void rememberState();
     void loadFile();
@@ -83,6 +76,5 @@ class HomePageDiffPage : public QWidget
     void updateLoadingState();
     void updateResponsiveLayout();
     void renderCurrentDiff();
-    void setViewMode(DiffParser::ViewMode mode, bool raw);
     void copyCurrentPath();
 };

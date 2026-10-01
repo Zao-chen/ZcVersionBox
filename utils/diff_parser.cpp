@@ -422,26 +422,42 @@ QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &co
     }
 
     QString html;
-    html.reserve(16384);
+    html.reserve(32768);
+
+    const bool dark = colors.canvas.lightness() < 128;
+    const QString delBg = dark ? "#3d1c21" : "#ffebe9";
+    const QString delWordBg = dark ? "#6a252f" : "#ffc1c0";
+    const QString delText = dark ? "#ff9492" : "#b62324";
+
+    const QString addBg = dark ? "#163824" : "#dafbe1";
+    const QString addWordBg = dark ? "#245c38" : "#aceebb";
+    const QString addText = dark ? "#85e89d" : "#1a7f37";
+
+    const QString emptyBg = dark ? "#1c2128" : "#f6f8fa";
+    const QString headerBg = dark ? "#21262d" : "#f1f3f5";
+    const QString borderColor = dark ? "#30363d" : "#d0d7de";
+    const QString numColor = dark ? "#768390" : "#656d76";
+    const QString textColor = dark ? "#e6edf3" : "#24292f";
 
     html += QString(
         "<html><head><style>"
-        "body { font-family: %1; background-color: %2; color: %3; margin: 0; padding: 12px; }"
-        "table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; line-height: 1.5; }"
-        "td { padding: 3px 6px; vertical-align: top; white-space: pre-wrap; word-break: break-all; }"
-        ".num { width: 38px; text-align: right; user-select: none; color: %4; font-size: 11px; padding-right: 8px; border-right: 1px solid %5; }"
-        ".header-cell { background-color: %6; color: %7; font-weight: 600; font-size: 11px; padding: 6px 12px; border-top: 1px solid %5; border-bottom: 1px solid %5; }"
-        ".del { background-color: %8; color: %9; }"
-        ".add { background-color: %10; color: %11; }"
-        ".empty-cell { background-color: %12; opacity: 0.5; }"
-        ".col-divider { border-right: 1px solid %5; }"
-        "</style></head><body><table>")
-        .arg(fontFamily, colors.canvas.name(), colors.text.name(),
-             colors.secondaryText.name(), colors.border.name(),
-             colors.headerBg.name(), colors.secondaryText.name(),
-             colors.removedBg.name(), colors.removedText.name(),
-             colors.addedBg.name(), colors.addedText.name(),
-             colors.emptyBg.name());
+        "body { font-family: %1; background-color: %2; color: %3; margin: 0; padding: 0; }"
+        "table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; line-height: 1.6; }"
+        "th { font-size: 11px; font-weight: 600; padding: 7px 10px; background-color: %4; color: %5; border-bottom: 2px solid %6; text-align: left; user-select: none; }"
+        "td { padding: 4px 8px; vertical-align: top; white-space: pre-wrap; word-break: break-all; }"
+        ".num { width: 36px; text-align: right; user-select: none; color: %7; font-size: 11px; padding-right: 8px; border-right: 1px solid %6; background-color: %4; }"
+        ".header-cell { background-color: %4; color: %5; font-weight: 600; font-size: 11px; padding: 6px 12px; border-top: 1px solid %6; border-bottom: 1px solid %6; }"
+        ".del-num { background-color: %8; color: %9; border-right: 1px solid %6; }"
+        ".del-text { background-color: %8; color: %9; }"
+        ".add-num { background-color: %10; color: %11; border-right: 1px solid %6; }"
+        ".add-text { background-color: %10; color: %11; }"
+        ".empty-cell { background-color: %12; color: transparent; user-select: none; }"
+        ".col-divider { border-right: 1px solid %6; }"
+        "</style></head><body><table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">"
+        "<tr class=\"top-bar\"><th colspan=\"2\" class=\"col-divider\">修改前 (旧版本)</th><th colspan=\"2\">修改后 (当前版本)</th></tr>")
+        .arg(fontFamily, colors.canvas.name(), textColor,
+             headerBg, colors.secondaryText.name(), borderColor,
+             numColor, delBg, delText, addBg, addText, emptyBg);
 
     if (mode == ViewMode::SideBySide)
     {
@@ -459,29 +475,33 @@ QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &co
             // 左栏 (旧版本)
             if (row.oldType == LineType::Empty)
             {
-                html += "<td class=\"num empty-cell\"></td><td class=\"empty-cell col-divider\"></td>";
+                html += "<td width=\"36\" class=\"num empty-cell\"></td><td width=\"45%\" class=\"empty-cell col-divider\"></td>";
             }
             else
             {
                 QString numStr = row.oldLineNumber > 0 ? QString::number(row.oldLineNumber) : QString();
-                QString cls = (row.oldType == LineType::Deleted) ? "del" : "";
-                QString cellHtml = spansToHtml(row.oldText, row.oldSpans, colors.removedWordBg.name());
-                html += QString("<td class=\"num %1\">%2</td><td class=\"%3 col-divider\">%4</td>")
-                            .arg(cls, numStr, cls, cellHtml);
+                bool isDel = (row.oldType == LineType::Deleted);
+                QString numCls = isDel ? "num del-num" : "num";
+                QString textCls = isDel ? "del-text col-divider" : "col-divider";
+                QString cellHtml = spansToHtml(row.oldText, row.oldSpans, delWordBg);
+                html += QString("<td width=\"36\" class=\"%1\">%2</td><td width=\"45%\" class=\"%3\">%4</td>")
+                            .arg(numCls, numStr, textCls, cellHtml);
             }
 
             // 右栏 (新版本)
             if (row.newType == LineType::Empty)
             {
-                html += "<td class=\"num empty-cell\"></td><td class=\"empty-cell\"></td>";
+                html += "<td width=\"36\" class=\"num empty-cell\"></td><td width=\"45%\" class=\"empty-cell\"></td>";
             }
             else
             {
                 QString numStr = row.newLineNumber > 0 ? QString::number(row.newLineNumber) : QString();
-                QString cls = (row.newType == LineType::Added) ? "add" : "";
-                QString cellHtml = spansToHtml(row.newText, row.newSpans, colors.addedWordBg.name());
-                html += QString("<td class=\"num %1\">%2</td><td class=\"%3\">%4</td>")
-                            .arg(cls, numStr, cls, cellHtml);
+                bool isAdd = (row.newType == LineType::Added);
+                QString numCls = isAdd ? "num add-num" : "num";
+                QString textCls = isAdd ? "add-text" : "";
+                QString cellHtml = spansToHtml(row.newText, row.newSpans, addWordBg);
+                html += QString("<td width=\"36\" class=\"%1\">%2</td><td width=\"45%\" class=\"%3\">%4</td>")
+                            .arg(numCls, numStr, textCls, cellHtml);
             }
 
             html += "</tr>";
@@ -501,23 +521,26 @@ QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &co
             QString oldNumStr = row.oldLineNumber > 0 ? QString::number(row.oldLineNumber) : QString();
             QString newNumStr = row.newLineNumber > 0 ? QString::number(row.newLineNumber) : QString();
 
-            QString cls;
+            QString numCls = "num";
+            QString textCls;
             QString wordBg;
             if (row.type == LineType::Deleted)
             {
-                cls = "del";
-                wordBg = colors.removedWordBg.name();
+                numCls = "num del-num";
+                textCls = "del-text";
+                wordBg = delWordBg;
             }
             else if (row.type == LineType::Added)
             {
-                cls = "add";
-                wordBg = colors.addedWordBg.name();
+                numCls = "num add-num";
+                textCls = "add-text";
+                wordBg = addWordBg;
             }
 
             QString cellHtml = spansToHtml(row.text, row.spans, wordBg);
 
-            html += QString("<tr><td class=\"num %1\">%2</td><td class=\"num %3\">%4</td><td class=\"%5\">%6</td></tr>")
-                        .arg(cls, oldNumStr, cls, newNumStr, cls, cellHtml);
+            html += QString("<tr><td width=\"36\" class=\"%1\">%2</td><td width=\"36\" class=\"%1\">%3</td><td class=\"%4\">%5</td></tr>")
+                        .arg(numCls, oldNumStr, newNumStr, textCls, cellHtml);
         }
     }
 

@@ -2685,6 +2685,8 @@ class BackupCoreRegression : public QObject
         colors.emptyBg = QColor("#f6f8fa");
 
         const auto sbsHtml = DiffParser::renderHtml(parsed, DiffParser::ViewMode::SideBySide, colors, "monospace");
+        QVERIFY(sbsHtml.contains("修改前 (旧版本)"));
+        QVERIFY(sbsHtml.contains("修改后 (当前版本)"));
         QVERIFY(sbsHtml.contains("第 10 行附近的内容变更"));
         QVERIFY(sbsHtml.contains("New</span>"));
         QVERIFY(sbsHtml.contains("Old</span>"));
