@@ -1235,14 +1235,7 @@ class Regression : public QObject
         preview->click(); settle(f.service);
         QVERIFY(page.findChild<QPushButton *>("applyButton")->isVisible());
         QVERIFY(page.findChild<QLabel *>("previewSummary")->text().contains("删除 1"));
-        PreviewUrls urls;
-        page.findChild<QPushButton *>("resultOpen")->click(); settle(f.service);
-        QCOMPARE(urls.urls.size(), 1);
-        const auto copy = urls.urls.first().toLocalFile();
-        QVERIFY(QFileInfo::exists(copy));
-#ifndef Q_OS_WIN
-        QVERIFY(!QFileInfo(copy).permission(QFileDevice::WriteOwner));
-#endif
+        QVERIFY(!page.findChild<QPushButton *>("resultOpen"));
         bool automatic = false;
         for (int i = 0; i < files->model()->rowCount(); ++i)
             if (files->model()->index(i, 0).data().toString().contains("automatic.txt")) automatic = true;

@@ -61,7 +61,6 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
     connect(ui->previousButton, &QPushButton::clicked, this, [this] { moveQuestion(false); });
     connect(ui->nextButton, &QPushButton::clicked, this, [this] { moveQuestion(true); });
     connect(ui->expandContentButton, &QPushButton::toggled, this, [this] { showQuestion(); });
-    connect(ui->resultOpen, &QPushButton::clicked, this, [this] { openPreview(ConflictSide::Result); });
     connect(ui->previewButton, &QPushButton::clicked, this, &HomePageConflictPage::preparePreview);
     connect(ui->applyButton, &QPushButton::clicked, this, &HomePageConflictPage::apply);
     connect(ui->editChoicesButton, &QPushButton::clicked, this, [this]
@@ -437,21 +436,6 @@ void HomePageConflictPage::apply()
         else load();
     });
 }
-void HomePageConflictPage::openPreview(ConflictSide side)
-{
-    const auto path = side == ConflictSide::Result ? m_previewFiles.value(ui->files->currentIndex().row()).path : m_session.files.value(m_file).path;
-    if (path.isEmpty()) return;
-    const auto ctx = context();
-    const auto request = m_contentRequest;
-    const auto session = m_session.id;
-    const auto revision = m_session.revision;
-    m_service->previewSync(m_id, session, path, side, this, [this, ctx, request, session, revision](const OperationResult &result)
-    {
-        if (!current(ctx) || request != m_contentRequest || session != m_session.id || revision != m_session.revision) return;
-        if (!result.success) emit notification(result);
-        else if (!result.path.isEmpty()) openLocalPath(this, result.path);
-    });
-}
 void HomePageConflictPage::updateActions()
 {
     const bool valid = m_active && !m_session.id.isEmpty();
@@ -479,8 +463,6 @@ void HomePageConflictPage::updateActions()
     ui->editChoicesButton->setEnabled(!m_busy);
     ui->applyButton->setVisible(m_preview);
     ui->applyButton->setEnabled(editable && !m_prepared.commit.isEmpty());
-    const int row = ui->files->currentIndex().row();
-    ui->resultOpen->setEnabled(valid && !m_busy && row >= 0 && row < m_previewFiles.size() && m_previewFiles[row].status != "D" && m_previewFiles[row].status != "-");
 }
 void HomePageConflictPage::refreshTheme()
 {

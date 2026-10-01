@@ -48,7 +48,6 @@ class HomePageConflictPage : public QWidget
     void moveQuestion(bool next);
     void preparePreview();
     void apply();
-    void openPreview(ConflictSide side);
     void loadContent(QPlainTextEdit *editor, const QString &path, ConflictSide side, quint64 request);
     void updateActions();
     void updateLayout();
