@@ -145,13 +145,36 @@ void BackupItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &op
     const int mainHeight = QFontMetrics(mainFont).height();
     painter->setFont(mainFont);
     painter->setPen(colors.text);
-    painter->drawText(QRect(content.x(), content.y(), content.width(), mainHeight), Qt::AlignLeft | Qt::AlignVCenter,
-                      QFontMetrics(mainFont).elidedText(index.data().toString(), Qt::ElideRight, content.width()));
+    const auto state = static_cast<BackupSyncState>(index.data(BackupListModel::StateRole).toInt());
+    const bool pending = state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending;
+    const QString name = index.data().toString();
+    const auto fm = QFontMetrics(mainFont);
+    if (pending)
+    {
+        constexpr int dotSize = 7;
+        constexpr int dotSpacing = 6;
+        const int maxTextWidth = qMax(0, content.width() - dotSize - dotSpacing);
+        const QString elided = fm.elidedText(name, Qt::ElideRight, maxTextWidth);
+        const int textWidth = fm.horizontalAdvance(elided);
+        painter->drawText(QRect(content.x(), content.y(), textWidth, mainHeight), Qt::AlignLeft | Qt::AlignVCenter, elided);
+
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(colors.removed);
+        const int dotX = content.x() + textWidth + dotSpacing;
+        const int dotY = content.y() + (mainHeight - dotSize) / 2;
+        painter->drawEllipse(QRect(dotX, dotY, dotSize, dotSize));
+        painter->restore();
+    }
+    else
+    {
+        painter->drawText(QRect(content.x(), content.y(), content.width(), mainHeight), Qt::AlignLeft | Qt::AlignVCenter,
+                          fm.elidedText(name, Qt::ElideRight, content.width()));
+    }
     painter->setFont(captionFont);
     painter->setPen(colors.secondary);
     auto path = QDir::toNativeSeparators(index.data(m_sidebar ? BackupListModel::ParentPathRole : BackupListModel::PathRole).toString());
-    const auto state = static_cast<BackupSyncState>(index.data(BackupListModel::StateRole).toInt());
-    const bool pending = state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending;
     if (pending)
         path = "继续处理 · " + index.data(BackupListModel::StateDetailRole).toString();
     painter->drawText(QRect(content.x(), content.y() + mainHeight + 2, content.width(), QFontMetrics(captionFont).height()), Qt::AlignLeft | Qt::AlignVCenter,

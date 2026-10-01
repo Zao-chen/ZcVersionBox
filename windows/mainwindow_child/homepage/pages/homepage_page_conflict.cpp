@@ -18,16 +18,6 @@ QString displayBytes(const QByteArray &bytes)
     // display and cursor offsets; keep the original bytes in the saved choice.
     return QString::fromUtf8(bytes).replace("\r\n", "\n").replace('\r', '\n');
 }
-QString sideDescription(const ConflictFile &file, bool local, const QDateTime &time)
-{
-    const bool exists = local ? file.localExists : file.remoteExists;
-    if (!exists) return QStringLiteral("此版本中已删除文件");
-    const bool directory = local ? file.localDirectory : file.remoteDirectory;
-    const auto suffix = QFileInfo(file.path).suffix();
-    const auto type = directory ? QStringLiteral("文件夹") : suffix.isEmpty() ? QStringLiteral("文件") : suffix.toUpper() + " 文件";
-    return QString("%1 · %2\n%3").arg(type, formatBytes(local ? file.localSize : file.remoteSize),
-                                      time.toLocalTime().toString("yyyy-MM-dd HH:mm"));
-}
 QString choiceText(const ConflictFile &file, bool local)
 {
     if (!file.wholeFile) return local ? QStringLiteral("保留本地这段") : QStringLiteral("使用云端这段");
@@ -44,7 +34,7 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
 {
     ui->setupUi(this);
     UiStyle::text(ui->pageTitle, UiStyle::FontRole::Object);
-    for (auto *label : {ui->progressLabel, ui->statusLabel, ui->scopeLabel, ui->localMeta, ui->remoteMeta, ui->resultScope, ui->selectionLabel})
+    for (auto *label : {ui->progressLabel, ui->resultScope, ui->selectionLabel})
         UiStyle::text(label, UiStyle::FontRole::Caption, true);
     for (auto *editor : {ui->localContent, ui->remoteContent, ui->resultContent})
     {
@@ -71,9 +61,6 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
     connect(ui->previousButton, &QPushButton::clicked, this, [this] { moveQuestion(false); });
     connect(ui->nextButton, &QPushButton::clicked, this, [this] { moveQuestion(true); });
     connect(ui->expandContentButton, &QPushButton::toggled, this, [this] { showQuestion(); });
-    connect(ui->localOpen, &QPushButton::clicked, this, [this] { openPreview(ConflictSide::Local); });
-    connect(ui->remoteOpen, &QPushButton::clicked, this, [this] { openPreview(ConflictSide::Remote); });
-    connect(ui->resultOpen, &QPushButton::clicked, this, [this] { openPreview(ConflictSide::Result); });
     connect(ui->previewButton, &QPushButton::clicked, this, &HomePageConflictPage::preparePreview);
     connect(ui->applyButton, &QPushButton::clicked, this, &HomePageConflictPage::apply);
     connect(ui->editChoicesButton, &QPushButton::clicked, this, [this]
@@ -107,7 +94,6 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
             ui->localContent->clear();
             ui->remoteContent->clear();
             ui->resultContent->clear();
-            ui->statusLabel->setText("备份对象已删除或重建，请重新打开。");
             updateActions();
         }
     });
@@ -167,7 +153,6 @@ void HomePageConflictPage::load(bool restart, bool resumePreview)
     m_busy = true;
     m_prepared = {};
     ++m_contentRequest;
-    ui->statusLabel->setText(restart ? "正在重新分析，本地源内容保持原样…" : "正在读取并核验处理进度…");
     updateActions();
     const auto reply = [this, ctx, resumePreview](const BackupResult<SyncResolutionSession> &result)
     {
@@ -177,7 +162,6 @@ void HomePageConflictPage::load(bool restart, bool resumePreview)
         {
             m_session.stale = true;
             m_session.staleReason = result.result.message;
-            ui->statusLabel->setText(result.result.title + "：" + result.result.message);
             emit notification(result.result);
             updateActions();
             return;
@@ -282,7 +266,6 @@ void HomePageConflictPage::showQuestion()
     const auto &file = m_session.files[m_file];
     const auto &hunk = file.hunks[m_hunk];
     ui->questionTitle->setText(QString("%1 · 第 %2 / %3 处").arg(file.path).arg(m_hunk + 1).arg(file.hunks.size()));
-    ui->scopeLabel->setText(file.managed ? "选择后不会自动跳转，可以随时改选。" : "仅影响备份仓库：此文件不会写入源位置。");
     ui->localChoice->setText((hunk.choice == ConflictChoice::Local ? QStringLiteral("✓ ") : QString()) + choiceText(file, true));
     ui->remoteChoice->setText((hunk.choice == ConflictChoice::Remote ? QStringLiteral("✓ ") : QString()) + choiceText(file, false));
     const QSignalBlocker localBlock(ui->localChoice), remoteBlock(ui->remoteChoice);
@@ -290,14 +273,6 @@ void HomePageConflictPage::showQuestion()
     ui->remoteChoice->setChecked(hunk.choice == ConflictChoice::Remote);
     ui->selectionLabel->setText(hunk.choice == ConflictChoice::Unresolved ? "尚未选择" : hunk.choice == ConflictChoice::Local ? "已选择本地" : "已选择云端");
     const bool full = file.wholeFile || ui->expandContentButton->isChecked();
-    const auto description = [&](bool local)
-    {
-        if (file.wholeFile) return sideDescription(file, local, local ? m_session.localTime : m_session.remoteTime);
-        const auto scope = full ? QStringLiteral("正在显示完整文件内容") : QStringLiteral("高亮为本处差异，前后各显示三行上下文");
-        return (local ? hunk.local : hunk.remote).isEmpty() ? "本处没有内容（删除或未添加）\n" + scope : scope;
-    };
-    ui->localMeta->setText(description(true));
-    ui->remoteMeta->setText(description(false));
     ui->expandContentButton->setVisible(!file.wholeFile);
     ui->expandContentButton->setText(full ? "收起完整内容" : "展开完整内容");
     for (auto *editor : {ui->localContent, ui->remoteContent}) editor->setExtraSelections({});
@@ -342,7 +317,6 @@ void HomePageConflictPage::choose(ConflictChoice choice)
     const auto ctx = context();
     const auto &file = m_session.files[m_file];
     m_busy = true;
-    ui->statusLabel->setText("正在保存选择…");
     updateActions();
     m_service->chooseSyncResolution(m_id, m_session.id, m_session.revision, file.path, m_hunk, choice, this,
         [this, ctx](const BackupResult<SyncResolutionSession> &reply)
@@ -388,7 +362,6 @@ void HomePageConflictPage::preparePreview()
     if (m_busy || m_session.stale || m_session.id.isEmpty() || m_session.remaining()) return;
     const auto ctx = context();
     m_busy = true;
-    ui->statusLabel->setText("正在整理最终内容…");
     updateActions();
     m_service->prepareSyncApply(m_id, m_session.id, m_session.revision, this, [this, ctx](const BackupResult<PreparedSyncApply> &reply)
     {
@@ -447,7 +420,6 @@ void HomePageConflictPage::apply()
     if (!confirmAction(this, question, "应用并保存版本") || !guard) return;
     if (!current(ctx) || m_prepared.commit != prepared.commit || m_session.revision != prepared.revision || m_session.id != prepared.sessionId) return;
     m_busy = true;
-    ui->statusLabel->setText("正在应用并保存版本…");
     updateActions();
     m_service->applySync(prepared, this, [this, ctx, prepared](const OperationResult &result)
     {
@@ -464,33 +436,15 @@ void HomePageConflictPage::apply()
         else load();
     });
 }
-void HomePageConflictPage::openPreview(ConflictSide side)
-{
-    const auto path = side == ConflictSide::Result ? m_previewFiles.value(ui->files->currentIndex().row()).path : m_session.files.value(m_file).path;
-    if (path.isEmpty()) return;
-    const auto ctx = context();
-    const auto request = m_contentRequest;
-    const auto session = m_session.id;
-    const auto revision = m_session.revision;
-    m_service->previewSync(m_id, session, path, side, this, [this, ctx, request, session, revision](const OperationResult &result)
-    {
-        if (!current(ctx) || request != m_contentRequest || session != m_session.id || revision != m_session.revision) return;
-        if (!result.success) emit notification(result);
-        else if (!result.path.isEmpty()) openLocalPath(this, result.path);
-    });
-}
 void HomePageConflictPage::updateActions()
 {
     const bool valid = m_active && !m_session.id.isEmpty();
     const bool editable = valid && !m_busy && !m_session.stale;
     const bool question = !m_session.files.isEmpty();
     ui->progressLabel->setText(valid ? QString("已处理 %1 / %2 处").arg(m_session.total() - m_session.remaining()).arg(m_session.total()) : QString());
-    if (!m_busy && valid)
-        ui->statusLabel->setText(m_session.stale ? m_session.staleReason + "\n已保存的选择仍可查看，重新分析后才能应用。"
-            : m_session.remaining() ? QString("自动备份已暂停。还需选择 %1 处，全部完成后可预览结果。").arg(m_session.remaining())
-                                    : "自动备份已暂停。请预览并确认最终结果。");
     ui->reanalyzeButton->setVisible(m_session.stale);
     ui->reanalyzeButton->setEnabled(m_active && !m_busy && m_service->syncState(m_id) == BackupSyncState::ResolutionPending);
+    ui->reanalyzeButton->setToolTip(m_session.stale ? m_session.staleReason : QString());
     ui->files->setEnabled(valid && !m_busy);
     ui->questionPage->setSizePolicy(QSizePolicy::Preferred, m_preview ? QSizePolicy::Ignored : QSizePolicy::Preferred);
     ui->previewPage->setSizePolicy(QSizePolicy::Preferred, m_preview ? QSizePolicy::Preferred : QSizePolicy::Ignored);
@@ -502,9 +456,6 @@ void HomePageConflictPage::updateActions()
     const bool otherUnresolved = m_session.remaining() > (m_session.files.value(m_file).hunks.value(m_hunk).choice == ConflictChoice::Unresolved ? 1 : 0);
     ui->nextButton->setEnabled(valid && !m_busy && question && (laterQuestion || otherUnresolved));
     ui->expandContentButton->setEnabled(valid && !m_busy);
-    const auto file = m_session.files.value(m_file);
-    ui->localOpen->setEnabled(valid && !m_busy && file.localExists);
-    ui->remoteOpen->setEnabled(valid && !m_busy && file.remoteExists);
     ui->previewButton->setVisible(!m_preview);
     ui->previewButton->setEnabled(editable && m_session.remaining() == 0);
     ui->previewButton->setToolTip(m_session.remaining() ? QString("还有 %1 处未选择").arg(m_session.remaining()) : QString());
@@ -512,8 +463,6 @@ void HomePageConflictPage::updateActions()
     ui->editChoicesButton->setEnabled(!m_busy);
     ui->applyButton->setVisible(m_preview);
     ui->applyButton->setEnabled(editable && !m_prepared.commit.isEmpty());
-    const int row = ui->files->currentIndex().row();
-    ui->resultOpen->setEnabled(valid && !m_busy && row >= 0 && row < m_previewFiles.size() && m_previewFiles[row].status != "D" && m_previewFiles[row].status != "-");
 }
 void HomePageConflictPage::refreshTheme()
 {

@@ -30,8 +30,7 @@ HomePage::HomePage(BackupService *service, QWidget *parent, BackupListModel *mod
         if (index.isValid())
         {
             const auto id = index.data(BackupListModel::IdRole).toString();
-            const auto state = m_service->syncState(id);
-            emit navigate({state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending ? PageId::Conflict : PageId::History, id});
+            emit navigate({PageId::History, id});
         }
     };
     connect(ui->backupList, &QListView::clicked, this, open);

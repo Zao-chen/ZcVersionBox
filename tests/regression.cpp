@@ -33,6 +33,7 @@
 #include <windows.h>
 #endif
 #include <QMouseEvent>
+#include <QPainter>
 #include <QPersistentModelIndex>
 #include <QPlainTextEdit>
 #include <QPointer>
@@ -1227,15 +1228,6 @@ class Regression : public QObject
         QVERIFY(page.findChild<QPlainTextEdit *>("localContent")->toPlainText().contains("本地第二段"));
         select("project/image.bin");
         QVERIFY(local->text().contains("本地文件"));
-        QVERIFY(page.findChild<QLabel *>("localMeta")->text().contains("BIN"));
-        PreviewUrls urls;
-        page.findChild<QPushButton *>("remoteOpen")->click(); settle(f.service);
-        QCOMPARE(urls.urls.size(), 1);
-        const auto copy = urls.urls.first().toLocalFile();
-        QCOMPARE(readFile(copy), QByteArray("remote\0image", 12));
-#ifndef Q_OS_WIN
-        QVERIFY(!QFileInfo(copy).permission(QFileDevice::WriteOwner));
-#endif
         local->click(); settle(f.service);
         select("project/remove.txt");
         QVERIFY(remote->text().contains("删除文件"));
@@ -1244,6 +1236,7 @@ class Regression : public QObject
         preview->click(); settle(f.service);
         QVERIFY(page.findChild<QPushButton *>("applyButton")->isVisible());
         QVERIFY(page.findChild<QLabel *>("previewSummary")->text().contains("删除 1"));
+        QVERIFY(!page.findChild<QPushButton *>("resultOpen"));
         bool automatic = false;
         for (int i = 0; i < files->model()->rowCount(); ++i)
             if (files->model()->index(i, 0).data().toString().contains("automatic.txt")) automatic = true;
@@ -1290,6 +1283,11 @@ class Regression : public QObject
         dashboard->findChild<QPushButton *>("pullButton")->click(); settle(f.service);
         auto *page = window.findChild<HomePageConflictPage *>();
         QVERIFY(page->isVisible());
+        auto *returnHistory = window.findChild<QToolButton *>("returnHistoryButton");
+        QVERIFY(returnHistory && returnHistory->isVisible());
+        QCOMPARE(returnHistory->text(), QString("返回概览"));
+        QVERIFY(!window.findChild<QToolButton *>("historyTab")->isVisible());
+        QVERIFY(!window.findChild<QToolButton *>("overviewTab")->isVisible());
         auto *local = page->findChild<QPushButton *>("localChoice");
         local->click(); settle(f.service);
         const auto firstTitle = page->findChild<QLabel *>("questionTitle")->text();
@@ -1328,6 +1326,73 @@ class Regression : public QObject
         window.findChild<QToolButton *>("backButton")->click(); settle(f.service);
         QVERIFY(!page->isVisible());
         QVERIFY(f.service.contains(otherId));
+    }
+    void conflictNotificationBadgeAndNormalNavigation()
+    {
+        ResolutionFixture f;
+        f.service.prepareSyncResolution(f.id);
+        settle(f.service);
+        QCOMPARE(f.service.syncState(f.id), BackupSyncState::ResolutionPending);
+
+        FakeAi gateway;
+        SettingsService settings(pathsIn(f.dir), &gateway);
+        MainWindow window(&f.service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen);
+        window.show();
+        window.navigate({});
+        settle(f.service);
+
+        // Sidebar list item clicking navigates to PageId::History, not PageId::Conflict
+        auto *sidebar = window.findChild<QListView *>("sidebarList");
+        QVERIFY(sidebar);
+        auto *model = sidebar->model();
+        QVERIFY(model && model->rowCount() > 0);
+        const auto index = model->index(0, 0);
+        QCOMPARE(index.data(BackupListModel::IdRole).toString(), f.id);
+
+        emit sidebar->clicked(index);
+        settle(f.service);
+
+        auto *pages = window.findChild<QStackedWidget *>("pages");
+        auto *historyPage = window.findChild<HomePageBackupPage *>();
+        auto *conflictPage = window.findChild<HomePageConflictPage *>();
+        QCOMPARE(pages->currentWidget(), historyPage);
+        QVERIFY(!conflictPage->isVisible());
+
+        auto *overviewTab = window.findChild<QToolButton *>("overviewTab");
+        QVERIFY(overviewTab && overviewTab->isVisible());
+        auto *badge = window.findChild<QWidget *>("overviewNotificationBadge");
+        QVERIFY(badge && badge->isVisible());
+        QVERIFY(overviewTab->toolTip().contains("存在同步差异"));
+
+        // Navigating to standalone conflict page hides overview tab and badge
+        window.navigate({PageId::Conflict, f.id});
+        settle(f.service);
+        QCOMPARE(pages->currentWidget(), conflictPage);
+        QVERIFY(!badge->isVisible());
+        QVERIFY(!overviewTab->isVisible());
+
+        // Returning to History shows badge again
+        window.findChild<QToolButton *>("returnHistoryButton")->click();
+        settle(f.service);
+        QCOMPARE(pages->currentWidget(), historyPage);
+        QVERIFY(badge->isVisible());
+        QVERIFY(overviewTab->isVisible());
+
+        // Delegate paints in hovered and selected states without losing font or pen
+        auto *delegate = sidebar->itemDelegate();
+        QStyleOptionViewItem option;
+        option.rect = QRect(0, 0, 200, 52);
+        option.state = QStyle::State_Selected | QStyle::State_MouseOver;
+        QPixmap pixmap(200, 52);
+        pixmap.fill(Qt::transparent);
+        {
+            QPainter painter(&pixmap);
+            delegate->paint(&painter, option, index);
+        }
+        const auto image = pixmap.toImage();
+        QVERIFY(!image.isNull());
+        QVERIFY(image.pixelColor(100, 26).alpha() > 0);
     }
     void conflictFastForwardAndChangedConfirmation()
     {
@@ -1440,8 +1505,6 @@ class Regression : public QObject
         QVERIFY(local->isChecked());
         local->setFocus(Qt::TabFocusReason);
         QTest::keyClick(local, Qt::Key_Tab);
-        QVERIFY(page.findChild<QPushButton *>("localOpen")->hasFocus());
-        QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
         QVERIFY(page.findChild<QPlainTextEdit *>("remoteContent")->hasFocus());
         QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
         auto *remote = page.findChild<QPushButton *>("remoteChoice");
