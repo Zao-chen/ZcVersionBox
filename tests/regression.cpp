@@ -1333,6 +1333,58 @@ class Regression : public QObject
         QVERIFY(!page->isVisible());
         QVERIFY(f.service.contains(otherId));
     }
+    void conflictNotificationBadgeAndNormalNavigation()
+    {
+        ResolutionFixture f;
+        f.service.prepareSyncResolution(f.id);
+        settle(f.service);
+        QCOMPARE(f.service.syncState(f.id), BackupSyncState::ResolutionPending);
+
+        FakeAi gateway;
+        SettingsService settings(pathsIn(f.dir), &gateway);
+        MainWindow window(&f.service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen);
+        window.show();
+        window.navigate({});
+        settle(f.service);
+
+        // Sidebar list item clicking navigates to PageId::History, not PageId::Conflict
+        auto *sidebar = window.findChild<QListView *>("sidebarList");
+        QVERIFY(sidebar);
+        auto *model = sidebar->model();
+        QVERIFY(model && model->rowCount() > 0);
+        const auto index = model->index(0, 0);
+        QCOMPARE(index.data(BackupListModel::IdRole).toString(), f.id);
+
+        emit sidebar->clicked(index);
+        settle(f.service);
+
+        auto *pages = window.findChild<QStackedWidget *>("pages");
+        auto *historyPage = window.findChild<HomePageBackupPage *>();
+        auto *conflictPage = window.findChild<HomePageConflictPage *>();
+        QCOMPARE(pages->currentWidget(), historyPage);
+        QVERIFY(!conflictPage->isVisible());
+
+        auto *overviewTab = window.findChild<QToolButton *>("overviewTab");
+        QVERIFY(overviewTab && overviewTab->isVisible());
+        auto *badge = window.findChild<QWidget *>("overviewNotificationBadge");
+        QVERIFY(badge && badge->isVisible());
+        QVERIFY(overviewTab->toolTip().contains("存在同步差异"));
+
+        // Navigating to standalone conflict page hides overview tab and badge
+        window.navigate({PageId::Conflict, f.id});
+        settle(f.service);
+        QCOMPARE(pages->currentWidget(), conflictPage);
+        QVERIFY(!badge->isVisible());
+        QVERIFY(!overviewTab->isVisible());
+
+        // Returning to History shows badge again
+        window.findChild<QToolButton *>("returnHistoryButton")->click();
+        settle(f.service);
+        QCOMPARE(pages->currentWidget(), historyPage);
+        QVERIFY(badge->isVisible());
+        QVERIFY(overviewTab->isVisible());
+    }
     void conflictFastForwardAndChangedConfirmation()
     {
         ResolutionFixture f(false);

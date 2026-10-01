@@ -16,6 +16,7 @@
 #include <QKeyEvent>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -37,6 +38,27 @@
 
 namespace
 {
+class NotificationDot final : public QWidget
+{
+public:
+    explicit NotificationDot(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        setObjectName("overviewNotificationBadge");
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setFocusPolicy(Qt::NoFocus);
+        setFixedSize(7, 7);
+        hide();
+    }
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(Qt::NoPen);
+        p.setBrush(UiStyle::colors().removed);
+        p.drawEllipse(rect());
+    }
+};
 #ifdef Q_OS_MACOS
 // Qt 6.8 applies the macOS titlebar safe area (the contentLayoutRect inset)
 // as contents margins on widgets that keep WA_ContentsMarginsRespectsSafeArea
@@ -178,6 +200,8 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     ui->sidebar->installEventFilter(this);
     ui->header->installEventFilter(this);
     ui->contextTitle->installEventFilter(this);
+    m_overviewBadge = new NotificationDot(ui->overviewTab);
+    ui->overviewTab->installEventFilter(this);
     connect(ui->windowSplitter, &QSplitter::splitterMoved, this, [this]
             {
         if (ui->sidebar->width() >= 200)
@@ -229,8 +253,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         if (index.isValid())
         {
             const auto id = index.data(BackupListModel::IdRole).toString();
-            const auto state = m_backups->syncState(id);
-            navigate({state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending ? PageId::Conflict : PageId::History, id});
+            navigate({PageId::History, id});
         }
     };
     connect(ui->sidebarList, &QListView::clicked, this, open);
@@ -375,6 +398,10 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         m_conflict->refreshTheme();
         updateHeaderLayout(); });
     connect(backups, &BackupService::trackedItemsChanged, this, &MainWindow::syncBackups);
+    connect(backups, &BackupService::repositoryChanged, this, [this](const QString &id)
+            {
+        if (id == m_route.backupId)
+            updateConflictBadge(); });
     connect(backups, &BackupService::repositoryInvalidated, this, [this](const QString &id)
             {
         if ((m_applicationRoute.page == PageId::Diff || m_applicationRoute.page == PageId::Conflict) && m_applicationRoute.backupId == id)
@@ -415,6 +442,7 @@ void MainWindow::syncBackups()
     m_navigation.retainBackups(ids);
     syncSidebarSelection();
     m_list->refresh();
+    updateConflictBadge();
 }
 void MainWindow::syncSidebarSelection()
 {
@@ -577,6 +605,8 @@ void MainWindow::updateIcons()
     }
     m_actions->refreshIcons();
     ui->sidebarList->viewport()->update();
+    if (m_overviewBadge)
+        m_overviewBadge->update();
 }
 void MainWindow::setToolbar(const QList<QAction *> &actions)
 {
@@ -782,6 +812,7 @@ void MainWindow::displayRoute(const Route &route)
     if (!settingsMode && wasSettingsMode && m_applicationFocus && m_applicationFocus->isVisible() && m_applicationFocus->isEnabled())
         m_applicationFocus->setFocus(Qt::OtherFocusReason);
     m_notifications->raise();
+    updateConflictBadge();
 }
 void MainWindow::updateHeaderLayout()
 {
@@ -802,6 +833,12 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
     if ((watched == ui->header || watched == ui->contextTitle) && event->type() == QEvent::Resize)
         updateHeaderLayout();
+
+    if (watched == ui->overviewTab && (event->type() == QEvent::Resize || event->type() == QEvent::Move) && m_overviewBadge)
+    {
+        m_overviewBadge->move(ui->overviewTab->width() - m_overviewBadge->width() - 3, 3);
+        m_overviewBadge->raise();
+    }
 
     if (watched == ui->sidebar && event->type() == QEvent::Resize)
     {
@@ -846,6 +883,24 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         }
     }
     return QMainWindow::eventFilter(watched, event);
+}
+void MainWindow::updateConflictBadge()
+{
+    const bool isObject = isObjectPage(m_route.page);
+    const auto state = isObject ? m_backups->syncState(m_route.backupId) : BackupSyncState::Tracking;
+    const bool hasConflict = isObject && (state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending);
+    const bool isStandalone = (m_route.page == PageId::Diff || m_route.page == PageId::Conflict);
+    const bool badgeVisible = hasConflict && !isStandalone;
+    if (m_overviewBadge)
+    {
+        m_overviewBadge->setVisible(badgeVisible);
+        if (badgeVisible)
+        {
+            m_overviewBadge->move(ui->overviewTab->width() - m_overviewBadge->width() - 3, 3);
+            m_overviewBadge->raise();
+        }
+    }
+    ui->overviewTab->setToolTip(hasConflict ? "概览 (存在同步差异，请继续处理)" : "概览");
 }
 void MainWindow::notify(const OperationResult &result) { m_notifications->showResult(result); }
 void MainWindow::restoreWindow()

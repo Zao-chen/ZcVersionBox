@@ -74,9 +74,11 @@ class MainWindow : public QMainWindow
     int m_sidebarWidth{224};
     int m_sidebarTargetWidth{-1};
     QVariantAnimation *m_sidebarAnimation{nullptr};
+    QWidget *m_overviewBadge{nullptr};
     void displayRoute(const Route &route);
     void syncBackups();
     void syncSidebarSelection();
+    void updateConflictBadge();
     void restoreWindow();
     void toggleSidebar();
     void animateSidebar(bool show);
