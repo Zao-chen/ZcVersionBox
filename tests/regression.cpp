@@ -33,6 +33,7 @@
 #include <windows.h>
 #endif
 #include <QMouseEvent>
+#include <QPainter>
 #include <QPersistentModelIndex>
 #include <QPlainTextEdit>
 #include <QPointer>
@@ -1377,6 +1378,21 @@ class Regression : public QObject
         QCOMPARE(pages->currentWidget(), historyPage);
         QVERIFY(badge->isVisible());
         QVERIFY(overviewTab->isVisible());
+
+        // Delegate paints in hovered and selected states without losing font or pen
+        auto *delegate = sidebar->itemDelegate();
+        QStyleOptionViewItem option;
+        option.rect = QRect(0, 0, 200, 52);
+        option.state = QStyle::State_Selected | QStyle::State_MouseOver;
+        QPixmap pixmap(200, 52);
+        pixmap.fill(Qt::transparent);
+        {
+            QPainter painter(&pixmap);
+            delegate->paint(&painter, option, index);
+        }
+        const auto image = pixmap.toImage();
+        QVERIFY(!image.isNull());
+        QVERIFY(image.pixelColor(100, 26).alpha() > 0);
     }
     void conflictFastForwardAndChangedConfirmation()
     {

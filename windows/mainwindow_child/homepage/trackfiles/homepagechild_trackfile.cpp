@@ -143,6 +143,8 @@ void BackupItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &op
     const auto mainFont = UiStyle::font(m_sidebar ? UiStyle::FontRole::Sidebar : UiStyle::FontRole::Body);
     const auto captionFont = UiStyle::font(UiStyle::FontRole::Caption);
     const int mainHeight = QFontMetrics(mainFont).height();
+    painter->setFont(mainFont);
+    painter->setPen(colors.text);
     const auto state = static_cast<BackupSyncState>(index.data(BackupListModel::StateRole).toInt());
     const bool pending = state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending;
     const QString name = index.data().toString();
