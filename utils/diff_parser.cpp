@@ -398,16 +398,16 @@ QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &co
         return QString(
             "<html><head><style>"
             "body { font-family: %1; background-color: %2; color: %3; margin: 24px; text-align: center; }"
-            ".notice-box { background: %4; border: 1px solid %5; border-radius: 12px; padding: 32px 16px; margin: 40px auto; max-width: 480px; }"
+            ".notice-box { margin-top: 60px; }"
             ".title { font-size: 15px; font-weight: 600; margin-bottom: 8px; }"
-            ".desc { font-size: 13px; color: %6; }"
+            ".desc { font-size: 13px; color: %4; }"
             "</style></head><body>"
             "<div class=\"notice-box\">"
             "<div class=\"title\">二进制文件变更</div>"
-            "<div class=\"desc\">%7</div>"
+            "<div class=\"desc\">%5</div>"
             "</div></body></html>")
             .arg(fontFamily, colors.canvas.name(), colors.text.name(),
-                 colors.surface.name(), colors.border.name(), colors.secondaryText.name(),
+                 colors.secondaryText.name(),
                  diff.binaryNotice.toHtmlEscaped());
     }
 
