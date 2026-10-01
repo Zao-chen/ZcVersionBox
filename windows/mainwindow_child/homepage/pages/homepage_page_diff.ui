@@ -2,147 +2,125 @@
 <ui version="4.0">
  <class>HomePageDiffPage</class>
  <widget class="QWidget" name="HomePageDiffPage">
-   <layout class="QVBoxLayout" name="pageLayout" stretch="1">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>960</width>
+    <height>640</height>
+   </rect>
+  </property>
+  <layout class="QVBoxLayout" name="pageLayout">
+   <property name="spacing">
+    <number>12</number>
+   </property>
    <property name="leftMargin">
     <number>24</number>
    </property>
    <property name="topMargin">
-    <number>24</number>
+    <number>16</number>
    </property>
    <property name="rightMargin">
     <number>24</number>
    </property>
    <property name="bottomMargin">
-    <number>24</number>
-   </property>
-   <property name="spacing">
-    <number>12</number>
+    <number>16</number>
    </property>
    <item>
-    <widget class="QSplitter" name="splitter">
-     <property name="orientation">
-      <enum>Qt::Horizontal</enum>
+    <widget class="QFrame" name="aiCard">
+     <property name="frameShape">
+      <enum>QFrame::StyledPanel</enum>
      </property>
-     <property name="handleWidth">
-      <number>1</number>
+     <property name="frameShadow">
+      <enum>QFrame::Plain</enum>
      </property>
-     <widget class="QWidget" name="filesPane">
-      <property name="minimumSize">
-       <size>
-        <width>160</width>
-        <height>0</height>
-       </size>
+     <layout class="QVBoxLayout" name="aiCardLayout">
+      <property name="leftMargin">
+       <number>14</number>
       </property>
-      <layout class="QVBoxLayout" name="filesLayout" stretch="0,1">
-       <property name="leftMargin">
-        <number>0</number>
-       </property>
-       <property name="topMargin">
-        <number>0</number>
-       </property>
-       <property name="rightMargin">
-        <number>6</number>
-       </property>
-       <property name="bottomMargin">
-        <number>0</number>
-       </property>
-       <property name="spacing">
-        <number>8</number>
-       </property>
-       <item>
-        <widget class="QLabel" name="filesLabel">
-         <property name="text">
-          <string>变更文件</string>
-         </property>
-         <property name="textFormat">
-          <enum>Qt::PlainText</enum>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QListView" name="files">
-         <property name="frameShape">
-          <enum>QFrame::NoFrame</enum>
-         </property>
-         <property name="horizontalScrollBarPolicy">
-          <enum>Qt::ScrollBarAlwaysOff</enum>
-         </property>
-         <property name="uniformItemSizes">
-          <bool>true</bool>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>0</width>
-           <height>0</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="editorPane">
-      <property name="minimumSize">
-       <size>
-        <width>0</width>
-        <height>0</height>
-       </size>
+      <property name="topMargin">
+       <number>10</number>
       </property>
-      <layout class="QVBoxLayout" name="editorLayout" stretch="0,1,0,0">
-       <property name="leftMargin">
-        <number>6</number>
-       </property>
-       <property name="topMargin">
-        <number>0</number>
-       </property>
-       <property name="rightMargin">
-        <number>0</number>
-       </property>
-       <property name="bottomMargin">
-        <number>0</number>
-       </property>
-       <property name="spacing">
-        <number>8</number>
-       </property>
-       <item>
-        <widget class="QLineEdit" name="filePath">
-         <property name="placeholderText">
-          <string/>
-         </property>
-         <property name="accessibleName">
-          <string/>
-         </property>
-         <property name="minimumSize">
-          <size>
-           <width>0</width>
-           <height>32</height>
-          </size>
-         </property>
-         <property name="readOnly">
-          <bool>true</bool>
-         </property>
-         <property name="frame">
-          <bool>false</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPlainTextEdit" name="content">
-         <property name="readOnly">
-          <bool>true</bool>
-         </property>
-         <property name="frameShape">
-          <enum>QFrame::NoFrame</enum>
-         </property>
-         <property name="lineWrapMode">
-          <enum>QPlainTextEdit::NoWrap</enum>
-         </property>
-         <property name="placeholderText">
-          <string>此版本没有可显示的文本变更。</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="analysisHeaderLayout">
+      <property name="rightMargin">
+       <number>14</number>
+      </property>
+      <property name="bottomMargin">
+       <number>10</number>
+      </property>
+      <property name="spacing">
+       <number>6</number>
+      </property>
+      <item>
+       <layout class="QHBoxLayout" name="aiHeaderLayout">
+        <property name="spacing">
+         <number>8</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="aiIcon">
+          <property name="minimumSize">
+           <size>
+            <width>20</width>
+            <height>20</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>20</width>
+            <height>20</height>
+           </size>
+          </property>
+          <property name="alignment">
+           <set>Qt::AlignCenter</set>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="aiTitle">
+          <property name="font">
+           <font>
+            <bold>true</bold>
+           </font>
+          </property>
+          <property name="text">
+           <string>AI 智能速读</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="aiStatus">
+          <property name="text">
+           <string/>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="aiTitleSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QToolButton" name="expandAnalysisButton">
+          <property name="text">
+           <string>收起</string>
+          </property>
+          <property name="autoRaise">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+       </layout>
+      </item>
+      <item>
+       <widget class="QWidget" name="analysisContent">
+        <layout class="QVBoxLayout" name="analysisLayout">
          <property name="leftMargin">
           <number>0</number>
          </property>
@@ -155,46 +133,72 @@
          <property name="bottomMargin">
           <number>0</number>
          </property>
-         <property name="spacing">
-          <number>8</number>
-         </property>
          <item>
-          <widget class="QToolButton" name="expandAnalysisButton">
-           <property name="text">
-            <string>AI 分析</string>
-           </property>
-           <property name="toolTip">
-            <string>AI 分析</string>
-           </property>
-           <property name="accessibleName">
-            <string>AI 分析</string>
-           </property>
-           <property name="autoRaise">
+          <widget class="QPlainTextEdit" name="analysis">
+           <property name="readOnly">
             <bool>true</bool>
            </property>
-           <property name="focusPolicy">
-            <enum>Qt::TabFocus</enum>
+           <property name="frameShape">
+            <enum>QFrame::NoFrame</enum>
            </property>
-           <property name="minimumSize">
-            <size>
-             <width>28</width>
-             <height>32</height>
-            </size>
+           <property name="placeholderText">
+            <string>分析结果将在这里显示。</string>
            </property>
           </widget>
          </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QSplitter" name="splitter">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="handleWidth">
+      <number>1</number>
+     </property>
+     <widget class="QWidget" name="filesPane">
+      <property name="minimumSize">
+       <size>
+        <width>180</width>
+        <height>0</height>
+       </size>
+      </property>
+      <layout class="QVBoxLayout" name="filesLayout">
+       <property name="leftMargin">
+        <number>0</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>6</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <property name="spacing">
+        <number>8</number>
+       </property>
+       <item>
+        <layout class="QHBoxLayout" name="filesHeaderLayout">
          <item>
-          <widget class="QLabel" name="analysisStatus">
+          <widget class="QLabel" name="filesLabel">
+           <property name="font">
+            <font>
+             <bold>true</bold>
+            </font>
+           </property>
            <property name="text">
-            <string/>
-           </property>
-           <property name="textFormat">
-            <enum>Qt::PlainText</enum>
+            <string>变更文件</string>
            </property>
           </widget>
          </item>
          <item>
-          <spacer name="analysisSpace">
+          <spacer name="filesSpacer">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
            </property>
@@ -206,11 +210,59 @@
            </property>
           </spacer>
          </item>
+         <item>
+          <widget class="QLabel" name="filesCount">
+           <property name="text">
+            <string>0</string>
+           </property>
+          </widget>
+         </item>
         </layout>
        </item>
        <item>
-        <widget class="QWidget" name="analysisContent">
-         <layout class="QVBoxLayout" name="analysisLayout">
+        <widget class="QListView" name="files">
+         <property name="frameShape">
+          <enum>QFrame::NoFrame</enum>
+         </property>
+         <property name="horizontalScrollBarPolicy">
+          <enum>Qt::ScrollBarAlwaysOff</enum>
+         </property>
+         <property name="uniformItemSizes">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="editorPane">
+      <property name="minimumSize">
+       <size>
+        <width>0</width>
+        <height>0</height>
+       </size>
+      </property>
+      <layout class="QVBoxLayout" name="editorLayout">
+       <property name="leftMargin">
+        <number>6</number>
+       </property>
+       <property name="topMargin">
+        <number>0</number>
+       </property>
+       <property name="rightMargin">
+        <number>0</number>
+       </property>
+       <property name="bottomMargin">
+        <number>0</number>
+       </property>
+       <property name="spacing">
+        <number>8</number>
+       </property>
+       <item>
+        <widget class="QFrame" name="editorToolbar">
+         <property name="frameShape">
+          <enum>QFrame::NoFrame</enum>
+         </property>
+         <layout class="QHBoxLayout" name="editorToolbarLayout">
           <property name="leftMargin">
            <number>0</number>
           </property>
@@ -224,22 +276,260 @@
            <number>0</number>
           </property>
           <property name="spacing">
-           <number>0</number>
+           <number>8</number>
           </property>
           <item>
-           <widget class="QPlainTextEdit" name="analysis">
-            <property name="readOnly">
-             <bool>true</bool>
+           <widget class="QLabel" name="currentFilePath">
+            <property name="font">
+             <font>
+              <bold>true</bold>
+             </font>
             </property>
-            <property name="frameShape">
-             <enum>QFrame::NoFrame</enum>
-            </property>
-            <property name="placeholderText">
-             <string>分析结果将在这里显示。</string>
+            <property name="text">
+             <string/>
             </property>
            </widget>
           </item>
+          <item>
+           <widget class="QLabel" name="fileStatusBadge">
+            <property name="text">
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="fileStatsBadge">
+            <property name="text">
+             <string/>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QToolButton" name="btnCopyPath">
+            <property name="toolTip">
+             <string>复制路径</string>
+            </property>
+            <property name="text">
+             <string>复制路径</string>
+            </property>
+            <property name="autoRaise">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="editorToolbarSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size>
+              <width>0</width>
+              <height>0</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QFrame" name="viewModeGroup">
+            <property name="frameShape">
+             <enum>QFrame::StyledPanel</enum>
+            </property>
+            <layout class="QHBoxLayout" name="viewModeLayout">
+             <property name="leftMargin">
+              <number>2</number>
+             </property>
+             <property name="topMargin">
+              <number>2</number>
+             </property>
+             <property name="rightMargin">
+              <number>2</number>
+             </property>
+             <property name="bottomMargin">
+              <number>2</number>
+             </property>
+             <property name="spacing">
+              <number>2</number>
+             </property>
+             <item>
+              <widget class="QToolButton" name="btnSideBySide">
+               <property name="text">
+                <string>左右并排</string>
+               </property>
+               <property name="checkable">
+                <bool>true</bool>
+               </property>
+               <property name="checked">
+                <bool>true</bool>
+               </property>
+               <property name="autoRaise">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QToolButton" name="btnUnified">
+               <property name="text">
+                <string>上下统一</string>
+               </property>
+               <property name="checkable">
+                <bool>true</bool>
+               </property>
+               <property name="autoRaise">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QToolButton" name="btnRaw">
+               <property name="text">
+                <string>原始补丁</string>
+               </property>
+               <property name="checkable">
+                <bool>true</bool>
+               </property>
+               <property name="autoRaise">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
          </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QStackedWidget" name="diffStack">
+         <property name="currentIndex">
+          <number>0</number>
+         </property>
+         <widget class="QWidget" name="visualPage">
+          <layout class="QVBoxLayout" name="visualPageLayout">
+           <property name="leftMargin">
+            <number>0</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <widget class="QTextBrowser" name="visualBrowser">
+             <property name="frameShape">
+              <enum>QFrame::NoFrame</enum>
+             </property>
+             <property name="openExternalLinks">
+              <bool>false</bool>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="rawPage">
+          <layout class="QVBoxLayout" name="rawPageLayout">
+           <property name="leftMargin">
+            <number>0</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <item>
+            <widget class="QPlainTextEdit" name="content">
+             <property name="readOnly">
+              <bool>true</bool>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::NoFrame</enum>
+             </property>
+             <property name="lineWrapMode">
+              <enum>QPlainTextEdit::NoWrap</enum>
+             </property>
+             <property name="placeholderText">
+              <string>此版本没有可显示的文本变更。</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="imagePage">
+          <layout class="QVBoxLayout" name="imagePageLayout">
+           <property name="spacing">
+            <number>12</number>
+           </property>
+           <property name="leftMargin">
+            <number>16</number>
+           </property>
+           <property name="topMargin">
+            <number>24</number>
+           </property>
+           <property name="rightMargin">
+            <number>16</number>
+           </property>
+           <property name="bottomMargin">
+            <number>24</number>
+           </property>
+           <item>
+            <widget class="QLabel" name="imageNoticeTitle">
+             <property name="font">
+              <font>
+               <pointsize>11</pointsize>
+               <bold>true</bold>
+              </font>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignCenter</set>
+             </property>
+             <property name="text">
+              <string>图片或非文本文件</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="imageNoticeDesc">
+             <property name="alignment">
+              <set>Qt::AlignCenter</set>
+             </property>
+             <property name="text">
+              <string/>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QLabel" name="imagePreview">
+             <property name="alignment">
+              <set>Qt::AlignCenter</set>
+             </property>
+             <property name="text">
+              <string/>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <spacer name="imageSpacer">
+             <property name="orientation">
+              <enum>Qt::Vertical</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>0</width>
+               <height>0</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+          </layout>
+         </widget>
         </widget>
        </item>
       </layout>
@@ -248,13 +538,6 @@
    </item>
   </layout>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>oclero::qlementine::Label</class>
-   <extends>QLabel</extends>
-   <header>oclero/qlementine/widgets/Label.hpp</header>
-  </customwidget>
- </customwidgets>
  <resources/>
  <connections/>
 </ui>

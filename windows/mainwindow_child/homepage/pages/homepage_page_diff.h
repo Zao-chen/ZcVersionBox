@@ -1,10 +1,13 @@
 #pragma once
 #include "utils/backupservice.h"
+#include "utils/diff_parser.h"
 #include "utils/settingsservice.h"
 #include "windows/mainwindow_navigation.h"
+#include <QButtonGroup>
 #include <QStandardItemModel>
 #include <QWidget>
 #include <memory>
+
 namespace Ui
 {
 class HomePageDiffPage;
@@ -16,16 +19,18 @@ class LoadingSpinner;
 } // namespace oclero::qlementine
 class QAction;
 class QSyntaxHighlighter;
+
 class HomePageDiffPage : public QWidget
 {
     Q_OBJECT
   public:
     HomePageDiffPage(BackupService *service, SettingsService *settings, AiGateway *gateway, QWidget *parent = nullptr);
-    ~HomePageDiffPage();
+    ~HomePageDiffPage() override;
     void setRevision(const QString &id, const QString &commit);
     void deactivate();
     void refreshTheme();
     QList<QAction *> toolbarActions() const;
+
   signals:
     void navigate(const Route &route);
     void notification(const OperationResult &result);
@@ -43,9 +48,12 @@ class HomePageDiffPage : public QWidget
         quint64 generation{0};
         QString file, analysis;
         int fileScroll{0};
-        bool expanded{false};
+        bool aiExpanded{true};
+        DiffParser::ViewMode viewMode{DiffParser::ViewMode::SideBySide};
+        bool rawMode{false};
         QHash<QString, QPoint> scrolls;
     };
+
     std::unique_ptr<Ui::HomePageDiffPage> ui;
     BackupService *m_service;
     SettingsService *m_settings;
@@ -53,17 +61,28 @@ class HomePageDiffPage : public QWidget
     QStandardItemModel m_model;
     QAction *m_analyze;
     QSyntaxHighlighter *m_highlighter;
-    oclero::qlementine::Expander *m_expander;
     oclero::qlementine::LoadingSpinner *m_spinner;
+    oclero::qlementine::Expander *m_expander{nullptr};
+    QButtonGroup *m_viewModeGroup{nullptr};
+
     QHash<QString, ViewState> m_states;
     QHash<QString, QPoint> m_fileScrolls;
-    QString m_id, m_currentFile, m_analysisStatus;
+    QString m_id, m_currentFile, m_analysisStatus, m_analysisText;
     DiffData m_diff;
+    DiffParser::ParsedDiff m_currentParsedDiff;
+    QString m_currentRawDiff;
     quint64 m_generation{0}, m_repositoryGeneration{0}, m_fileGeneration{0};
     bool m_active{false}, m_valid{false}, m_loading{false}, m_hasAnalysis{false};
+    bool m_aiExpanded{true};
+    DiffParser::ViewMode m_viewMode{DiffParser::ViewMode::SideBySide};
+    bool m_rawMode{false};
+
     void rememberState();
     void loadFile();
     void analyze();
     void updateLoadingState();
     void updateResponsiveLayout();
+    void renderCurrentDiff();
+    void setViewMode(DiffParser::ViewMode mode, bool raw);
+    void copyCurrentPath();
 };
