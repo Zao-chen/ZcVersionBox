@@ -324,6 +324,7 @@ ParsedDiff parse(const QString &rawDiff)
         hunkLines.clear();
     };
 
+    bool hasPreviousHunk = false;
     for (const QString &line : lines)
     {
         auto match = hunkHeaderRegex.match(line);
@@ -335,20 +336,21 @@ ParsedDiff parse(const QString &rawDiff)
             newLineNum = match.captured(3).toInt();
 
             QString section = match.captured(5).trimmed();
-            QString friendlyTitle = QStringLiteral("第 %1 行附近的内容变更").arg(newLineNum);
-            if (!section.isEmpty())
-                friendlyTitle += QStringLiteral(" (%1)").arg(section);
 
-            // 插入 Header 标头行
-            SideBySideRow sbsHeader;
-            sbsHeader.isHeader = true;
-            sbsHeader.headerText = friendlyTitle;
-            result.sideBySideRows.append(sbsHeader);
+            // 首个 Hunk 无需任何多余横栏；后续跨段 Hunk 仅插入弱化的极简断点
+            if (hasPreviousHunk)
+            {
+                SideBySideRow sbsHeader;
+                sbsHeader.isHeader = true;
+                sbsHeader.headerText = section.isEmpty() ? QStringLiteral("···") : QStringLiteral("··· (%1) ···").arg(section);
+                result.sideBySideRows.append(sbsHeader);
 
-            UnifiedRow uniHeader;
-            uniHeader.isHeader = true;
-            uniHeader.headerText = friendlyTitle;
-            result.unifiedRows.append(uniHeader);
+                UnifiedRow uniHeader;
+                uniHeader.isHeader = true;
+                uniHeader.headerText = sbsHeader.headerText;
+                result.unifiedRows.append(uniHeader);
+            }
+            hasPreviousHunk = true;
             continue;
         }
 
@@ -446,7 +448,7 @@ QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &co
         "th { font-size: 11px; font-weight: 600; padding: 7px 10px; background-color: %4; color: %5; border-bottom: 2px solid %6; text-align: left; user-select: none; }"
         "td { padding: 4px 8px; vertical-align: top; white-space: pre-wrap; word-break: break-all; }"
         ".num { width: 36px; text-align: right; user-select: none; color: %7; font-size: 11px; padding-right: 8px; border-right: 1px solid %6; background-color: %4; }"
-        ".header-cell { background-color: %4; color: %5; font-weight: 600; font-size: 11px; padding: 6px 12px; border-top: 1px solid %6; border-bottom: 1px solid %6; }"
+        ".header-cell { background-color: %4; color: %5; font-weight: 500; font-size: 11px; padding: 4px 12px; text-align: center; border-top: 1px dashed %6; border-bottom: 1px dashed %6; letter-spacing: 2px; user-select: none; }"
         ".del-num { background-color: %8; color: %9; border-right: 1px solid %6; }"
         ".del-text { background-color: %8; color: %9; }"
         ".add-num { background-color: %10; color: %11; border-right: 1px solid %6; }"

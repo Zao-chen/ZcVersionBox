@@ -165,20 +165,6 @@
            </widget>
           </item>
           <item>
-           <widget class="QLabel" name="fileStatusBadge">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLabel" name="fileStatsBadge">
-            <property name="text">
-             <string/>
-            </property>
-           </widget>
-          </item>
-          <item>
            <widget class="QToolButton" name="btnCopyPath">
             <property name="toolTip">
              <string>复制相对路径</string>

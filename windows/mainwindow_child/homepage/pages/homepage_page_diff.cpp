@@ -168,8 +168,6 @@ HomePageDiffPage::HomePageDiffPage(BackupService *service, SettingsService *sett
     UiStyle::text(ui->filesLabel, UiStyle::FontRole::Section, false);
     UiStyle::text(ui->filesCount, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->currentFilePath, UiStyle::FontRole::Body, false);
-    UiStyle::text(ui->fileStatusBadge, UiStyle::FontRole::Caption, true);
-    UiStyle::text(ui->fileStatsBadge, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->analysisStatus, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->imageNoticeTitle, UiStyle::FontRole::Section, false);
     UiStyle::text(ui->imageNoticeDesc, UiStyle::FontRole::Caption, true);
@@ -343,11 +341,7 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
         if (m_model.rowCount())
             ui->files->setCurrentIndex(m_model.index(selected, 0));
         else
-        {
             ui->currentFilePath->clear();
-            ui->fileStatusBadge->clear();
-            ui->fileStatsBadge->clear();
-        }
 
         ui->files->verticalScrollBar()->setValue(state.fileScroll);
         m_hasAnalysis = !state.analysis.isEmpty();
@@ -377,26 +371,6 @@ void HomePageDiffPage::loadFile()
 
     ui->currentFilePath->setText(m_currentFile);
     ui->currentFilePath->setToolTip(m_currentFile);
-
-    // 状态徽章与变动标签
-    const auto colors = UiStyle::colors();
-    ui->fileStatusBadge->setText(statusText(status));
-    const auto badgeCol = statusBadgeColor(status, colors);
-    ui->fileStatusBadge->setStyleSheet(QString("background-color: %1; color: %2; border-radius: 4px; padding: 2px 6px; font-weight: 500;")
-                                           .arg(QColor(badgeCol.red(), badgeCol.green(), badgeCol.blue(), 36).name(QColor::HexArgb),
-                                                badgeCol.name()));
-
-    if (!summary.isEmpty() && summary != "-")
-    {
-        ui->fileStatsBadge->setText(summary);
-        ui->fileStatsBadge->setVisible(true);
-        ui->fileStatsBadge->setStyleSheet(QString("background-color: %1; color: %2; border-radius: 4px; padding: 2px 6px;")
-                                              .arg(colors.sidebar.name(), colors.secondary.name()));
-    }
-    else
-    {
-        ui->fileStatsBadge->setVisible(false);
-    }
 
     const auto scroll = m_fileScrolls.value(m_currentFile);
     const auto generation = ++m_fileGeneration;
