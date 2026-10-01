@@ -103,9 +103,10 @@ add_library(zc_services STATIC
     utils/aigateway.h utils/aigateway.cpp
     utils/settingsservice.h utils/settingsservice.cpp
     utils/aiconfighelper.h utils/aiconfighelper.cpp
-    utils/aicommitmessagehelper.h utils/aicommitmessagehelper.cpp)
+    utils/aicommitmessagehelper.h utils/aicommitmessagehelper.cpp
+    utils/diff_parser.h utils/diff_parser.cpp)
 target_include_directories(zc_services PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_link_libraries(zc_services PUBLIC Qt6::Core Qt6::Network ZcAiLib::ZcAiLib)
+target_link_libraries(zc_services PUBLIC Qt6::Core Qt6::Gui Qt6::Network ZcAiLib::ZcAiLib)
 target_link_libraries(zc_services PRIVATE efsw)
 if(APPLE)
     target_sources(zc_services PRIVATE macos/macos_services.h macos/macos_services.mm)

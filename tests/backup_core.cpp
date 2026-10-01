@@ -4,6 +4,7 @@
 #include "utils/backupmonitor.h"
 #include "utils/backupmonitor_catalog.h"
 #include "utils/backupmonitor_scheduler.h"
+#include "utils/diff_parser.h"
 #include <QCoreApplication>
 #include <QFile>
 #include <QJsonArray>
@@ -2646,6 +2647,58 @@ class BackupCoreRegression : public QObject
         const auto interrupted = record(service, id);
         QCOMPARE(readFile(interrupted.recoveryPaths.first() + "/old"), QByteArray("one\n"));
         QCOMPARE(readFile(service.repoPath(id) + "/source.txt"), QByteArray("two\n"));
+    }
+    void diffParserParsesAndRenders()
+    {
+        const QString sampleDiff =
+            "diff --git a/doc.txt b/doc.txt\n"
+            "index 1234567..89abcdef 100644\n"
+            "--- a/doc.txt\n"
+            "+++ b/doc.txt\n"
+            "@@ -10,3 +10,4 @@ Section One\n"
+            " Context line\n"
+            "-Old price ¥19\n"
+            "+New price ¥29\n"
+            "+Added feature line\n"
+            " Tail line\n";
+
+        const auto parsed = DiffParser::parse(sampleDiff);
+        QCOMPARE(parsed.isBinary, false);
+        QCOMPARE(parsed.addedCount, 2);
+        QCOMPARE(parsed.deletedCount, 1);
+        QVERIFY(!parsed.sideBySideRows.isEmpty());
+        QVERIFY(!parsed.unifiedRows.isEmpty());
+
+        DiffParser::RenderColors colors;
+        colors.canvas = QColor("#ffffff");
+        colors.surface = QColor("#f6f8fa");
+        colors.text = QColor("#24292f");
+        colors.secondaryText = QColor("#57606a");
+        colors.border = QColor("#d0d7de");
+        colors.addedBg = QColor("#dafbe1");
+        colors.addedText = QColor("#1a7f37");
+        colors.addedWordBg = QColor("#aceebb");
+        colors.removedBg = QColor("#ffebe9");
+        colors.removedText = QColor("#cf222e");
+        colors.removedWordBg = QColor("#ffc1c0");
+        colors.headerBg = QColor("#f6f8fa");
+        colors.emptyBg = QColor("#f6f8fa");
+
+        const auto sbsHtml = DiffParser::renderHtml(parsed, DiffParser::ViewMode::SideBySide, colors, "monospace");
+        QVERIFY(sbsHtml.contains("第 10 行附近的内容变更"));
+        QVERIFY(sbsHtml.contains("New</span>"));
+        QVERIFY(sbsHtml.contains("Old</span>"));
+        QVERIFY(sbsHtml.contains("price"));
+
+        const auto uniHtml = DiffParser::renderHtml(parsed, DiffParser::ViewMode::Unified, colors, "monospace");
+        QVERIFY(uniHtml.contains("第 10 行附近的内容变更"));
+        QVERIFY(uniHtml.contains("Added feature line"));
+
+        const auto binaryDiff = "Binary files a/img.png and b/img.png differ\n";
+        const auto parsedBinary = DiffParser::parse(binaryDiff);
+        QCOMPARE(parsedBinary.isBinary, true);
+        const auto binHtml = DiffParser::renderHtml(parsedBinary, DiffParser::ViewMode::SideBySide, colors, "monospace");
+        QVERIFY(binHtml.contains("二进制文件变更"));
     }
 
   private:
