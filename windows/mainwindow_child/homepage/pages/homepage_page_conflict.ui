@@ -2,7 +2,7 @@
 <ui version="4.0">
  <class>HomePageConflictPage</class>
  <widget class="QWidget" name="HomePageConflictPage">
-  <layout class="QVBoxLayout" name="pageLayout" stretch="0,0,0,1,0">
+  <layout class="QVBoxLayout" name="pageLayout" stretch="0,0,1,0">
    <property name="leftMargin">
     <number>16</number>
    </property>
@@ -70,19 +70,6 @@
        </widget>
       </item>
      </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="QLabel" name="statusLabel">
-     <property name="text">
-      <string>正在读取处理进度…</string>
-     </property>
-     <property name="textFormat">
-      <enum>Qt::PlainText</enum>
-     </property>
-     <property name="wordWrap">
-      <bool>true</bool>
-     </property>
     </widget>
    </item>
    <item>
@@ -178,7 +165,7 @@
         <item>
          <widget class="QStackedWidget" name="modeStack">
           <widget class="QWidget" name="questionPage">
-           <layout class="QVBoxLayout" name="questionLayout" stretch="0,0,1,0,0">
+           <layout class="QVBoxLayout" name="questionLayout" stretch="0,1,0,0">
             <property name="leftMargin">
              <number>0</number>
             </property>
@@ -196,19 +183,6 @@
             </property>
             <item>
              <widget class="QLabel" name="questionTitle">
-              <property name="text">
-               <string />
-              </property>
-              <property name="textFormat">
-               <enum>Qt::PlainText</enum>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="scopeLabel">
               <property name="text">
                <string />
               </property>
@@ -240,7 +214,7 @@
                </property>
                <item>
                 <widget class="QWidget" name="localPane">
-                 <layout class="QVBoxLayout" name="localLayout" stretch="0,0,1,0,0">
+                 <layout class="QVBoxLayout" name="localLayout" stretch="0,1,0">
                   <property name="leftMargin">
                    <number>0</number>
                   </property>
@@ -260,19 +234,6 @@
                    <widget class="QLabel" name="localTitle">
                     <property name="text">
                      <string>此电脑上的内容</string>
-                    </property>
-                    <property name="textFormat">
-                     <enum>Qt::PlainText</enum>
-                    </property>
-                    <property name="wordWrap">
-                     <bool>true</bool>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QLabel" name="localMeta">
-                    <property name="text">
-                     <string />
                     </property>
                     <property name="textFormat">
                      <enum>Qt::PlainText</enum>
@@ -308,22 +269,12 @@
                     </property>
                    </widget>
                   </item>
-                  <item>
-                   <widget class="QPushButton" name="localOpen">
-                    <property name="text">
-                     <string>打开只读副本</string>
-                    </property>
-                    <property name="autoDefault">
-                     <bool>false</bool>
-                    </property>
-                   </widget>
-                  </item>
                  </layout>
                 </widget>
                </item>
                <item>
                 <widget class="QWidget" name="remotePane">
-                 <layout class="QVBoxLayout" name="remoteLayout" stretch="0,0,1,0,0">
+                 <layout class="QVBoxLayout" name="remoteLayout" stretch="0,1,0">
                   <property name="leftMargin">
                    <number>0</number>
                   </property>
@@ -353,19 +304,6 @@
                    </widget>
                   </item>
                   <item>
-                   <widget class="QLabel" name="remoteMeta">
-                    <property name="text">
-                     <string />
-                    </property>
-                    <property name="textFormat">
-                     <enum>Qt::PlainText</enum>
-                    </property>
-                    <property name="wordWrap">
-                     <bool>true</bool>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
                    <widget class="QPlainTextEdit" name="remoteContent">
                     <property name="readOnly">
                      <bool>true</bool>
@@ -385,16 +323,6 @@
                    <widget class="QPushButton" name="remoteChoice">
                     <property name="text">
                      <string>使用云端这段</string>
-                    </property>
-                    <property name="autoDefault">
-                     <bool>false</bool>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QPushButton" name="remoteOpen">
-                    <property name="text">
-                     <string>打开只读副本</string>
                     </property>
                     <property name="autoDefault">
                      <bool>false</bool>

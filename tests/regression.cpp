@@ -1227,15 +1227,6 @@ class Regression : public QObject
         QVERIFY(page.findChild<QPlainTextEdit *>("localContent")->toPlainText().contains("本地第二段"));
         select("project/image.bin");
         QVERIFY(local->text().contains("本地文件"));
-        QVERIFY(page.findChild<QLabel *>("localMeta")->text().contains("BIN"));
-        PreviewUrls urls;
-        page.findChild<QPushButton *>("remoteOpen")->click(); settle(f.service);
-        QCOMPARE(urls.urls.size(), 1);
-        const auto copy = urls.urls.first().toLocalFile();
-        QCOMPARE(readFile(copy), QByteArray("remote\0image", 12));
-#ifndef Q_OS_WIN
-        QVERIFY(!QFileInfo(copy).permission(QFileDevice::WriteOwner));
-#endif
         local->click(); settle(f.service);
         select("project/remove.txt");
         QVERIFY(remote->text().contains("删除文件"));
@@ -1244,6 +1235,14 @@ class Regression : public QObject
         preview->click(); settle(f.service);
         QVERIFY(page.findChild<QPushButton *>("applyButton")->isVisible());
         QVERIFY(page.findChild<QLabel *>("previewSummary")->text().contains("删除 1"));
+        PreviewUrls urls;
+        page.findChild<QPushButton *>("resultOpen")->click(); settle(f.service);
+        QCOMPARE(urls.urls.size(), 1);
+        const auto copy = urls.urls.first().toLocalFile();
+        QVERIFY(QFileInfo::exists(copy));
+#ifndef Q_OS_WIN
+        QVERIFY(!QFileInfo(copy).permission(QFileDevice::WriteOwner));
+#endif
         bool automatic = false;
         for (int i = 0; i < files->model()->rowCount(); ++i)
             if (files->model()->index(i, 0).data().toString().contains("automatic.txt")) automatic = true;
@@ -1440,8 +1439,6 @@ class Regression : public QObject
         QVERIFY(local->isChecked());
         local->setFocus(Qt::TabFocusReason);
         QTest::keyClick(local, Qt::Key_Tab);
-        QVERIFY(page.findChild<QPushButton *>("localOpen")->hasFocus());
-        QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
         QVERIFY(page.findChild<QPlainTextEdit *>("remoteContent")->hasFocus());
         QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
         auto *remote = page.findChild<QPushButton *>("remoteChoice");
