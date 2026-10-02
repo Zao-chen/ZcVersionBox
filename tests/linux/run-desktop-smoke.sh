@@ -7,12 +7,15 @@ test_program=$(realpath "${1:?Isolated zc_tests executable required}")
 mkdir -p "${2:?Artifact directory required}"
 artifacts=$(realpath "$2")
 export LIBGL_ALWAYS_SOFTWARE=1
-# Ensure openbox has a valid menu file so it does not exit on startup (CI runners
-# often lack /var/lib/openbox/debian-menu.xml).
+# Ensure openbox has a valid menu file so it does not exit on startup.
+# CI runners may lack /var/lib/openbox/debian-menu.xml, and Docker runtime
+# containers run as an unprivileged user without sudo.  A user-level config
+# takes precedence and requires no elevated permissions.
+_ob_menu='<?xml version="1.0" encoding="utf-8"?>
+<openbox_menu xmlns="http://openbox.org/3.4/menu"><menu id="root-menu" label="Openbox"></menu></openbox_menu>'
 if [[ ! -f /var/lib/openbox/debian-menu.xml ]]; then
-    sudo mkdir -p /var/lib/openbox
-    printf '<?xml version="1.0" encoding="utf-8"?>\n<openbox_menu xmlns="http://openbox.org/3.4/menu"><menu id="root-menu" label="Openbox"></menu></openbox_menu>\n' \
-        | sudo tee /var/lib/openbox/debian-menu.xml >/dev/null
+    mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/openbox"
+    printf '%s\n' "$_ob_menu" > "${XDG_CONFIG_HOME:-$HOME/.config}/openbox/menu.xml"
 fi
 QT_QPA_PLATFORM=xcb ZCVERSIONBOX_EXPECTED_QPA=xcb ZCVERSIONBOX_SMOKE_OUTPUT="$artifacts/x11.png" \
     xvfb-run -a -s '-screen 0 1280x900x24' bash -c '
