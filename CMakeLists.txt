@@ -103,6 +103,7 @@ add_library(zc_services STATIC
     utils/backup_engine.h utils/backup_engine.cpp
     utils/aigateway.h utils/aigateway.cpp
     utils/settingsservice.h utils/settingsservice.cpp
+    utils/update_service.h utils/update_service.cpp
     utils/aiconfighelper.h utils/aiconfighelper.cpp
     utils/aicommitmessagehelper.h utils/aicommitmessagehelper.cpp
     utils/diff_parser.h utils/diff_parser.cpp)
