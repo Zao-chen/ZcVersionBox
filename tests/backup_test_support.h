@@ -167,6 +167,20 @@ class TestBackupService : public BackupService
         return awaitBackup<OperationResult>([&](auto f)
                                             { BackupService::resolvePull(request, apply, this, f); });
     }
+    TagRequest tagRequest(const QString &id, const QString &commit, const QString &name, const QString &oid = {})
+    { return {id, commit, repositoryGeneration(id), name, oid}; }
+    BackupResult<PreparedRebuild> prepareRebuild(const QString &id)
+    { return awaitBackup<BackupResult<PreparedRebuild>>([&](auto f) { BackupService::prepareRebuild(id, this, f); }); }
+    OperationResult rebuild(const PreparedRebuild &r)
+    { return awaitBackup<OperationResult>([&](auto f) { BackupService::rebuild(r, this, f); }); }
+    OperationResult resolveTagConflict(const QString &id, const TagConflict &c, const QString &name)
+    { return awaitBackup<OperationResult>([&](auto f) { BackupService::resolveTagConflict(id, c, name, this, f); }); }
+    OperationResult createTag(const TagRequest &r)
+    { return awaitBackup<OperationResult>([&](auto f) { BackupService::createTag(r, this, f); }); }
+    OperationResult renameTag(const TagRequest &r, const QString &name)
+    { return awaitBackup<OperationResult>([&](auto f) { BackupService::renameTag(r, name, this, f); }); }
+    OperationResult removeTag(const TagRequest &r)
+    { return awaitBackup<OperationResult>([&](auto f) { BackupService::removeTag(r, this, f); }); }
     OperationResult editMessage(const QString &id, const QString &commit, const QString &message)
     {
         return awaitBackup<OperationResult>([&](auto f)

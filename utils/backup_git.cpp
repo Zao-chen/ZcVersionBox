@@ -4,6 +4,8 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTimeZone>
+#include <QSet>
+#include <algorithm>
 
 GitRepository::GitRepository(QString path, GitRunner runner, std::shared_ptr<std::atomic_bool> cancel)
     : m_path(std::move(path)), m_runner(std::move(runner)), m_cancel(std::move(cancel)) {}
@@ -107,20 +109,71 @@ BackupResult<QString> GitRepository::stagedState(const QString &managedPath) con
 }
 BackupResult<QVector<Revision>> GitRepository::history() const
 {
-    const auto r = run({"log", "-z", "--format=%H%x00%h%x00%ct%x00%s"});
-    if (!r.success())
-        return {outcome(r, "打开备份失败")};
+    const auto marked = tags();
+    if (!marked.result.success) return {marked.result};
+    auto result = run({"log", "-z", "--format=%H%x00%h%x00%ct%x00%s", "HEAD", "--"});
+    if (!result.success()) return {outcome(result, "打开备份失败")};
     QVector<Revision> revisions;
-    const auto fields = r.output.split(QChar(0), Qt::KeepEmptyParts);
-    for (qsizetype i = 0; i + 3 < fields.size(); i += 4)
+    QSet<QString> seen;
+    const auto append = [&](const QString &output) -> bool
     {
-        bool valid = false;
-        const auto time = fields[i + 2].toLongLong(&valid);
-        if (!valid || fields[i].isEmpty())
-            return {OperationResult::fail("打开备份失败", "无法读取提交记录")};
-        revisions.append({fields[i], fields[i + 3], QDateTime::fromSecsSinceEpoch(time, QTimeZone::UTC), fields[i + 1]});
+        const auto fields = output.split(QChar(0), Qt::KeepEmptyParts);
+        for (qsizetype i = 0; i + 3 < fields.size(); i += 4)
+        {
+            bool valid = false;
+            const auto time = fields[i + 2].toLongLong(&valid);
+            if (!valid || fields[i].isEmpty()) return false;
+            if (seen.contains(fields[i])) continue;
+            seen.insert(fields[i]);
+            revisions.append({fields[i], fields[i + 3], QDateTime::fromSecsSinceEpoch(time, QTimeZone::UTC), fields[i + 1], {}});
+        }
+        return true;
+    };
+    if (!append(result.output)) return {OperationResult::fail("打开备份失败", "无法读取提交记录")};
+    const auto historyCount = revisions.size();
+    QStringList extra;
+    QSet<QString> extraSeen;
+    const auto appendExtra = [&](const QString &oid)
+    {
+        if (!seen.contains(oid) && !extraSeen.contains(oid))
+        {
+            extra.append(oid);
+            extraSeen.insert(oid);
+        }
+    };
+    const auto retained = tagRefs("refs/zcversionbox-history/");
+    if (!retained.result.success) return {retained.result};
+    for (const auto &oid : retained.value) appendExtra(oid);
+    for (const auto &tag : marked.value) appendExtra(tag.commitOid);
+    // Bound command-line length on Windows, while avoiding one Git process per row.
+    for (int offset = 0; offset < extra.size(); offset += 100)
+    {
+        QStringList args{"log", "--no-walk=unsorted", "-z", "--format=%H%x00%h%x00%ct%x00%s"};
+        args += extra.mid(offset, 100); args << "--";
+        result = run(args);
+        if (!result.success()) return {outcome(result)};
+        if (!append(result.output)) return {OperationResult::fail("打开备份失败", "无法读取里程碑")};
     }
-    return {OperationResult::ok({}), revisions};
+    QMap<QString, QVector<VersionTag>> byCommit;
+    for (const auto &tag : marked.value) byCommit[tag.commitOid].append(tag);
+    for (auto &revision : revisions) revision.tags = byCommit.value(revision.hash);
+    if (historyCount == revisions.size()) return {OperationResult::ok({}), revisions};
+    // Keep Git's ordering of the active history, including clock-skewed parents.
+    // Insert standalone marked versions by time without displacing the current HEAD.
+    auto standalone = revisions.mid(historyCount);
+    std::stable_sort(standalone.begin(), standalone.end(), [](const Revision &a, const Revision &b) { return a.committedAt > b.committedAt; });
+    QVector<Revision> merged;
+    merged.reserve(revisions.size());
+    qsizetype active = 0;
+    if (historyCount > 0) merged.append(revisions[active++]);
+    for (const auto &revision : standalone)
+    {
+        while (active < historyCount && revisions[active].committedAt >= revision.committedAt)
+            merged.append(revisions[active++]);
+        merged.append(revision);
+    }
+    while (active < historyCount) merged.append(revisions[active++]);
+    return {OperationResult::ok({}), merged};
 }
 BackupResult<DiffData> GitRepository::diff(const QString &revision) const
 {
@@ -287,7 +340,7 @@ OperationResult GitRepository::push(bool forceWithLease, const QString &expected
     const auto remote = remoteName();
     if (!remote.result.success)
         return remote.result;
-    QStringList args{"push", "--set-upstream"};
+    QStringList args{"push", "--set-upstream", "--no-follow-tags"};
     if (forceWithLease)
         args << "--force-with-lease=" + target.value + ":" + expectedRemote;
     args << remote.value << "HEAD:" + target.value;

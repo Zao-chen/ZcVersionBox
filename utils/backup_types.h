@@ -53,6 +53,36 @@ struct TrackedItem
     QString stateDetail;
 };
 
+struct VersionTag
+{
+    QString name, refOid, commitOid;
+};
+struct TagRefChange
+{
+    QString name, before, after;
+};
+struct TagRemoteState
+{
+    QMap<QString, QString> base, pending, conflicts;
+    QString rebuildHead, rebuildExpected, lastUploadedHead;
+};
+struct TagRequest
+{
+    QString id, commit;
+    quint64 generation{0};
+    QString name, expectedOid;
+};
+struct TagConflict
+{
+    QString name, localOid, remoteOid, endpoint;
+};
+struct PreparedRebuild
+{
+    QString id, head, endpoint;
+    quint64 generation{0};
+    QMap<QString, QString> tags, remoteTags;
+    QString remoteHead;
+};
 struct BackupRecord
 {
     QString id, sourcePath, repositoryPath;
@@ -63,6 +93,10 @@ struct BackupRecord
     SourceFingerprint fingerprint;
     QStringList recoveryPaths;
     QString resolutionSession, resolutionHead;
+    QMap<QString, TagRemoteState> tagRemotes;
+    QVector<TagRefChange> tagJournal;
+    quint64 tagRevision{0};
+    QString tagEndpoint;
     TrackedItem item() const;
 };
 
@@ -79,6 +113,7 @@ struct Revision
     QString hash, message;
     QDateTime committedAt;
     QString shortHash;
+    QVector<VersionTag> tags;
 };
 struct DiffFile
 {
@@ -158,3 +193,6 @@ struct BackupResult
 
 QString backupStateText(BackupSyncState state);
 Q_DECLARE_METATYPE(BackupSyncState)
+
+Q_DECLARE_METATYPE(VersionTag)
+Q_DECLARE_METATYPE(QVector<VersionTag>)

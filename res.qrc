@@ -28,6 +28,7 @@
   <file alias="chevron_right.svg">res/icons/chevron_right.svg</file>
   <file alias="external.svg">res/icons/external.svg</file>
   <file alias="sparkles.svg">res/icons/sparkles.svg</file>
+  <file alias="milestone.svg">res/icons/milestone.svg</file>
  </qresource>
  <qresource prefix="/themes">
   <file alias="light.json">res/themes/light.json</file>

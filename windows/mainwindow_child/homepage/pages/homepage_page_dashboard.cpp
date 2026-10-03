@@ -110,7 +110,8 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
         {
             if (!isCurrent(id, generation, context)) return;
             emit notification(reply.result);
-            if (reply.result.success && !reply.value.id.isEmpty()) emit navigate({PageId::Conflict, id});
+            if (!m_service->tagConflicts(id).isEmpty()) emit navigate({PageId::History, id});
+            else if (reply.result.success && !reply.value.id.isEmpty()) emit navigate({PageId::Conflict, id});
             else refresh();
         });
     });
@@ -254,7 +255,8 @@ BackupService::Completion HomePageDashboardPage::completion()
         if (isCurrent(id, generation, context))
         {
             emit notification(result);
-            refresh();
+            if (!m_service->tagConflicts(id).isEmpty()) emit navigate({PageId::History, id});
+            else refresh();
         }
     };
 }

@@ -6,8 +6,69 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSaveFile>
+#include <QRegularExpression>
 #include <QUuid>
 
+namespace
+{
+QJsonObject tagMapJson(const QMap<QString, QString> &map)
+{
+    QJsonObject json;
+    for (auto it = map.cbegin(); it != map.cend(); ++it) json.insert(it.key(), it.value());
+    return json;
+}
+bool readTagMap(const QJsonValue &value, QMap<QString, QString> &map)
+{
+    if (!value.isObject()) return false;
+    static const QRegularExpression oid("^(?:[0-9a-f]{40}|[0-9a-f]{64})?$");
+    const auto json = value.toObject();
+    for (auto it = json.begin(); it != json.end(); ++it)
+    {
+        if (it.key().isEmpty() || !it.value().isString() || !oid.match(it.value().toString()).hasMatch()) return false;
+        map.insert(it.key(), it.value().toString());
+    }
+    return true;
+}
+bool readTagState(const QJsonValue &value, BackupRecord &record)
+{
+    if (value.isUndefined()) return true;
+    if (!value.isObject()) return false;
+    const auto state = value.toObject();
+    if (state["format"].toInt() != 1 || !state["remotes"].isObject() || !state["journal"].isArray()) return false;
+    record.tagRevision = state["revision"].toString().toULongLong();
+    record.tagEndpoint = state["endpoint"].toString();
+    const auto remotes = state["remotes"].toObject();
+    for (auto it = remotes.begin(); it != remotes.end(); ++it)
+    {
+        if (!QRegularExpression("^[0-9a-f]{64}$").match(it.key()).hasMatch()) return false;
+        const auto json = it.value().toObject();
+        TagRemoteState remote;
+        if (!readTagMap(json["base"], remote.base) || !readTagMap(json["pending"], remote.pending) || !readTagMap(json["conflicts"], remote.conflicts)) return false;
+        remote.rebuildHead = json["rebuildHead"].toString();
+        remote.rebuildExpected = json["rebuildExpected"].toString();
+        remote.lastUploadedHead = json["lastUploadedHead"].toString();
+        record.tagRemotes.insert(it.key(), remote);
+    }
+    for (const auto &value : state["journal"].toArray())
+    {
+        const auto json = value.toObject();
+        if (!json["name"].isString() || !json["before"].isString() || !json["after"].isString()) return false;
+        record.tagJournal.append({json["name"].toString(), json["before"].toString(), json["after"].toString()});
+    }
+    return true;
+}
+QJsonObject tagStateJson(const BackupRecord &record)
+{
+    QJsonObject remotes;
+    for (auto it = record.tagRemotes.cbegin(); it != record.tagRemotes.cend(); ++it)
+        remotes.insert(it.key(), QJsonObject{{"base", tagMapJson(it->base)}, {"pending", tagMapJson(it->pending)},
+                       {"conflicts", tagMapJson(it->conflicts)}, {"rebuildHead", it->rebuildHead}, {"rebuildExpected", it->rebuildExpected}, {"lastUploadedHead", it->lastUploadedHead}});
+    QJsonArray journal;
+    for (const auto &change : record.tagJournal)
+        journal.append(QJsonObject{{"name", change.name}, {"before", change.before}, {"after", change.after}});
+    return {{"format", 1}, {"revision", QString::number(record.tagRevision)}, {"endpoint", record.tagEndpoint}, {"remotes", remotes}, {"journal", journal}};
+}
+}
 TrackedItem BackupRecord::item() const
 {
     return {id, sourcePath, QFileInfo(sourcePath).fileName(), state, stateDetail};
@@ -107,6 +168,7 @@ OperationResult BackupCatalog::load()
             invalid.append(entry.filePath());
             continue;
         }
+        if (!readTagState(obj["tags"], r)) { invalid.append(entry.filePath()); continue; }
         r.state = static_cast<BackupSyncState>(state);
         r.stateDetail = obj["stateDetail"].toString();
         r.lastCommit = obj["lastCommit"].toString();
@@ -144,6 +206,7 @@ OperationResult BackupCatalog::save(const BackupRecord &r)
     for (auto it = r.fingerprint.cbegin(); it != r.fingerprint.cend(); ++it)
         fingerprint.insert(it.key(), it.value());
     QJsonObject obj{{"format", 1}, {"id", r.id}, {"sourcePath", r.sourcePath}, {"repositoryPath", r.repositoryPath}, {"directory", r.directory}, {"generation", QString::number(r.generation)}, {"state", int(r.state)}, {"stateDetail", r.stateDetail}, {"lastCommit", r.lastCommit}, {"pendingCommit", r.pendingCommit}, {"operation", r.operation}, {"resolutionSession", r.resolutionSession}, {"resolutionHead", r.resolutionHead}, {"fingerprint", fingerprint}, {"recoveryPaths", QJsonArray::fromStringList(r.recoveryPaths)}};
+    obj.insert("tags", tagStateJson(r));
     if (!QDir().mkpath(itemPath(r.id)))
         return OperationResult::fail("保存失败", "无法创建追踪记录目录");
     QSaveFile file(itemPath(r.id) + "/record.json");

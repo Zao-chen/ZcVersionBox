@@ -62,8 +62,15 @@ OperationResult BackupEngine::begin(std::shared_ptr<std::atomic_bool> cancellati
     for (const auto &path : {root + "/items", root + "/staging"})
         if (!QDir().mkpath(path))
             return OperationResult::fail("操作失败", "无法创建备份存储目录：" + path);
-    for (const auto &r : m_catalog.records())
+    for (const auto &r : records())
+    {
         m_generations[r.id] = qMax(m_generations.value(r.id), r.generation);
+        if (!r.tagJournal.isEmpty())
+        {
+            const auto recovered = recoverTags(r);
+            if (!recovered.success) result.warning += "\n" + recovered.message;
+        }
+    }
     return result;
 }
 void BackupEngine::end()
@@ -401,10 +408,9 @@ BackupResult<BackupStats> BackupEngine::statistics(const QString &id)
     stats.fileSize = files.second;
     stats.cacheSize = pathStats(m_catalog.repoPath(id) + "/.git/objects").second;
     const auto git = repository(id);
-    auto count = git.run({"rev-list", "--count", "HEAD"});
-    if (!count.success())
-        return {GitRepository::outcome(count)};
-    stats.versionCount = count.output.trimmed().toInt();
+    const auto versions = git.history();
+    if (!versions.result.success) return {versions.result};
+    stats.versionCount = versions.value.size();
     const auto remoteName = git.remoteName();
     if (remoteName.result.success)
     {
@@ -596,6 +602,11 @@ OperationResult BackupEngine::editMessage(const QString &id, const QString &comm
         return OperationResult::fail("无法编辑", "只能编辑最新的提交说明");
     if (current.value != r.lastCommit && !git.run({"diff", "--quiet", r.lastCommit, current.value, "--", r.repositoryPath}).success())
         return attention(r, "同步仓库在应用外发生内容变化，请先检查后再编辑说明");
+    const auto marked = git.tags();
+    if (!marked.result.success) return marked.result;
+    for (const auto &tag : marked.value)
+        if (tag.commitOid == current.value)
+            return OperationResult::fail("说明已固定", "里程碑版本的原有说明不可编辑。可以在“管理里程碑”中修改名称。");
     const auto before = r;
     r.operation = "edit-message";
     const auto saved = m_catalog.save(r);
@@ -632,7 +643,13 @@ OperationResult BackupEngine::setRemote(const QString &id, const QString &url)
         return remote.result;
     auto existing = git.run({"remote", "get-url", remote.value});
     auto result = GitRepository::outcome(git.run({"remote", existing.success() ? "set-url" : "add", remote.value, url.trimmed()}));
-    return result.success ? OperationResult::ok("云端地址已保存", url.trimmed(), 2000) : result;
+    if (!result.success) return result;
+    auto record = r.value;
+    const auto endpoint = git.tagEndpoint();
+    if (!endpoint.result.success) return endpoint.result;
+    record.tagEndpoint = endpoint.value; ++record.tagRevision;
+    const auto saved = m_catalog.save(record);
+    return saved.success ? OperationResult::ok("云端地址已保存", url.trimmed(), 2000) : saved;
 }
 OperationResult BackupEngine::removeRemote(const QString &id)
 {
@@ -649,7 +666,9 @@ OperationResult BackupEngine::removeRemote(const QString &id)
         if (!removed.success())
             return GitRepository::outcome(removed);
     }
-    return OperationResult::ok("已关闭云端同步", {}, 2000);
+    auto record = r.value; record.tagEndpoint.clear(); ++record.tagRevision;
+    const auto saved = m_catalog.save(record);
+    return saved.success ? OperationResult::ok("已关闭云端同步", {}, 2000) : saved;
 }
 OperationResult BackupEngine::synchronize(const QString &id, bool push)
 {
@@ -661,13 +680,57 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
     {
         if (checked.value.state == BackupSyncState::NeedsAttention || checked.value.state == BackupSyncState::ResolutionPending)
             return paused(checked.value);
-        const auto pushed = git.push();
-        return pushed.success ? OperationResult::ok("上传完成", "已提交的历史已上传到云端", 2000) : pushed;
+        const auto endpoint = git.tagEndpoint();
+        if (!endpoint.result.success) return endpoint.result;
+        auto state = checked.value.tagRemotes.value(endpoint.value);
+        OperationResult pushed;
+        if (!state.rebuildHead.isEmpty())
+        {
+            if (!git.run({"merge-base", "--is-ancestor", state.rebuildHead, "HEAD"}).success())
+                return OperationResult::warn("云端尚未同步", "本地版本已变化，请重新确认重建后的云端覆盖。");
+            const auto remoteHead = git.remoteHead();
+            if (!remoteHead.result.success) return remoteHead.result;
+            pushed = remoteHead.value == git.head().value ? OperationResult::ok({}) : git.push(true, state.rebuildExpected);
+        }
+        else pushed = git.push();
+        if (!pushed.success) return pushed;
+        auto uploadedRecord = *m_catalog.find(id);
+        uploadedRecord.tagRemotes[endpoint.value].lastUploadedHead = git.head().value;
+        ++uploadedRecord.tagRevision;
+        const auto recordedUpload = m_catalog.save(uploadedRecord);
+        if (!recordedUpload.success) return recordedUpload;
+        auto tags = syncTags(id, true);
+        if (!tags.success)
+        {
+            tags.title = "版本已上传，里程碑尚未同步";
+            return tags;
+        }
+        if (!state.rebuildHead.isEmpty())
+        {
+            auto record = *m_catalog.find(id);
+            record.tagRemotes[endpoint.value].rebuildHead.clear();
+            record.tagRemotes[endpoint.value].rebuildExpected.clear();
+            const auto saved = m_catalog.save(record); if (!saved.success) return saved;
+        }
+        auto result = OperationResult::ok("上传完成", "历史版本和里程碑标记已上传到云端", 2000);
+        result.warning = tags.warning;
+        return result;
     }
-    auto before = checked.value;
+    const auto tags = syncTags(id, false);
+    if (!tags.success) return tags;
+    const auto withTagWarning = [&tags](OperationResult result)
+    {
+        if (!tags.warning.isEmpty())
+        {
+            if (!result.warning.isEmpty()) result.warning += '\n';
+            result.warning += tags.warning;
+        }
+        return result;
+    };
+    auto before = *m_catalog.find(id);
     const auto previous = git.head();
     if (!previous.result.success)
-        return previous.result;
+        return withTagWarning(previous.result);
     auto r = before;
     r.state = BackupSyncState::RemotePending;
     r.pendingCommit = previous.value;
@@ -675,7 +738,7 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
     r.operation = "pull";
     auto saved = m_catalog.save(r);
     if (!saved.success)
-        return saved; // Never change HEAD without a durable stop condition.
+        return withTagWarning(saved);
     auto pulled = git.pull();
     const auto current = git.head();
     if (!pulled.success)
@@ -685,15 +748,15 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
             const auto reset = m_catalog.save(before);
             if (!reset.success)
                 pulled.warning = reset.message;
-            return pulled;
+            return withTagWarning(pulled);
         }
-        return attention(r, "拉取未正常完成，仓库状态需要检查：" + pulled.message);
+        return withTagWarning(attention(r, "拉取未正常完成，仓库状态需要检查：" + pulled.message));
     }
     if (!current.result.success)
-        return attention(r, "拉取后无法确认仓库提交");
+        return withTagWarning(attention(r, "拉取后无法确认仓库提交"));
     const auto difference = git.run({"diff", "--quiet", previous.value, current.value, "--", r.repositoryPath});
     if (!difference.started || !difference.finished || (difference.exitCode != 0 && difference.exitCode != 1))
-        return attention(r, "无法确认拉取后的受管理内容");
+        return withTagWarning(attention(r, "无法确认拉取后的受管理内容"));
     r.operation.clear();
     if (difference.exitCode == 0)
     {
@@ -709,9 +772,9 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
     }
     saved = m_catalog.save(r);
     if (!saved.success)
-        return saved;
-    return r.state == BackupSyncState::RemotePending ? OperationResult::info("已拉取，源位置待处理", r.stateDetail, 6000)
-                                                     : OperationResult::ok("已同步", "受管理内容未变化，继续自动备份", 2000);
+        return withTagWarning(saved);
+    return withTagWarning(r.state == BackupSyncState::RemotePending ? OperationResult::info("已拉取，源位置待处理", r.stateDetail, 6000)
+                                                                    : OperationResult::ok("已同步", "受管理内容未变化，继续自动备份", 2000));
 }
 OperationResult BackupEngine::removeBackup(const QString &id)
 {
@@ -733,11 +796,24 @@ OperationResult BackupEngine::removeBackup(const QString &id)
 }
 OperationResult BackupEngine::rebuild(const QString &id)
 {
+    const auto prepared = prepareRebuild(id);
+    return prepared.result.success ? rebuild(prepared.value) : prepared.result;
+}
+OperationResult BackupEngine::rebuild(const PreparedRebuild &request)
+{
+    const auto id = request.id;
     auto checked = require(id, true);
     if (!checked.result.success)
         return checked.result;
     auto before = checked.value, r = before;
     auto git = repository(id);
+    const auto tags = git.tagRefs(); const auto endpoint = git.tagEndpoint(); const auto confirmedHead = git.head();
+    if (!tags.result.success) return tags.result;
+    if (!endpoint.result.success) return endpoint.result;
+    if (!confirmedHead.result.success) return confirmedHead.result;
+    if (request.generation != r.generation || request.head != confirmedHead.value || request.tags != tags.value ||
+        request.endpoint != endpoint.value || !r.tagJournal.isEmpty())
+        return OperationResult::warn("请重新确认重建", "版本、里程碑标记或云端地址已变化。");
     auto branch = git.branch();
     if (!branch.result.success)
         return branch.result;
@@ -745,7 +821,6 @@ OperationResult BackupEngine::rebuild(const QString &id)
     if (!remoteName.result.success)
         return remoteName.result;
     auto remote = git.run({"remote", "get-url", remoteName.value});
-    auto lease = remote.success() ? git.remoteHead() : BackupResult<QString>{OperationResult::ok({})};
     QDir().mkpath(m_catalog.stagingRoot());
     QTemporaryDir stage(m_catalog.stagingRoot() + "/rebuild-XXXXXX");
     if (!stage.isValid())
@@ -791,6 +866,14 @@ OperationResult BackupEngine::rebuild(const QString &id)
         auto configured = fresh.run({"remote", "add", remoteName.value, remote.output.trimmed()});
         if (!configured.success())
             return GitRepository::outcome(configured);
+        const auto pushUrls = git.run({"config", "--null", "--get-all", "remote." + remoteName.value + ".pushurl"});
+        if (!pushUrls.success() && (!pushUrls.started || !pushUrls.finished || pushUrls.exitCode != 1))
+            return GitRepository::outcome(pushUrls);
+        for (const auto &pushUrl : pushUrls.output.split(QChar(0), Qt::SkipEmptyParts))
+        {
+            const auto copied = fresh.run({"config", "--add", "remote." + remoteName.value + ".pushurl", pushUrl});
+            if (!copied.success()) return GitRepository::outcome(copied);
+        }
         auto target = git.targetRef();
         if (!target.result.success)
             return target.result;
@@ -801,6 +884,12 @@ OperationResult BackupEngine::rebuild(const QString &id)
         if (!tracked.success())
             return GitRepository::outcome(tracked);
     }
+    const auto candidateHead = fresh.head();
+    if (!candidateHead.result.success) return candidateHead.result;
+    const auto candidateEndpoint = fresh.tagEndpoint();
+    if (!candidateEndpoint.result.success) return candidateEndpoint.result;
+    if (candidateEndpoint.value != request.endpoint)
+        return OperationResult::warn("重建已取消", "候选仓库无法保留已确认的云端地址，原仓库保持不变。");
     BackupReplacement replacement(m_dependencies.files, m_catalog.repoPath(id) + "/.git", m_catalog.itemPath(id));
     if (!replacement.valid())
         return OperationResult::fail("重建失败", "无法暂存旧仓库");
@@ -809,8 +898,26 @@ OperationResult BackupEngine::rebuild(const QString &id)
         return staged;
     const auto currentHead = git.head();
     const auto currentBranch = git.branch();
+    const auto currentTags = git.tagRefs();
+    if (!currentTags.result.success || currentTags.value != request.tags)
+        return OperationResult::warn("请重新确认重建", "准备重建期间里程碑标记发生变化，原仓库已保留。");
+    const auto currentEndpoint = git.tagEndpoint();
+    if (!currentEndpoint.result.success) return currentEndpoint.result;
+    if (currentEndpoint.value != request.endpoint)
+        return OperationResult::warn("请重新确认重建", "准备重建期间云端地址发生变化，原仓库已保留。");
     if (!currentHead.result.success || !currentBranch.result.success || currentHead.value != before.lastCommit || currentBranch.value != branch.value || !git.clean().success)
         return attention(before, "准备重建期间发现外部仓库修改，已停止替换原仓库");
+    // The deletion intent survives replacement of .git and an offline restart.
+    r.tagEndpoint = request.endpoint;
+    if (!request.endpoint.isEmpty())
+    {
+        auto &state = r.tagRemotes[request.endpoint];
+        state.base = request.remoteTags; state.pending.clear(); state.conflicts.clear();
+        for (auto it = request.remoteTags.cbegin(); it != request.remoteTags.cend(); ++it) state.pending[it.key()] = {};
+        state.rebuildHead = candidateHead.value;
+        state.rebuildExpected = request.remoteHead;
+    }
+    ++r.tagRevision;
     r.operation = "rebuild";
     r.recoveryPaths = {replacement.recoveryPath()};
     auto saved = m_catalog.save(r);
@@ -833,16 +940,16 @@ OperationResult BackupEngine::rebuild(const QString &id)
     }
     r.lastCommit = rebuiltHead.value;
     ++r.generation;
-    auto result = completeReplacement(r, replacement, OperationResult::ok("重建完成", "已保留当前版本并清除本地历史"));
+    auto result = completeReplacement(r, replacement, OperationResult::ok("重建完成", "已保留当前快照，清除本地历史和里程碑标记"));
     if (!result.success)
         return result;
     if (remote.success())
     {
-        auto pushed = lease.result.success ? repository(id).push(true, lease.value) : lease.result;
-        if (!pushed.success)
-            result.warning = "本地重建已完成，云端覆盖未完成：" + pushed.message;
-        else
-            result.message += "，云端已同步";
+        // An empty expected ref only permits creating an absent remote branch.
+        // It never authorizes overwriting a branch that could not be read offline.
+        auto pushed = synchronize(id, true);
+        if (!pushed.success) result.warning = "本地重建已完成，云端尚未完成：" + pushed.title + "。" + pushed.message;
+        else { result.message += "，云端已同步"; result.warning = pushed.warning; }
     }
     return result;
 }
@@ -951,6 +1058,11 @@ OperationResult BackupEngine::finishImport(const QString &session, const QString
     if (!importedHead.result.success)
         return importedHead.result;
     r.lastCommit = importedHead.value;
+    const auto importedEndpoint = git.tagEndpoint(); const auto importedTags = git.tagRefs();
+    if (!importedEndpoint.result.success) return importedEndpoint.result;
+    if (!importedTags.result.success) return importedTags.result;
+    r.tagEndpoint = importedEndpoint.value;
+    if (!r.tagEndpoint.isEmpty()) r.tagRemotes[r.tagEndpoint].base = importedTags.value;
     if (!BackupCatalog::validId(r.id) || BackupFiles::exists(m_catalog.itemPath(r.id)))
         return OperationResult::fail("导入失败", "追踪标识已存在");
     if (!QDir().mkpath(m_catalog.itemPath(r.id)))

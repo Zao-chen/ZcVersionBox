@@ -160,6 +160,9 @@ class BackupService::Private
                 changed = true;
                 emit owner->repositoryChanged(r.id);
             }
+        for (const auto &r : cache)
+            if (previous.contains(r.id) && same(previous[r.id], r) && previous[r.id].tagRevision != r.tagRevision)
+                emit owner->repositoryChanged(r.id);
         if (changed)
             emit owner->trackedItemsChanged();
     }
@@ -395,6 +398,27 @@ BackupTaskId BackupService::resolvePull(const RestoreRequest &r, bool apply, QOb
         return restore(r, c, std::move(f));
     return d->submitBackup(r.id, c, std::move(f), {}, r);
 }
+QVector<TagConflict> BackupService::tagConflicts(const QString &id) const
+{
+    const auto record = d->cache.value(id);
+    const auto state = record.tagRemotes.value(record.tagEndpoint);
+    QVector<TagConflict> result;
+    for (auto it = state.conflicts.cbegin(); it != state.conflicts.cend(); ++it)
+        result.append({it.key(), state.pending.value(it.key()), it.value(), record.tagEndpoint});
+    return result;
+}
+BackupTaskId BackupService::resolveTagConflict(const QString &id, const TagConflict &conflict, const QString &name, QObject *c, Completion f)
+{ return d->mutate(id, c, std::move(f), [id, conflict, name](BackupEngine &e) { return e.resolveTagConflict(id, conflict, name); }); }
+BackupTaskId BackupService::prepareRebuild(const QString &id, QObject *c, Reply<PreparedRebuild> f)
+{ return d->submit<PreparedRebuild>(id, c, std::move(f), [id](BackupEngine &e) { return e.prepareRebuild(id); }); }
+BackupTaskId BackupService::rebuild(const PreparedRebuild &r, QObject *c, Completion f)
+{ return d->mutate(r.id, c, std::move(f), [r](BackupEngine &e) { return e.rebuild(r); }); }
+BackupTaskId BackupService::createTag(const TagRequest &r, QObject *c, Completion f)
+{ return d->mutate(r.id, c, std::move(f), [r](BackupEngine &e) { return e.createTag(r); }); }
+BackupTaskId BackupService::renameTag(const TagRequest &r, const QString &name, QObject *c, Completion f)
+{ return d->mutate(r.id, c, std::move(f), [r, name](BackupEngine &e) { return e.renameTag(r, name); }); }
+BackupTaskId BackupService::removeTag(const TagRequest &r, QObject *c, Completion f)
+{ return d->mutate(r.id, c, std::move(f), [r](BackupEngine &e) { return e.removeTag(r); }); }
 BackupTaskId BackupService::editMessage(const QString &id, const QString &commit, const QString &message, QObject *c, Completion f)
 {
     return d->mutate(id, c, std::move(f), [id, commit, message](BackupEngine &e)
