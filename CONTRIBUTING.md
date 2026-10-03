@@ -124,4 +124,6 @@ Git 和文件操作经 BackupService 的后台串行任务执行，以任务 ID�
 
 详细状态和文件范围见 [备份架构](docs/backup-architecture.md)，页面职责见 [UI 架构](docs/ui-architecture.md)。CTest 包含 `regression`（`zc_tests`，既有 UI 与功能）和 `backup_core`（`zc_backup_tests`，文件/Git 故障及进程边界），均隔离存储、Git 配置和 AI。同步等待便利接口仅存在于测试支持头，不得加入生产服务。
 
+`regression` 的整组超时预算为 300 秒；`backup_core` 在 macOS/Linux 为 600 秒，在 Windows 为 1200 秒。Windows 预算覆盖完整 Git 故障回归和 10,000 文件、2,000 次写入的压力场景，保留全部用例及有限超时保护。
+
 测试覆盖、截图方式和平台验收见 [回归验证](docs/ui-regression.md)。回归请使用测试程序：正常应用会读取真实备份并启动监控。不要直接操作真实数据来验证失败或崩溃场景。
