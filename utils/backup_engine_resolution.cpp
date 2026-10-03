@@ -80,7 +80,7 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareSyncResolution(const QS
             saved = m_catalog.save(before);
             if (!saved.success) return {saved};
             m_dependencies.files->remove(root);
-            auto result = OperationResult::ok("已是最新", "历史版本与重要版本标记已更新，没有需要应用的文件变化。");
+            auto result = OperationResult::ok("已是最新", "历史版本与里程碑标记已更新，没有需要应用的文件变化。");
             result.warning = tagWarning;
             return {result, {}};
         }

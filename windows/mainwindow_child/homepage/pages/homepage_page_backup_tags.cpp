@@ -30,19 +30,19 @@ void HomePageBackupPage::manageTags(const RevisionContext &context)
     const auto tags = revisionTags(context);
     auto *dialog = new QDialog(this);
     dialog->setObjectName("versionTagDialog");
-    dialog->setWindowTitle(tags.isEmpty() ? "标记为重要版本" : "管理重要版本");
+    dialog->setWindowTitle(tags.isEmpty() ? "标记为里程碑版本" : "管理里程碑版本");
     dialog->setMinimumWidth(340);
     auto *layout = new QVBoxLayout(dialog);
     layout->setContentsMargins(24, 24, 24, 24); layout->setSpacing(12);
     auto *selector = new QComboBox(dialog);
     selector->setObjectName("versionTagSelector");
-    selector->setAccessibleName("选择重要版本标记");
+    selector->setAccessibleName("选择里程碑标记");
     for (const auto &tag : tags) selector->addItem(tag.name);
     selector->setVisible(tags.size() > 1);
     layout->addWidget(selector);
     auto *label = new QLabel("名称", dialog);
     auto *name = new QLineEdit(dialog);
-    name->setObjectName("versionTagName"); name->setAccessibleName("重要版本名称");
+    name->setObjectName("versionTagName"); name->setAccessibleName("里程碑名称");
     name->setPlaceholderText("如：交稿版"); label->setBuddy(name);
     if (!tags.isEmpty()) name->setText(tags.first().name);
     connect(selector, &QComboBox::currentIndexChanged, dialog, [name, tags](int index)
@@ -67,7 +67,7 @@ void HomePageBackupPage::manageTags(const RevisionContext &context)
     const auto submit = [this, context, tags, dialog, name, selector, error, buttons, remove](bool deleting)
     {
         if (!isCurrentContext(context)) { dialog->reject(); return; }
-        if (!deleting && name->text().trimmed().isEmpty()) { error->setText("请输入重要版本名称。"); error->show(); name->setFocus(); return; }
+        if (!deleting && name->text().trimmed().isEmpty()) { error->setText("请输入里程碑名称。"); error->show(); name->setFocus(); return; }
         TagRequest request{context.backupId, context.commit, context.repositoryGeneration, name->text().trimmed(), {}};
         if (!tags.isEmpty())
         {
@@ -106,7 +106,7 @@ void HomePageBackupPage::resolveTagConflicts()
     const auto generation = m_service->repositoryGeneration(id), pageGeneration = m_contextGeneration;
     const auto conflict = conflicts.first();
     auto *dialog = new QDialog(this);
-    dialog->setObjectName("versionTagConflictDialog"); dialog->setWindowTitle("处理重要版本标记"); dialog->setMinimumWidth(380);
+    dialog->setObjectName("versionTagConflictDialog"); dialog->setWindowTitle("处理里程碑标记"); dialog->setMinimumWidth(380);
     auto *layout = new QVBoxLayout(dialog); layout->setContentsMargins(24, 24, 24, 24); layout->setSpacing(12);
     auto *description = new QLabel(conflict.remoteOid.isEmpty() ? QString("云端已取消“%1”。可以保留本地标记并换一个名字，或使用云端的结果。").arg(conflict.name)
         : QString("云端的“%1”指向另一个版本。可以给本地标记换个名字以保留两份，或使用云端标记。历史内容会保留。").arg(conflict.name), dialog);

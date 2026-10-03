@@ -91,6 +91,6 @@ BackupResult<QMap<QString, QString>> GitRepository::fetchTags() const
     const auto prefix = "refs/zcversionbox-tags/" + endpoint.value + '/';
     const auto fetched = run({"fetch", "--no-tags", "--no-write-fetch-head", "--prune", "--", remote.value,
                               "+refs/tags/*:" + prefix + '*'}, {}, true, 300000);
-    if (!fetched.success()) return {outcome(fetched, "重要版本同步失败")};
+    if (!fetched.success()) return {outcome(fetched, "里程碑同步失败")};
     return tagRefs(prefix);
 }

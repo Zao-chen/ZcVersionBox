@@ -38,7 +38,7 @@ class HomePageBackupPage : public QWidget
         quint64 generation{0};
         QString commit;
         int scroll{0};
-        bool importantOnly{false};
+        bool milestoneOnly{false};
     };
     struct RevisionContext
     {
@@ -62,7 +62,7 @@ class HomePageBackupPage : public QWidget
     QAction *m_more;
     QAction *m_refresh;
     QAction *m_tag;
-    QAbstractButton *m_importantOnly;
+    QAbstractButton *m_milestoneOnly;
     QPointer<QDialog> m_tagDialog;
     QPointer<QMenu> m_revisionMenu;
     quint64 m_contextGeneration{0};

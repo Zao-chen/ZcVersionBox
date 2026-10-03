@@ -33,11 +33,13 @@ constexpr int TagsRole = Qt::UserRole + 2;
 constexpr int ActionsColumn = 3;
 constexpr int ActionSize = 28;
 constexpr int ActionSpacing = 4;
-constexpr int ActionsWidth = 3 * ActionSize + 2 * ActionSpacing + 16;
+constexpr int ActionCount = 4;
+constexpr int ActionsWidth = ActionCount * ActionSize + (ActionCount - 1) * ActionSpacing + 16;
 enum class RevisionAction
 {
     Preview,
     Compare,
+    Milestone,
     More
 };
 class HistoryDelegate : public QStyledItemDelegate
@@ -224,8 +226,13 @@ class HistoryDelegate : public QStyledItemDelegate
                 const int action = hitAction(index, help->pos());
                 if (action >= 0)
                 {
-                    const std::array<QString, 3> labels{"预览 (Alt+P)", "对比 (Enter)", "更多操作 (Shift+F10)"};
-                    QToolTip::showText(help->globalPos(), labels[action], m_view->viewport(), actionRect(m_view->visualRect(index.siblingAtColumn(ActionsColumn)), action));
+                    const auto tags = index.data(TagsRole).value<QVector<VersionTag>>();
+                    QString label;
+                    if (action == 0) label = "预览 (Alt+P)";
+                    else if (action == 1) label = "对比 (Enter)";
+                    else if (action == 2) label = tags.isEmpty() ? "标记为里程碑 (Alt+M)" : "管理里程碑 (Alt+M)";
+                    else if (action == 3) label = "更多操作 (Shift+F10)";
+                    QToolTip::showText(help->globalPos(), label, m_view->viewport(), actionRect(m_view->visualRect(index.siblingAtColumn(ActionsColumn)), action));
                     return true;
                 }
             }
@@ -259,7 +266,7 @@ class HistoryDelegate : public QStyledItemDelegate
     QTableView *m_view;
     std::function<void()> m_editing;
     ActionHandler m_action;
-    std::array<QIcon, 3> m_icons;
+    std::array<QIcon, ActionCount> m_icons;
     QPersistentModelIndex m_hovered;
     QPersistentModelIndex m_pressed;
     QPoint m_pointerPosition;
@@ -269,7 +276,7 @@ class HistoryDelegate : public QStyledItemDelegate
     mutable bool m_editorOpen{false};
     void updateIcons()
     {
-        m_icons = {UiStyle::icon("preview"), UiStyle::icon("compare"), UiStyle::icon("more")};
+        m_icons = {UiStyle::icon("preview"), UiStyle::icon("compare"), UiStyle::icon("milestone"), UiStyle::icon("more")};
         m_view->viewport()->update();
     }
     QRect actionRect(const QRect &cell, int action) const
@@ -285,7 +292,7 @@ class HistoryDelegate : public QStyledItemDelegate
         if (actionsVisible(index))
         {
             const auto cell = m_view->visualRect(index.siblingAtColumn(ActionsColumn));
-            for (int action = 0; action < 3; ++action)
+            for (int action = 0; action < ActionCount; ++action)
                 if (actionRect(cell, action).contains(position))
                     return action;
         }
@@ -320,18 +327,18 @@ class HistoryDelegate : public QStyledItemDelegate
 HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) : QWidget(parent), ui(new Ui::HomePageBackupPage), m_service(service)
 {
     ui->setupUi(this);
-    m_importantOnly = new oclero::qlementine::Switch(this);
-    m_importantOnly->setObjectName("importantOnlySwitch");
-    m_importantOnly->setAccessibleName("只看重要版本");
-    ui->importantFilterLabel->setBuddy(m_importantOnly);
-    UiStyle::text(ui->importantFilterLabel, UiStyle::FontRole::Body);
-    ui->filterLayout->insertWidget(1, m_importantOnly);
+    m_milestoneOnly = new oclero::qlementine::Switch(this);
+    m_milestoneOnly->setObjectName("milestoneOnlySwitch");
+    m_milestoneOnly->setAccessibleName("只看里程碑版本");
+    ui->milestoneFilterLabel->setBuddy(m_milestoneOnly);
+    UiStyle::text(ui->milestoneFilterLabel, UiStyle::FontRole::Body);
+    ui->filterLayout->insertWidget(1, m_milestoneOnly);
     ui->tagConflictButton->hide();
-    connect(m_importantOnly, &QAbstractButton::toggled, this, [this] { applyFilter(); rememberState(); });
+    connect(m_milestoneOnly, &QAbstractButton::toggled, this, [this] { applyFilter(); rememberState(); });
     connect(ui->tagConflictButton, &QPushButton::clicked, this, &HomePageBackupPage::resolveTagConflicts);
     ui->table->setModel(&m_model);
     ui->table->setAccessibleName("历史版本");
-    ui->table->setAccessibleDescription("按 Enter 对比版本，Alt+P 预览，Shift+F10 打开版本菜单，F2 编辑说明。");
+    ui->table->setAccessibleDescription("按 Enter 对比版本，Alt+P 预览，Alt+M 里程碑，Shift+F10 打开版本菜单，F2 编辑说明。");
     UiStyle::flatView(ui->table);
     ui->table->setEditTriggers(QAbstractItemView::EditKeyPressed);
     ui->table->setSelectionMode(QAbstractItemView::NoSelection);
@@ -344,6 +351,7 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
         {
         case RevisionAction::Preview: previewRevision(context); break;
         case RevisionAction::Compare: compareRevision(context); break;
+        case RevisionAction::Milestone: manageTags(context); break;
         case RevisionAction::More: showRevisionMenu(context, position); break;
         } });
     ui->table->setItemDelegate(delegate);
@@ -368,7 +376,7 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     m_preview = UiStyle::action(this, "previewAction", "预览", "preview");
     m_restore = UiStyle::action(this, "restoreAction", "恢复到此版本…", "restore");
     m_edit = UiStyle::action(this, "editMessageAction", "编辑说明", "edit");
-    m_tag = UiStyle::action(this, "importantVersionAction", "标记为重要版本…");
+    m_tag = UiStyle::action(this, "milestoneAction", "标记为里程碑…", "milestone");
     m_more = UiStyle::action(this, "revisionMenuAction", "更多版本操作", "more");
     m_refresh = UiStyle::action(this, "refreshHistoryAction", "刷新历史", "refresh");
     m_refresh->setProperty("iconOnly", true);
@@ -383,6 +391,9 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     m_preview->setShortcut(QKeySequence("Alt+P"));
     m_preview->setShortcutContext(Qt::WidgetShortcut);
     ui->table->addAction(m_preview);
+    m_tag->setShortcut(QKeySequence("Alt+M"));
+    m_tag->setShortcutContext(Qt::WidgetShortcut);
+    ui->table->addAction(m_tag);
     m_more->setShortcuts({QKeySequence("Shift+F10"), QKeySequence(Qt::Key_Menu)});
     m_more->setShortcutContext(Qt::WidgetShortcut);
     ui->table->addAction(m_more);
@@ -395,6 +406,8 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
             { compareRevision(revisionContext(index)); });
     connect(m_preview, &QAction::triggered, this, [this]
             { previewRevision(revisionContext(ui->table->currentIndex())); });
+    connect(m_tag, &QAction::triggered, this, [this]
+            { manageTags(revisionContext(ui->table->currentIndex())); });
     connect(m_restore, &QAction::triggered, this, [this]
             { restoreRevision(revisionContext(ui->table->currentIndex())); });
     connect(m_refresh, &QAction::triggered, this, &HomePageBackupPage::refresh);
@@ -451,7 +464,7 @@ QList<QAction *> HomePageBackupPage::toolbarActions() const { return {m_refresh}
 void HomePageBackupPage::rememberState()
 {
     if (!m_id.isEmpty() && m_loadedId == m_id && m_loadedGeneration == m_service->repositoryGeneration(m_id))
-        m_states[m_id] = {m_loadedGeneration, selectedCommit(), ui->table->verticalScrollBar()->value(), m_importantOnly->isChecked()};
+        m_states[m_id] = {m_loadedGeneration, selectedCommit(), ui->table->verticalScrollBar()->value(), m_milestoneOnly->isChecked()};
 }
 void HomePageBackupPage::deactivate()
 {
@@ -574,7 +587,6 @@ void HomePageBackupPage::showRevisionMenu(const RevisionContext &context, const 
     add(m_preview, &HomePageBackupPage::previewRevision);
     add(m_compare, &HomePageBackupPage::compareRevision);
     menu->addSeparator();
-    add(m_tag, &HomePageBackupPage::manageTags);
     add(m_edit, &HomePageBackupPage::editRevision);
     menu->addSeparator();
     add(m_restore, &HomePageBackupPage::restoreRevision);
@@ -594,14 +606,14 @@ QString HomePageBackupPage::selectedCommit() const
 void HomePageBackupPage::updateActions()
 {
     const bool enabled = ui->table->currentIndex().isValid() && !ui->table->isRowHidden(ui->table->currentIndex().row()) && m_loadedId == m_id && m_loadedGeneration == m_service->repositoryGeneration(m_id);
-    for (auto *action : {m_compare, m_preview, m_restore, m_edit, m_more})
+    for (auto *action : {m_compare, m_preview, m_restore, m_edit, m_tag, m_more})
         action->setEnabled(enabled);
     m_restore->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
     const auto tags = revisionTags(revisionContext(ui->table->currentIndex()));
     m_edit->setEnabled(enabled && tags.isEmpty() && m_service->syncState(m_id) == BackupSyncState::Tracking);
-    m_edit->setToolTip(tags.isEmpty() ? QString() : "重要版本的原有说明已固定，可以修改重要版本名称。");
+    m_edit->setToolTip(tags.isEmpty() ? QString() : "里程碑版本的原有说明已固定，可以修改里程碑名称。");
     m_tag->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
-    m_tag->setText(tags.isEmpty() ? "标记为重要版本…" : "管理重要版本…");
+    m_tag->setText(tags.isEmpty() ? "标记为里程碑…" : "管理里程碑…");
     ui->tagConflictButton->setVisible(!m_service->tagConflicts(m_id).isEmpty());
 }
 void HomePageBackupPage::refresh()
@@ -655,20 +667,20 @@ void HomePageBackupPage::refresh()
         message->setEditable(revision.tags.isEmpty());
         QStringList tagNames;
         for (const auto &tag : revision.tags) tagNames.append(tag.name);
-        const auto important = tagNames.isEmpty() ? QString() : "重要版本：" + tagNames.join("、") + '\n';
-        message->setData(important + revision.message, Qt::AccessibleTextRole);
+        const auto milestone = tagNames.isEmpty() ? QString() : "里程碑：" + tagNames.join("、") + '\n';
+        message->setData(milestone + revision.message, Qt::AccessibleTextRole);
         auto *date = new QStandardItem(time);
         auto *hash = new QStandardItem(revision.shortHash);
         auto *actions = new QStandardItem;
         date->setEditable(false);
         hash->setEditable(false);
         actions->setEditable(false);
-        actions->setData("预览、对比、更多版本操作", Qt::AccessibleTextRole);
+        actions->setData("预览、对比、里程碑、更多版本操作", Qt::AccessibleTextRole);
         for (auto *item : {message, date, hash, actions})
         {
             item->setData(revision.hash, CommitRole);
-            item->setToolTip(important + revision.message + "\n" + time + " · " + revision.hash);
-            item->setData("Enter 对比，Alt+P 预览，Shift+F10 更多操作，F2 编辑说明。", Qt::AccessibleDescriptionRole);
+            item->setToolTip(milestone + revision.message + "\n" + time + " · " + revision.hash);
+            item->setData("Enter 对比，Alt+P 预览，Alt+M 里程碑，Shift+F10 更多操作，F2 编辑说明。", Qt::AccessibleDescriptionRole);
         }
         m_model.appendRow({message, date, hash, actions});
         if (revision.hash == state.commit)
@@ -686,8 +698,8 @@ void HomePageBackupPage::refresh()
     ui->table->setColumnWidth(ActionsColumn, ActionsWidth);
     ui->table->setColumnHidden(2, width() < 640);
     {
-        const QSignalBlocker blocker(m_importantOnly);
-        m_importantOnly->setChecked(state.importantOnly);
+        const QSignalBlocker blocker(m_milestoneOnly);
+        m_milestoneOnly->setChecked(state.milestoneOnly);
     }
     if (!revisions.isEmpty()) ui->table->setCurrentIndex(m_model.index(selectedRow, 0));
     applyFilter();
@@ -704,7 +716,7 @@ QVector<VersionTag> HomePageBackupPage::revisionTags(const RevisionContext &cont
 }
 void HomePageBackupPage::applyFilter()
 {
-    const bool only = m_importantOnly->isChecked();
+    const bool only = m_milestoneOnly->isChecked();
     int visible = 0, first = -1;
     for (int row = 0; row < m_model.rowCount(); ++row)
     {
@@ -714,7 +726,7 @@ void HomePageBackupPage::applyFilter()
     }
     const auto current = ui->table->currentIndex();
     if (!current.isValid() || ui->table->isRowHidden(current.row())) ui->table->setCurrentIndex(m_model.index(first, 0));
-    ui->emptyLabel->setText(only ? "还没有重要版本\n从版本行的“更多”菜单选择“标记为重要版本…”。" : "还没有历史版本");
+    ui->emptyLabel->setText(only ? "还没有里程碑版本\n点击版本行的里程碑按钮可进行标记。" : "还没有历史版本");
     ui->emptyLabel->setVisible(visible == 0);
     ui->table->setVisible(visible != 0);
     updateActions();

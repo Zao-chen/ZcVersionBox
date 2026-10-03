@@ -21,7 +21,7 @@
    <item>
     <layout class="QHBoxLayout" name="filterLayout">
      <property name="spacing"><number>8</number></property>
-     <item><widget class="QLabel" name="importantFilterLabel"><property name="text"><string>只看重要版本</string></property></widget></item>
+     <item><widget class="QLabel" name="milestoneFilterLabel"><property name="text"><string>只看里程碑版本</string></property></widget></item>
      <item><spacer name="filterSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
      <item><widget class="QPushButton" name="tagConflictButton"><property name="text"><string>处理标记…</string></property></widget></item>
     </layout>

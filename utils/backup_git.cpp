@@ -144,7 +144,7 @@ BackupResult<QVector<Revision>> GitRepository::history() const
         args += extra.mid(offset, 100); args << "--";
         result = run(args);
         if (!result.success()) return {outcome(result)};
-        if (!append(result.output)) return {OperationResult::fail("打开备份失败", "无法读取重要版本")};
+        if (!append(result.output)) return {OperationResult::fail("打开备份失败", "无法读取里程碑")};
     }
     QMap<QString, QVector<VersionTag>> byCommit;
     for (const auto &tag : marked.value) byCommit[tag.commitOid].append(tag);

@@ -606,7 +606,7 @@ OperationResult BackupEngine::editMessage(const QString &id, const QString &comm
     if (!marked.result.success) return marked.result;
     for (const auto &tag : marked.value)
         if (tag.commitOid == current.value)
-            return OperationResult::fail("说明已固定", "重要版本的原有说明不可编辑。可以在“管理重要版本”中修改名称。");
+            return OperationResult::fail("说明已固定", "里程碑版本的原有说明不可编辑。可以在“管理里程碑”中修改名称。");
     const auto before = r;
     r.operation = "edit-message";
     const auto saved = m_catalog.save(r);
@@ -702,7 +702,7 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
         auto tags = syncTags(id, true);
         if (!tags.success)
         {
-            tags.title = "版本已上传，重要版本尚未同步";
+            tags.title = "版本已上传，里程碑尚未同步";
             return tags;
         }
         if (!state.rebuildHead.isEmpty())
@@ -712,7 +712,7 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
             record.tagRemotes[endpoint.value].rebuildExpected.clear();
             const auto saved = m_catalog.save(record); if (!saved.success) return saved;
         }
-        auto result = OperationResult::ok("上传完成", "历史版本和重要版本标记已上传到云端", 2000);
+        auto result = OperationResult::ok("上传完成", "历史版本和里程碑标记已上传到云端", 2000);
         result.warning = tags.warning;
         return result;
     }
@@ -804,7 +804,7 @@ OperationResult BackupEngine::rebuild(const PreparedRebuild &request)
     if (!confirmedHead.result.success) return confirmedHead.result;
     if (request.generation != r.generation || request.head != confirmedHead.value || request.tags != tags.value ||
         request.endpoint != endpoint.value || !r.tagJournal.isEmpty())
-        return OperationResult::warn("请重新确认重建", "版本、重要版本标记或云端地址已变化。");
+        return OperationResult::warn("请重新确认重建", "版本、里程碑标记或云端地址已变化。");
     auto branch = git.branch();
     if (!branch.result.success)
         return branch.result;
@@ -879,7 +879,7 @@ OperationResult BackupEngine::rebuild(const PreparedRebuild &request)
     const auto currentBranch = git.branch();
     const auto currentTags = git.tagRefs();
     if (!currentTags.result.success || currentTags.value != request.tags)
-        return OperationResult::warn("请重新确认重建", "准备重建期间重要版本标记发生变化，原仓库已保留。");
+        return OperationResult::warn("请重新确认重建", "准备重建期间里程碑标记发生变化，原仓库已保留。");
     if (!currentHead.result.success || !currentBranch.result.success || currentHead.value != before.lastCommit || currentBranch.value != branch.value || !git.clean().success)
         return attention(before, "准备重建期间发现外部仓库修改，已停止替换原仓库");
     // The deletion intent survives replacement of .git and an offline restart.
@@ -915,7 +915,7 @@ OperationResult BackupEngine::rebuild(const PreparedRebuild &request)
     }
     r.lastCommit = rebuiltHead.value;
     ++r.generation;
-    auto result = completeReplacement(r, replacement, OperationResult::ok("重建完成", "已保留当前快照，清除本地历史和重要版本标记"));
+    auto result = completeReplacement(r, replacement, OperationResult::ok("重建完成", "已保留当前快照，清除本地历史和里程碑标记"));
     if (!result.success)
         return result;
     if (remote.success())

@@ -89,7 +89,7 @@ QString head(const BackupService &service, const QString &id) { return runGit(se
 QPoint historyActionPoint(QTableView *table, int row, int action)
 {
     const auto cell = table->visualRect(table->model()->index(row, table->model()->columnCount() - 1));
-    return {cell.x() + (2 * action + 1) * cell.width() / 6, cell.center().y()};
+    return {cell.x() + 8 + action * (28 + 4) + 14, cell.center().y()};
 }
 void hoverHistoryAction(QTableView *table, int row, int action)
 {
@@ -1059,16 +1059,11 @@ class Regression : public QObject
         writeFile(other, "other\n"); QVERIFY(service.addLocal(other).success);
         HomePageBackupPage page(&service); page.resize(820, 580); page.setBackup(id); settle(service); page.show();
         auto *table = page.findChild<QTableView *>("table");
-        auto *filter = page.findChild<QAbstractButton *>("importantOnlySwitch"); QVERIFY(filter);
+        auto *filter = page.findChild<QAbstractButton *>("milestoneOnlySwitch"); QVERIFY(filter);
         const auto openManager = [&](int row) -> QDialog *
         {
             QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, row, 2));
-            if (!QTest::qWaitFor([] { return QApplication::activePopupWidget() != nullptr; }, 2000)) return nullptr;
-            auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
-            if (!menu) return nullptr;
-            auto *action = menu->findChild<QAction *>("importantVersionActionMenu");
-            if (!action) return nullptr;
-            action->trigger(); menu->close(); QCoreApplication::processEvents();
+            QCoreApplication::processEvents();
             return page.findChild<QDialog *>("versionTagDialog");
         };
         QPointer<QDialog> dialog = openManager(1); QVERIFY(dialog);
@@ -1096,7 +1091,7 @@ class Regression : public QObject
         dialog = openManager(1); QVERIFY(dialog);
         QTest::mouseClick(dialog->findChild<QPushButton *>("removeVersionTagButton"), Qt::LeftButton); settle(service);
         QTRY_VERIFY(!dialog || !dialog->isVisible());
-        QTRY_VERIFY(!table->isVisible()); QVERIFY(page.findChild<QLabel *>("emptyLabel")->text().contains("还没有重要版本"));
+        QTRY_VERIFY(!table->isVisible()); QVERIFY(page.findChild<QLabel *>("emptyLabel")->text().contains("还没有里程碑版本"));
         filter->setChecked(false); QVERIFY(table->isVisible()); QCOMPARE(table->model()->rowCount(), 2);
         dialog = openManager(0); QVERIFY(dialog);
         dialog->findChild<QLineEdit *>("versionTagName")->setText("旧弹窗");
@@ -1119,12 +1114,12 @@ class Regression : public QObject
             QVERIFY(service.editMessage(id, head(service, id), QString("补充项目说明与计划安排 %1").arg(i + 1)).success);
             if (i == 2) QVERIFY(service.createTag(service.tagRequest(id, head(service, id), "交稿版")).success);
         }
-        QVERIFY(service.createTag(service.tagRequest(id, head(service, id), "修改前的重要版本名称很长也不会挤占其他操作")).success);
+        QVERIFY(service.createTag(service.tagRequest(id, head(service, id), "修改前的里程碑名称很长也不会挤占其他操作")).success);
         FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
         MainWindow window(&service, &settings, &gateway, m_theme, false);
         window.setAttribute(Qt::WA_DontShowOnScreen); window.show(); window.navigate({PageId::History, id}); settle(service);
         auto *page = window.findChild<HomePageBackupPage *>();
-        auto *filter = page->findChild<QAbstractButton *>("importantOnlySwitch");
+        auto *filter = page->findChild<QAbstractButton *>("milestoneOnlySwitch");
         auto *table = page->findChild<QTableView *>("table");
         const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS"); if (!output.isEmpty()) QDir().mkpath(output);
         for (int theme = 0; theme < 2; ++theme)
@@ -1142,10 +1137,7 @@ class Regression : public QObject
                 QCOMPARE(visible, 3);
                 if (!output.isEmpty()) QVERIFY(window.grab().save(output + stem + "-filtered.png"));
                 QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 0, 2));
-                QTRY_VERIFY(QApplication::activePopupWidget());
-                auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); QVERIFY(menu);
-                auto *action = menu->findChild<QAction *>("importantVersionActionMenu"); QVERIFY(action);
-                action->trigger(); menu->close(); QCoreApplication::processEvents();
+                QCoreApplication::processEvents();
                 auto *dialog = page->findChild<QDialog *>("versionTagDialog"); QVERIFY(dialog);
                 QTest::qWait(100);
                 if (!output.isEmpty()) QVERIFY(dialog->grab().save(output + stem + "-dialog.png"));
@@ -1702,7 +1694,7 @@ class Regression : public QObject
         const auto first = table->model()->index(1, 0).data(Qt::UserRole + 1).toString();
         const auto openMenu = [&](int row)
         {
-            QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, row, 2));
+            QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, row, 3));
             if (!QTest::qWaitFor([]
                                  { return QApplication::activePopupWidget() != nullptr; }, 1000))
                 return static_cast<QMenu *>(nullptr);
@@ -2313,7 +2305,7 @@ class Regression : public QObject
                     QVERIFY(table->viewport()->height() / table->rowHeight(0) >= 10);
                     hoverHistoryAction(table, 2, 0);
                     capture(QString("history-hover-%1").arg(theme));
-                    QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 2, 2));
+                    QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 2, 3));
                     QTRY_VERIFY(QApplication::activePopupWidget());
                     auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
                     QVERIFY(menu);

@@ -20,7 +20,7 @@ OperationResult BackupEngine::recoverTags(BackupRecord record)
     }
     if (!after)
     {
-        if (!before) return OperationResult::warn("重要版本需要检查", "未完成的标记操作遇到外部修改，已保留操作记录与所有文件。");
+        if (!before) return OperationResult::warn("里程碑需要检查", "未完成的标记操作遇到外部修改，已保留操作记录与所有文件。");
         const auto applied = git.updateTags(record.tagJournal);
         if (!applied.success) return applied;
     }
@@ -72,12 +72,12 @@ OperationResult BackupEngine::changeTag(const TagRequest &request, const QString
         const auto valid = git.validateTagName(name);
         if (!valid.success) return valid;
         if (refs.value.contains(name) && (create || name != request.name))
-            return OperationResult::fail("名称已使用", "请换一个名称，每个重要版本名称只能使用一次。");
+            return OperationResult::fail("名称已使用", "请换一个名称，每个里程碑名称只能使用一次。");
     }
     if (create)
     {
         for (const auto &tag : marked.value)
-            if (tag.commitOid == request.commit) return OperationResult::warn("此版本已有标记", "请打开“管理重要版本”修改名称。");
+            if (tag.commitOid == request.commit) return OperationResult::warn("此版本已有标记", "请打开“管理里程碑”修改名称。");
     }
     else
     {
@@ -105,14 +105,14 @@ OperationResult BackupEngine::changeTag(const TagRequest &request, const QString
     }
     const auto saved = commitTagChanges(record, changes);
     if (!saved.success) return saved;
-    return OperationResult::ok(name.isEmpty() ? "已取消标记" : create ? "已标记为重要版本" : "名称已更新",
+    return OperationResult::ok(name.isEmpty() ? "已取消标记" : create ? "已标记为里程碑" : "名称已更新",
         name.isEmpty() ? "历史版本和文件仍然保留。" + (endpoint.value.isEmpty() ? QString() : "下次上传时同步。")
                        : endpoint.value.isEmpty() ? QString() : "下次上传时同步。");
 }
 OperationResult BackupEngine::createTag(const TagRequest &request) { return changeTag(request, request.name, true); }
 OperationResult BackupEngine::renameTag(const TagRequest &request, const QString &name)
 {
-    if (name.trimmed().isEmpty()) return OperationResult::fail("名称不可用", "请输入重要版本名称。");
+    if (name.trimmed().isEmpty()) return OperationResult::fail("名称不可用", "请输入里程碑名称。");
     return changeTag(request, name, false);
 }
 OperationResult BackupEngine::removeTag(const TagRequest &request) { return changeTag(request, {}, false); }
@@ -148,7 +148,7 @@ OperationResult BackupEngine::syncTags(const QString &id, bool push)
             const auto pending = state.pending.value(name);
             // External edits after the UI operation must not be overwritten by its queued upload.
             if (pending != ours)
-                return OperationResult::warn("重要版本已变化", "本地标记在应用外被修改，请恢复该标记后重试同步：" + name);
+                return OperationResult::warn("里程碑已变化", "本地标记在应用外被修改，请恢复该标记后重试同步：" + name);
             if (pending == theirs)
             {
                 state.pending.remove(name); state.conflicts.remove(name);
@@ -177,7 +177,7 @@ OperationResult BackupEngine::syncTags(const QString &id, bool push)
     auto saved = commitTagChanges(record, changes);
     if (!saved.success) return saved;
     if (!state.conflicts.isEmpty())
-        return OperationResult::warn("重要版本需要处理", "云端存在不同的同名标记。本地与云端内容均已保留，请在历史版本中处理标记。");
+        return OperationResult::warn("里程碑需要处理", "云端存在不同的同名标记。本地与云端内容均已保留，请在历史版本中处理标记。");
     if (push && !state.pending.isEmpty())
     {
         const auto remote = git.remoteName();
@@ -192,7 +192,7 @@ OperationResult BackupEngine::syncTags(const QString &id, bool push)
         }
         args << "--" << remote.value; args += refs;
         const auto uploaded = git.run(args, {}, true, 300000);
-        if (!uploaded.success()) return GitRepository::outcome(uploaded, "重要版本尚未同步");
+        if (!uploaded.success()) return GitRepository::outcome(uploaded, "里程碑尚未同步");
         for (auto it = state.pending.cbegin(); it != state.pending.cend(); ++it)
             if (it.value().isEmpty()) state.base.remove(it.key()); else state.base[it.key()] = it.value();
         state.pending.clear();
@@ -200,7 +200,7 @@ OperationResult BackupEngine::syncTags(const QString &id, bool push)
         saved = m_catalog.save(record);
         if (!saved.success) return saved;
     }
-    auto result = OperationResult::ok("重要版本已同步");
+    auto result = OperationResult::ok("里程碑已同步");
     if (!retained.isEmpty()) result.warning = "取消标记期间云端已有修改，已保留云端标记，请重新确认：" + retained.join("、");
     return result;
 }
