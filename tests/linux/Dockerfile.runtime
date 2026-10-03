@@ -7,6 +7,7 @@ RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec \
 # No Qt kit, compiler or project sources: application dependencies come from the DEB.
 RUN apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 update && \
     apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 install -y --no-install-recommends \
-    ca-certificates binutils xvfb xauth openbox weston dbus-x11 desktop-file-utils fonts-noto-cjk && \
+    ca-certificates binutils xvfb xauth openbox weston dbus-x11 desktop-file-utils fonts-noto-cjk x11-utils && \
+    command -v xprop >/dev/null && \
     useradd --create-home --uid 1100 tester
 WORKDIR /work
