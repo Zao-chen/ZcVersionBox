@@ -1048,6 +1048,113 @@ class Regression : public QObject
         QVERIFY(toggle->isChecked());
         QVERIFY(expander->expanded());
     }
+    void importantVersionUiFlow()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/方案.md", other = dir.path() + "/其他.md";
+        writeFile(source, "first\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = encoded(source), first = head(service, id);
+        writeFile(source, "second\n"); QVERIFY(service.backup(id).success);
+        const auto latest = head(service, id);
+        writeFile(other, "other\n"); QVERIFY(service.addLocal(other).success);
+        HomePageBackupPage page(&service); page.resize(820, 580); page.setBackup(id); settle(service); page.show();
+        auto *table = page.findChild<QTableView *>("table");
+        auto *filter = page.findChild<QAbstractButton *>("importantOnlySwitch"); QVERIFY(filter);
+        const auto openManager = [&](int row) -> QDialog *
+        {
+            QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, row, 2));
+            if (!QTest::qWaitFor([] { return QApplication::activePopupWidget() != nullptr; }, 2000)) return nullptr;
+            auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+            if (!menu) return nullptr;
+            auto *action = menu->findChild<QAction *>("importantVersionActionMenu");
+            if (!action) return nullptr;
+            action->trigger(); menu->close(); QCoreApplication::processEvents();
+            return page.findChild<QDialog *>("versionTagDialog");
+        };
+        QPointer<QDialog> dialog = openManager(1); QVERIFY(dialog);
+        auto *name = dialog->findChild<QLineEdit *>("versionTagName");
+        auto *buttons = dialog->findChild<QDialogButtonBox *>();
+        name->setText("bad name"); QTest::mouseClick(buttons->button(QDialogButtonBox::Save), Qt::LeftButton); settle(service);
+        QVERIFY(dialog->findChild<QLabel *>("versionTagError")->isVisible());
+        QCOMPARE(table->model()->rowCount(), 2);
+        name->setText("交稿版"); QTest::keyClick(name, Qt::Key_Return); settle(service);
+        QTRY_VERIFY(!dialog || !dialog->isVisible());
+        QTRY_COMPARE(table->model()->index(1, 0).data(Qt::UserRole + 2).value<QVector<VersionTag>>().size(), 1);
+        QCOMPARE(table->model()->index(1, 0).data(Qt::UserRole + 2).value<QVector<VersionTag>>().first().name, QString("交稿版"));
+        QCOMPARE(table->model()->index(1, 0).data(Qt::UserRole + 1).toString(), first);
+        QVERIFY(!page.findChild<QAction *>("editMessageAction")->isEnabled());
+        QVERIFY(!(table->model()->flags(table->model()->index(1, 0)) & Qt::ItemIsEditable));
+        filter->setChecked(true);
+        QVERIFY(table->isRowHidden(0)); QVERIFY(!table->isRowHidden(1));
+        page.setBackup(encoded(other)); settle(service); QVERIFY(!filter->isChecked());
+        page.setBackup(id); settle(service); QVERIFY(filter->isChecked()); QVERIFY(table->isRowHidden(0));
+        dialog = openManager(1); QVERIFY(dialog);
+        name = dialog->findChild<QLineEdit *>("versionTagName"); name->setText("定稿");
+        QTest::keyClick(name, Qt::Key_Return); settle(service); QTRY_VERIFY(!dialog || !dialog->isVisible());
+        QTRY_COMPARE(table->model()->index(1, 0).data(Qt::UserRole + 2).value<QVector<VersionTag>>().size(), 1);
+        QTRY_COMPARE(table->model()->index(1, 0).data(Qt::UserRole + 2).value<QVector<VersionTag>>().first().name, QString("定稿"));
+        dialog = openManager(1); QVERIFY(dialog);
+        QTest::mouseClick(dialog->findChild<QPushButton *>("removeVersionTagButton"), Qt::LeftButton); settle(service);
+        QTRY_VERIFY(!dialog || !dialog->isVisible());
+        QTRY_VERIFY(!table->isVisible()); QVERIFY(page.findChild<QLabel *>("emptyLabel")->text().contains("还没有重要版本"));
+        filter->setChecked(false); QVERIFY(table->isVisible()); QCOMPARE(table->model()->rowCount(), 2);
+        dialog = openManager(0); QVERIFY(dialog);
+        dialog->findChild<QLineEdit *>("versionTagName")->setText("旧弹窗");
+        page.setBackup(encoded(other)); settle(service); QTRY_VERIFY(!dialog || !dialog->isVisible());
+        page.setBackup(id); settle(service);
+        QVERIFY(table->model()->index(0, 0).data(Qt::UserRole + 2).value<QVector<VersionTag>>().isEmpty());
+        QCOMPARE(head(service, id), latest); QCOMPARE(readFile(source), QByteArray("second\n"));
+        page.hide();
+    }
+    void renderImportantVersions()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/项目方案.md";
+        writeFile(source, "first\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = encoded(source), first = head(service, id);
+        QVERIFY(service.createTag(service.tagRequest(id, first, "初稿")).success);
+        for (int i = 0; i < 5; ++i)
+        {
+            writeFile(source, QString("方案内容 %1\n").arg(i).toUtf8()); QVERIFY(service.backup(id).success);
+            QVERIFY(service.editMessage(id, head(service, id), QString("补充项目说明与计划安排 %1").arg(i + 1)).success);
+            if (i == 2) QVERIFY(service.createTag(service.tagRequest(id, head(service, id), "交稿版")).success);
+        }
+        QVERIFY(service.createTag(service.tagRequest(id, head(service, id), "修改前的重要版本名称很长也不会挤占其他操作")).success);
+        FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen); window.show(); window.navigate({PageId::History, id}); settle(service);
+        auto *page = window.findChild<HomePageBackupPage *>();
+        auto *filter = page->findChild<QAbstractButton *>("importantOnlySwitch");
+        auto *table = page->findChild<QTableView *>("table");
+        const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS"); if (!output.isEmpty()) QDir().mkpath(output);
+        for (int theme = 0; theme < 2; ++theme)
+        {
+            for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+            {
+                window.resize(size); filter->setChecked(false); QTest::qWait(120);
+                QCOMPARE(window.size(), size);
+                QVERIFY(table->columnWidth(0) > 80);
+                QVERIFY(!table->horizontalScrollBar()->isVisible());
+                const auto stem = QString("/important-%1-%2").arg(theme).arg(size.width());
+                if (!output.isEmpty()) QVERIFY(window.grab().save(output + stem + ".png"));
+                filter->setChecked(true); QTest::qWait(50);
+                int visible = 0; for (int row = 0; row < table->model()->rowCount(); ++row) visible += !table->isRowHidden(row);
+                QCOMPARE(visible, 3);
+                if (!output.isEmpty()) QVERIFY(window.grab().save(output + stem + "-filtered.png"));
+                QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 0, 2));
+                QTRY_VERIFY(QApplication::activePopupWidget());
+                auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()); QVERIFY(menu);
+                auto *action = menu->findChild<QAction *>("importantVersionActionMenu"); QVERIFY(action);
+                action->trigger(); menu->close(); QCoreApplication::processEvents();
+                auto *dialog = page->findChild<QDialog *>("versionTagDialog"); QVERIFY(dialog);
+                QTest::qWait(100);
+                if (!output.isEmpty()) QVERIFY(dialog->grab().save(output + stem + "-dialog.png"));
+                dialog->reject(); settle(service);
+            }
+            m_theme->toggle();
+        }
+        window.hide();
+    }
     void historyRowActionsUseClickedVersion()
     {
         TestDirectory dir;
@@ -1787,14 +1894,22 @@ class Regression : public QObject
             qobject_cast<QDialog *>(QApplication::activeModalWidget())->accept(); });
         actions.remove(id);
         QVERIFY(service.contains(id));
-        QTimer::singleShot(0, [&]
-                           {
+        cancelWasDefault = false;
+        bool rebuildShown = false;
+        QTimer responder;
+        responder.setInterval(10);
+        connect(&responder, &QTimer::timeout, &responder, [&]
+        {
             auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
-            if (!dialog)
-                qFatal("Rebuild dialog missing");
+            if (!dialog) return;
+            responder.stop(); rebuildShown = true;
             cancelWasDefault = dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Cancel)->isDefault();
-            dialog->reject(); });
+            dialog->reject();
+        });
+        responder.start();
         actions.rebuild(id);
+        QTRY_VERIFY(rebuildShown);
+        settle(service);
         QVERIFY(cancelWasDefault);
     }
     void sharedBackupModelScales()

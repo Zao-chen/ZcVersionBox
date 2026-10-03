@@ -46,6 +46,7 @@ bool readTagState(const QJsonValue &value, BackupRecord &record)
         if (!readTagMap(json["base"], remote.base) || !readTagMap(json["pending"], remote.pending) || !readTagMap(json["conflicts"], remote.conflicts)) return false;
         remote.rebuildHead = json["rebuildHead"].toString();
         remote.rebuildExpected = json["rebuildExpected"].toString();
+        remote.lastUploadedHead = json["lastUploadedHead"].toString();
         record.tagRemotes.insert(it.key(), remote);
     }
     for (const auto &value : state["journal"].toArray())
@@ -61,7 +62,7 @@ QJsonObject tagStateJson(const BackupRecord &record)
     QJsonObject remotes;
     for (auto it = record.tagRemotes.cbegin(); it != record.tagRemotes.cend(); ++it)
         remotes.insert(it.key(), QJsonObject{{"base", tagMapJson(it->base)}, {"pending", tagMapJson(it->pending)},
-                       {"conflicts", tagMapJson(it->conflicts)}, {"rebuildHead", it->rebuildHead}, {"rebuildExpected", it->rebuildExpected}});
+                       {"conflicts", tagMapJson(it->conflicts)}, {"rebuildHead", it->rebuildHead}, {"rebuildExpected", it->rebuildExpected}, {"lastUploadedHead", it->lastUploadedHead}});
     QJsonArray journal;
     for (const auto &change : record.tagJournal)
         journal.append(QJsonObject{{"name", change.name}, {"before", change.before}, {"after", change.after}});

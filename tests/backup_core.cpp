@@ -2286,6 +2286,59 @@ class BackupCoreRegression : public QObject
         QCOMPARE(GitRepository(other).tagRefs().value.value("保留"), first);
         QCOMPARE(GitRepository(f.remote).tagRefs().value.value("保留"), first);
     }
+    void importantVersionsAtomicPushRejectsChangedRemoteTag()
+    {
+        bool race = false;
+        QString remote, first;
+        BackupDependencies deps;
+        deps.git = [&](const QString &repo, const QStringList &args, const GitOptions &options)
+        {
+            if (race && args.contains("push") && args.contains("--atomic"))
+            {
+                race = false;
+                git(remote, {"tag", "-a", "-f", "旧名称", "-m", "changed externally", first});
+            }
+            return runGit(repo, args, options);
+        };
+        RemoteFixture f(deps); remote = f.remote; first = head(*f.service, f.id);
+        CHECK_OK(f.service->createTag(f.service->tagRequest(f.id, first, "旧名称")));
+        CHECK_OK(f.service->synchronize(f.id, true));
+        CHECK_OK(f.service->renameTag(f.service->tagRequest(f.id, first, "旧名称", first), "新名称"));
+        race = true;
+        QVERIFY(!f.service->synchronize(f.id, true).success);
+        const auto tags = GitRepository(remote).tagRefs().value;
+        QVERIFY(tags.contains("旧名称")); QVERIFY(tags.value("旧名称") != first); QVERIFY(!tags.contains("新名称"));
+        QCOMPARE(readFile(f.source), QByteArray("initial\n"));
+    }
+    void importantVersionsOfflineRebuildRetriesAfterRestart()
+    {
+        bool offline = false;
+        BackupDependencies deps;
+        deps.git = [&](const QString &repo, const QStringList &args, const GitOptions &options)
+        {
+            if (offline && (args.contains("fetch") || args.contains("push") || args.contains("ls-remote"))) return failedGit();
+            return runGit(repo, args, options);
+        };
+        RemoteFixture f(deps);
+        const auto first = head(*f.service, f.id);
+        CHECK_OK(f.service->createTag(f.service->tagRequest(f.id, first, "交稿版")));
+        writeFile(f.source, "latest\n"); CHECK_OK(f.service->backup(f.id));
+        CHECK_OK(f.service->synchronize(f.id, true));
+        const auto uploaded = head(*f.service, f.id);
+        offline = true;
+        auto prepared = f.service->prepareRebuild(f.id); CHECK_OK(prepared.result); QVERIFY(!prepared.result.warning.isEmpty());
+        QCOMPARE(prepared.value.remoteHead, uploaded);
+        auto rebuilt = f.service->rebuild(prepared.value); CHECK_OK(rebuilt); QVERIFY(!rebuilt.warning.isEmpty());
+        QVERIFY(GitRepository(f.service->repoPath(f.id)).tagRefs().value.isEmpty());
+        QVERIFY(GitRepository(f.remote).tagRefs().value.contains("交稿版"));
+        const auto rebuiltHead = head(*f.service, f.id);
+        f.service.reset(); offline = false;
+        f.service = std::make_unique<TestBackupService>(f.paths, nullptr, nullptr, deps);
+        CHECK_OK(f.service->synchronize(f.id, true));
+        QCOMPARE(git(f.remote, {"rev-parse", "HEAD"}).output.trimmed(), rebuiltHead);
+        QVERIFY(GitRepository(f.remote).tagRefs().value.isEmpty());
+        QCOMPARE(readFile(f.source), QByteArray("latest\n"));
+    }
     void importantVersionsRebuildChecksConfirmedSnapshot()
     {
         RemoteFixture f; auto &service = *f.service;
@@ -2360,6 +2413,10 @@ class BackupCoreRegression : public QObject
         QCOMPARE(git(repo, {"rev-parse", "refs/tags/改名后^{}"}).output.trimmed(), first);
         QCOMPARE(head(service, id), current);
         BackupStats stats; CHECK_OK(service.statistics(id, stats)); QCOMPARE(stats.versionCount, 2);
+        CHECK_OK(service.removeTag(service.tagRequest(id, first, "改名后", tagOid)));
+        CHECK_OK(service.removeTag(service.tagRequest(id, first, "别名", first)));
+        CHECK_OK(service.history(id, history)); QCOMPARE(history.size(), 2);
+        QCOMPARE(history.first().hash, current);
     }
     void importantVersionsRecoverDurableJournal()
     {

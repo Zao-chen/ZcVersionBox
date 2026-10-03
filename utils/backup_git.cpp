@@ -130,6 +130,7 @@ BackupResult<QVector<Revision>> GitRepository::history() const
         return true;
     };
     if (!append(result.output)) return {OperationResult::fail("打开备份失败", "无法读取提交记录")};
+    const auto historyCount = revisions.size();
     QStringList extra;
     const auto retained = tagRefs("refs/zcversionbox-history/");
     if (!retained.result.success) return {retained.result};
@@ -148,7 +149,17 @@ BackupResult<QVector<Revision>> GitRepository::history() const
     QMap<QString, QVector<VersionTag>> byCommit;
     for (const auto &tag : marked.value) byCommit[tag.commitOid].append(tag);
     for (auto &revision : revisions) revision.tags = byCommit.value(revision.hash);
-    std::stable_sort(revisions.begin(), revisions.end(), [](const Revision &a, const Revision &b) { return a.committedAt > b.committedAt; });
+    // Keep Git's ordering of the active history, including clock-skewed parents.
+    // Insert standalone marked versions by time without displacing the current HEAD.
+    auto standalone = revisions.mid(historyCount);
+    revisions.resize(historyCount);
+    std::stable_sort(standalone.begin(), standalone.end(), [](const Revision &a, const Revision &b) { return a.committedAt > b.committedAt; });
+    for (const auto &revision : standalone)
+    {
+        auto position = revisions.begin() + qMin(qsizetype(1), revisions.size());
+        while (position != revisions.end() && position->committedAt >= revision.committedAt) ++position;
+        revisions.insert(position, revision);
+    }
     return {OperationResult::ok({}), revisions};
 }
 BackupResult<DiffData> GitRepository::diff(const QString &revision) const

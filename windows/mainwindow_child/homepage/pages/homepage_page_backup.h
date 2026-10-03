@@ -11,6 +11,8 @@ class HomePageBackupPage;
 }
 class QAction;
 class QMenu;
+class QDialog;
+class QAbstractButton;
 class HomePageBackupPage : public QWidget
 {
     Q_OBJECT
@@ -36,6 +38,7 @@ class HomePageBackupPage : public QWidget
         quint64 generation{0};
         QString commit;
         int scroll{0};
+        bool importantOnly{false};
     };
     struct RevisionContext
     {
@@ -58,6 +61,9 @@ class HomePageBackupPage : public QWidget
     QAction *m_edit;
     QAction *m_more;
     QAction *m_refresh;
+    QAction *m_tag;
+    QAbstractButton *m_importantOnly;
+    QPointer<QDialog> m_tagDialog;
     QPointer<QMenu> m_revisionMenu;
     quint64 m_contextGeneration{0};
     bool m_loading{false};
@@ -68,6 +74,11 @@ class HomePageBackupPage : public QWidget
     QString selectedCommit() const;
     void updateActions();
     void rememberState();
+    void applyFilter();
+    void manageTags(const RevisionContext &context);
+    void resolveTagConflicts();
+    QVector<VersionTag> revisionTags(const RevisionContext &context) const;
+    void trackTagDialog(QDialog *dialog);
     RevisionContext revisionContext(const QModelIndex &index) const;
     bool isCurrentContext(const RevisionContext &context) const;
     QModelIndex indexForRevision(const RevisionContext &context) const;

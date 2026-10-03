@@ -256,8 +256,12 @@ BackupResult<PreparedRebuild> BackupEngine::prepareRebuild(const QString &id)
         else
         {
             // Only previously observed refs are eligible for a later offline deletion.
-            prepared.remoteTags = checked.value.tagRemotes.value(endpoint.value).base;
-            result.warning = "当前无法确认云端。本次可重建本地；云端版本覆盖需联网后重新确认。已确认的标记删除会保留待同步记录。";
+            const auto known = checked.value.tagRemotes.value(endpoint.value);
+            prepared.remoteTags = known.base;
+            prepared.remoteHead = known.lastUploadedHead;
+            result.warning = prepared.remoteHead.isEmpty()
+                ? "当前无法确认云端。本次可重建本地；云端版本覆盖需联网后重新确认。已确认的标记删除会保留待同步记录。"
+                : "当前无法连接云端。本次先重建本地，下次上传时仅覆盖上次成功上传的云端版本；云端已有新修改时会停止覆盖。";
         }
     }
     return {result, prepared};

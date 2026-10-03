@@ -98,17 +98,23 @@ void BackupUiActions::remove(const QString &id)
 void BackupUiActions::rebuild(const QString &id)
 {
     const auto generation = m_service->repositoryGeneration(id);
-    if (!m_service->contains(id))
-        return;
-    const auto name = QFileInfo(m_service->sourcePath(id)).fileName();
-    const QPointer<BackupUiActions> guard(this);
-    if (!confirmAction(m_owner, QString("确定要重建“%1”的仓库吗？\n\n删除所有历史版本记录，仅保留当前快照。\n如已配置云端地址，将覆盖已确认的云端版本；云端有新提交时操作会失败。\n\n此操作不可撤销！").arg(name), "确认重建") || !guard)
-        return;
-    if (generation != m_service->repositoryGeneration(id))
-        emit notification(OperationResult::warn("操作已取消", "备份对象已变化，请重新打开此页面后再试"));
-    else
-        m_service->rebuild(id, this, [this](const OperationResult &result)
-                           { emit notification(result); });
+    if (!m_service->contains(id)) return;
+    m_service->prepareRebuild(id, this, [this, id, generation](const BackupResult<PreparedRebuild> &prepared)
+    {
+        if (!m_service->contains(id) || generation != m_service->repositoryGeneration(id)) return;
+        if (!prepared.result.success) { emit notification(prepared.result); return; }
+        const auto name = QFileInfo(m_service->sourcePath(id)).fileName();
+        auto names = prepared.value.tags.keys();
+        for (const auto &remoteName : prepared.value.remoteTags.keys()) if (!names.contains(remoteName)) names.append(remoteName);
+        const auto marks = names.isEmpty() ? QString() : QString("\n\n将清除 %1 个重要版本标记：\n%2").arg(names.size()).arg(names.join("、"));
+        const auto question = QString("确定要重建“%1”的备份吗？\n\n所有历史版本及重要版本标记将被清除，仅保留当前快照。源文件不会被删除。%2\n\n如已配置云端，将覆盖已确认的版本并清除已确认的标记；云端有新修改时会保留并提示。%3\n\n此操作不可撤销！")
+            .arg(name, marks, prepared.result.warning.isEmpty() ? QString() : "\n\n" + prepared.result.warning);
+        const QPointer<BackupUiActions> guard(this);
+        if (!confirmAction(m_owner, question, "确认重建") || !guard) return;
+        if (generation != m_service->repositoryGeneration(id))
+            emit notification(OperationResult::warn("操作已取消", "备份对象已变化，请重新打开此页面后再试"));
+        else m_service->rebuild(prepared.value, this, [this](const OperationResult &result) { emit notification(result); });
+    });
 }
 void BackupUiActions::addLocal(bool directory)
 {

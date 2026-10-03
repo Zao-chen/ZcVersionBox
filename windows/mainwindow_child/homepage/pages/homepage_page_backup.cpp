@@ -3,6 +3,9 @@
 #include "windows/mainwindow_presentation.h"
 #include <QAction>
 #include <QContextMenuEvent>
+#include <QDialog>
+#include <QSignalBlocker>
+#include <oclero/qlementine/widgets/Switch.hpp>
 #include <QFocusEvent>
 #include <QHeaderView>
 #include <QHelpEvent>
@@ -26,6 +29,7 @@
 namespace
 {
 constexpr int CommitRole = Qt::UserRole + 1;
+constexpr int TagsRole = Qt::UserRole + 2;
 constexpr int ActionsColumn = 3;
 constexpr int ActionSize = 28;
 constexpr int ActionSpacing = 4;
@@ -126,7 +130,23 @@ class HistoryDelegate : public QStyledItemDelegate
         }
         else
         {
-            const auto textRect = opt.rect.adjusted(12, 0, -12, 0);
+            auto textRect = opt.rect.adjusted(12, 0, -12, 0);
+            const auto tags = index.data(TagsRole).value<QVector<VersionTag>>();
+            if (index.column() == 0 && !tags.isEmpty())
+            {
+                const auto badgeFont = UiStyle::font(UiStyle::FontRole::Caption);
+                const QFontMetrics metrics(badgeFont, painter->device());
+                const auto suffix = tags.size() > 1 ? QString(" +%1").arg(tags.size() - 1) : QString();
+                const auto label = tags.first().name + suffix;
+                const int badgeWidth = qMin(qMin(180, textRect.width() / 2), metrics.horizontalAdvance(label) + 16);
+                const QRect badge(textRect.left(), textRect.center().y() - 11, qMax(0, badgeWidth), 22);
+                painter->setPen(Qt::NoPen); painter->setBrush(colors.selected);
+                painter->drawRoundedRect(badge, 4, 4);
+                painter->setFont(badgeFont); painter->setPen(colors.text);
+                painter->drawText(badge.adjusted(8, 0, -8, 0), Qt::AlignVCenter | Qt::AlignLeft,
+                                  metrics.elidedText(tags.first().name, Qt::ElideRight, qMax(0, badgeWidth - 16 - metrics.horizontalAdvance(suffix))) + suffix);
+                textRect.setLeft(badge.right() + 8);
+            }
             painter->setFont(font);
             painter->setPen(index.column() == 0 ? colors.text : colors.secondary);
             painter->drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft,
@@ -300,6 +320,15 @@ class HistoryDelegate : public QStyledItemDelegate
 HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) : QWidget(parent), ui(new Ui::HomePageBackupPage), m_service(service)
 {
     ui->setupUi(this);
+    m_importantOnly = new oclero::qlementine::Switch(this);
+    m_importantOnly->setObjectName("importantOnlySwitch");
+    m_importantOnly->setAccessibleName("只看重要版本");
+    ui->importantFilterLabel->setBuddy(m_importantOnly);
+    UiStyle::text(ui->importantFilterLabel, UiStyle::FontRole::Body);
+    ui->filterLayout->insertWidget(1, m_importantOnly);
+    ui->tagConflictButton->hide();
+    connect(m_importantOnly, &QAbstractButton::toggled, this, [this] { applyFilter(); rememberState(); });
+    connect(ui->tagConflictButton, &QPushButton::clicked, this, &HomePageBackupPage::resolveTagConflicts);
     ui->table->setModel(&m_model);
     ui->table->setAccessibleName("历史版本");
     ui->table->setAccessibleDescription("按 Enter 对比版本，Alt+P 预览，Shift+F10 打开版本菜单，F2 编辑说明。");
@@ -339,6 +368,7 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     m_preview = UiStyle::action(this, "previewAction", "预览", "preview");
     m_restore = UiStyle::action(this, "restoreAction", "恢复到此版本…", "restore");
     m_edit = UiStyle::action(this, "editMessageAction", "编辑说明", "edit");
+    m_tag = UiStyle::action(this, "importantVersionAction", "标记为重要版本…");
     m_more = UiStyle::action(this, "revisionMenuAction", "更多版本操作", "more");
     m_refresh = UiStyle::action(this, "refreshHistoryAction", "刷新历史", "refresh");
     m_refresh->setProperty("iconOnly", true);
@@ -405,6 +435,7 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
         if (m_loadedId == id)
         {
             ++m_contextGeneration;
+            if (m_tagDialog) m_tagDialog->reject();
             closeRevisionMenu();
             m_editing = false;
             m_refreshPending = false;
@@ -420,7 +451,7 @@ QList<QAction *> HomePageBackupPage::toolbarActions() const { return {m_refresh}
 void HomePageBackupPage::rememberState()
 {
     if (!m_id.isEmpty() && m_loadedId == m_id && m_loadedGeneration == m_service->repositoryGeneration(m_id))
-        m_states[m_id] = {m_loadedGeneration, selectedCommit(), ui->table->verticalScrollBar()->value()};
+        m_states[m_id] = {m_loadedGeneration, selectedCommit(), ui->table->verticalScrollBar()->value(), m_importantOnly->isChecked()};
 }
 void HomePageBackupPage::deactivate()
 {
@@ -428,12 +459,14 @@ void HomePageBackupPage::deactivate()
     m_refreshNeeded = true;
     ++m_contextGeneration;
     ++m_refreshGeneration;
+    if (m_tagDialog) m_tagDialog->reject();
     closeRevisionMenu();
 }
 void HomePageBackupPage::setBackup(const QString &id, const QString &commit)
 {
     rememberState();
     ++m_contextGeneration;
+    if (m_tagDialog) m_tagDialog->reject();
     closeRevisionMenu();
     m_id = id;
     m_requestedCommit = commit;
@@ -507,7 +540,7 @@ void HomePageBackupPage::editRevision(const RevisionContext &context)
     if (!isCurrentContext(context))
         return;
     const auto index = indexForRevision(context);
-    if (index.isValid())
+    if (index.isValid() && revisionTags(context).isEmpty())
     {
         ui->table->setCurrentIndex(index);
         ui->table->edit(index);
@@ -541,6 +574,7 @@ void HomePageBackupPage::showRevisionMenu(const RevisionContext &context, const 
     add(m_preview, &HomePageBackupPage::previewRevision);
     add(m_compare, &HomePageBackupPage::compareRevision);
     menu->addSeparator();
+    add(m_tag, &HomePageBackupPage::manageTags);
     add(m_edit, &HomePageBackupPage::editRevision);
     menu->addSeparator();
     add(m_restore, &HomePageBackupPage::restoreRevision);
@@ -555,15 +589,20 @@ void HomePageBackupPage::closeRevisionMenu()
 QString HomePageBackupPage::selectedCommit() const
 {
     const auto index = ui->table->currentIndex();
-    return index.isValid() ? index.siblingAtColumn(0).data(CommitRole).toString() : QString();
+    return index.isValid() && !ui->table->isRowHidden(index.row()) ? index.siblingAtColumn(0).data(CommitRole).toString() : QString();
 }
 void HomePageBackupPage::updateActions()
 {
-    const bool enabled = ui->table->currentIndex().isValid() && m_loadedId == m_id && m_loadedGeneration == m_service->repositoryGeneration(m_id);
+    const bool enabled = ui->table->currentIndex().isValid() && !ui->table->isRowHidden(ui->table->currentIndex().row()) && m_loadedId == m_id && m_loadedGeneration == m_service->repositoryGeneration(m_id);
     for (auto *action : {m_compare, m_preview, m_restore, m_edit, m_more})
         action->setEnabled(enabled);
     m_restore->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
-    m_edit->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
+    const auto tags = revisionTags(revisionContext(ui->table->currentIndex()));
+    m_edit->setEnabled(enabled && tags.isEmpty() && m_service->syncState(m_id) == BackupSyncState::Tracking);
+    m_edit->setToolTip(tags.isEmpty() ? QString() : "重要版本的原有说明已固定，可以修改重要版本名称。");
+    m_tag->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
+    m_tag->setText(tags.isEmpty() ? "标记为重要版本…" : "管理重要版本…");
+    ui->tagConflictButton->setVisible(!m_service->tagConflicts(m_id).isEmpty());
 }
 void HomePageBackupPage::refresh()
 {
@@ -612,6 +651,12 @@ void HomePageBackupPage::refresh()
     {
         const auto time = revision.committedAt.toLocalTime().toString("yyyy-MM-dd HH:mm");
         auto *message = new QStandardItem(revision.message);
+        message->setData(QVariant::fromValue(revision.tags), TagsRole);
+        message->setEditable(revision.tags.isEmpty());
+        QStringList tagNames;
+        for (const auto &tag : revision.tags) tagNames.append(tag.name);
+        const auto important = tagNames.isEmpty() ? QString() : "重要版本：" + tagNames.join("、") + '\n';
+        message->setData(important + revision.message, Qt::AccessibleTextRole);
         auto *date = new QStandardItem(time);
         auto *hash = new QStandardItem(revision.shortHash);
         auto *actions = new QStandardItem;
@@ -622,7 +667,7 @@ void HomePageBackupPage::refresh()
         for (auto *item : {message, date, hash, actions})
         {
             item->setData(revision.hash, CommitRole);
-            item->setToolTip(revision.message + "\n" + time + " · " + revision.hash);
+            item->setToolTip(important + revision.message + "\n" + time + " · " + revision.hash);
             item->setData("Enter 对比，Alt+P 预览，Shift+F10 更多操作，F2 编辑说明。", Qt::AccessibleDescriptionRole);
         }
         m_model.appendRow({message, date, hash, actions});
@@ -640,16 +685,39 @@ void HomePageBackupPage::refresh()
     ui->table->setColumnWidth(2, qCeil(QFontMetricsF(UiStyle::font(UiStyle::FontRole::Code), ui->table->viewport()).horizontalAdvance("00000000")) + 24);
     ui->table->setColumnWidth(ActionsColumn, ActionsWidth);
     ui->table->setColumnHidden(2, width() < 640);
-    ui->emptyLabel->setVisible(revisions.isEmpty());
-    ui->table->setVisible(!revisions.isEmpty());
-    if (!revisions.isEmpty())
-        ui->table->setCurrentIndex(m_model.index(selectedRow, 0));
+    {
+        const QSignalBlocker blocker(m_importantOnly);
+        m_importantOnly->setChecked(state.importantOnly);
+    }
+    if (!revisions.isEmpty()) ui->table->setCurrentIndex(m_model.index(selectedRow, 0));
+    applyFilter();
     ui->table->verticalScrollBar()->setValue(state.scroll);
     QTimer::singleShot(0, this, [this, state, request]
                        {
         if (request == m_refreshGeneration)
             ui->table->verticalScrollBar()->setValue(state.scroll); });
     updateActions(); });
+}
+QVector<VersionTag> HomePageBackupPage::revisionTags(const RevisionContext &context) const
+{
+    return indexForRevision(context).data(TagsRole).value<QVector<VersionTag>>();
+}
+void HomePageBackupPage::applyFilter()
+{
+    const bool only = m_importantOnly->isChecked();
+    int visible = 0, first = -1;
+    for (int row = 0; row < m_model.rowCount(); ++row)
+    {
+        const bool hidden = only && m_model.index(row, 0).data(TagsRole).value<QVector<VersionTag>>().isEmpty();
+        ui->table->setRowHidden(row, hidden);
+        if (!hidden) { ++visible; if (first < 0) first = row; }
+    }
+    const auto current = ui->table->currentIndex();
+    if (!current.isValid() || ui->table->isRowHidden(current.row())) ui->table->setCurrentIndex(m_model.index(first, 0));
+    ui->emptyLabel->setText(only ? "还没有重要版本\n从版本行的“更多”菜单选择“标记为重要版本…”。" : "还没有历史版本");
+    ui->emptyLabel->setVisible(visible == 0);
+    ui->table->setVisible(visible != 0);
+    updateActions();
 }
 void HomePageBackupPage::resizeEvent(QResizeEvent *event)
 {

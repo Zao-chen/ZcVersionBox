@@ -64,7 +64,7 @@ struct TagRefChange
 struct TagRemoteState
 {
     QMap<QString, QString> base, pending, conflicts;
-    QString rebuildHead, rebuildExpected;
+    QString rebuildHead, rebuildExpected, lastUploadedHead;
 };
 struct TagRequest
 {

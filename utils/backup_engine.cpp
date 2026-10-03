@@ -694,6 +694,11 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
         }
         else pushed = git.push();
         if (!pushed.success) return pushed;
+        auto uploadedRecord = *m_catalog.find(id);
+        uploadedRecord.tagRemotes[endpoint.value].lastUploadedHead = git.head().value;
+        ++uploadedRecord.tagRevision;
+        const auto recordedUpload = m_catalog.save(uploadedRecord);
+        if (!recordedUpload.success) return recordedUpload;
         auto tags = syncTags(id, true);
         if (!tags.success)
         {
