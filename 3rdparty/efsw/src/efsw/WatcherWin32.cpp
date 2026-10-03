@@ -146,20 +146,21 @@ void WatchCallbackEx( WatcherWin32* pWatch ) {
 			}
 
 			if ( matches == 1 ) {
-				FileInfo destination( std::string( pWatch->DirName ) + nfile );
-				bool identityMatches =
-					destination.Inode != 0 &&
-					destination.Inode == static_cast<Uint64>( event.FileId.QuadPart );
-				bool unambiguousIdentity =
-					destination.isDirectory() ||
-					( destination.isRegularFile() && destination.LinkCount == 1 );
-				if ( parentPath( source->FileName ) != parentPath( nfile ) && identityMatches &&
-					 unambiguousIdentity ) {
-					std::string oldFile( source->FileName );
-					pWatch->PendingRemovals.erase( source );
-					pWatch->Watch->handleAction( pWatch, nfile, FILE_ACTION_RENAMED_NEW_NAME,
-												 oldFile );
-					continue;
+				if ( parentPath( source->FileName ) != parentPath( nfile ) ) {
+					FileInfo destination( std::string( pWatch->DirName ) + nfile );
+					bool identityMatches =
+						destination.Inode != 0 &&
+						destination.Inode == static_cast<Uint64>( event.FileId.QuadPart );
+					bool unambiguousIdentity =
+						destination.isDirectory() ||
+						( destination.isRegularFile() && destination.LinkCount == 1 );
+					if ( identityMatches && unambiguousIdentity ) {
+						std::string oldFile( source->FileName );
+						pWatch->PendingRemovals.erase( source );
+						pWatch->Watch->handleAction( pWatch, nfile, FILE_ACTION_RENAMED_NEW_NAME,
+													 oldFile );
+						continue;
+					}
 				}
 			}
 

@@ -118,10 +118,10 @@ jobs:
             printf '%s\n' "${assets[@]}" >&2
             exit 1
           }
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release edit "$TAG_NAME" --title "ZcVersionBox $TAG_NAME"
+          if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --title "ZcVersionBox $TAG_NAME"
           else
-            gh release create "$TAG_NAME" --target "$RELEASE_SHA" \
+            gh release create "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --target "$RELEASE_SHA" \
               --title "ZcVersionBox $TAG_NAME" --generate-notes
           fi
-          gh release upload "$TAG_NAME" "${assets[@]}" --clobber
+          gh release upload "$TAG_NAME" --repo "$GITHUB_REPOSITORY" "${assets[@]}" --clobber
