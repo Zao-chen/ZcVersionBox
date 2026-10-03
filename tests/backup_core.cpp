@@ -2481,6 +2481,47 @@ class BackupCoreRegression : public QObject
         CHECK_OK(service.history(id, history)); QCOMPARE(history.size(), 2);
         QCOMPARE(history.first().hash, current);
     }
+    void importantVersionsBatchHistoryPreservesClockSkewAndAliases()
+    {
+        TestDirectory dir;
+        const auto repo = dir.path() + "/repository";
+        QVERIFY(QDir().mkpath(repo));
+        GitRepository repository(repo);
+        CHECK_OK(repository.initialize("main"));
+        QByteArray stream;
+        const auto appendCommit = [&](const QString &ref, int mark, int timestamp, const QString &message, int parent)
+        {
+            const auto text = message.toUtf8();
+            stream += "commit " + ref.toUtf8() + "\nmark :" + QByteArray::number(mark) +
+                "\ncommitter Fixture <fixture@example.test> " + QByteArray::number(timestamp) +
+                " +0000\ndata " + QByteArray::number(text.size()) + '\n' + text + '\n';
+            if (parent) stream += "from :" + QByteArray::number(parent) + '\n';
+            stream += '\n';
+        };
+        appendCommit("refs/heads/main", 1, 900, "root", 0);
+        appendCommit("refs/heads/main", 2, 100, "skewed parent", 1);
+        appendCommit("refs/heads/main", 3, 500, "current", 2);
+        for (int index = 0; index < 210; ++index)
+            appendCommit("refs/tags/standalone-" + QString::number(index), index + 4, index + 600, "standalone-" + QString::number(index), 1);
+        appendCommit("refs/tags/oldest", 214, 50, "oldest", 1);
+        stream += "reset refs/tags/alias\nfrom :213\n\n";
+        CHECK_OK(GitRepository::outcome(repository.run({"fast-import", "--quiet"}, stream)));
+        const auto aliased = repository.resolve("refs/tags/alias");
+        CHECK_OK(aliased.result);
+        git(repo, {"update-ref", "refs/zcversionbox-history/" + aliased.value, aliased.value});
+        const auto history = repository.history();
+        CHECK_OK(history.result);
+        QCOMPARE(history.value.size(), 214);
+        QCOMPARE(history.value.first().hash, repository.head().value);
+        QCOMPARE(history.value.first().message, QString("current"));
+        QCOMPARE(history.value[1].hash, aliased.value);
+        QCOMPARE(history.value[1].tags.size(), 2);
+        for (int index = 0; index < 210; ++index)
+            QCOMPARE(history.value[index + 1].message, "standalone-" + QString::number(209 - index));
+        QCOMPARE(history.value[211].message, QString("skewed parent"));
+        QCOMPARE(history.value[212].message, QString("root"));
+        QCOMPARE(history.value[213].message, QString("oldest"));
+    }
     void importantVersionsRecoverDurableJournal()
     {
         TestDirectory dir;

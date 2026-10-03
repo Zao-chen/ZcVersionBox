@@ -132,11 +132,19 @@ BackupResult<QVector<Revision>> GitRepository::history() const
     if (!append(result.output)) return {OperationResult::fail("打开备份失败", "无法读取提交记录")};
     const auto historyCount = revisions.size();
     QStringList extra;
+    QSet<QString> extraSeen;
+    const auto appendExtra = [&](const QString &oid)
+    {
+        if (!seen.contains(oid) && !extraSeen.contains(oid))
+        {
+            extra.append(oid);
+            extraSeen.insert(oid);
+        }
+    };
     const auto retained = tagRefs("refs/zcversionbox-history/");
     if (!retained.result.success) return {retained.result};
-    for (const auto &oid : retained.value) if (!seen.contains(oid) && !extra.contains(oid)) extra.append(oid);
-    for (const auto &tag : marked.value)
-        if (!seen.contains(tag.commitOid) && !extra.contains(tag.commitOid)) extra.append(tag.commitOid);
+    for (const auto &oid : retained.value) appendExtra(oid);
+    for (const auto &tag : marked.value) appendExtra(tag.commitOid);
     // Bound command-line length on Windows, while avoiding one Git process per row.
     for (int offset = 0; offset < extra.size(); offset += 100)
     {
@@ -149,18 +157,23 @@ BackupResult<QVector<Revision>> GitRepository::history() const
     QMap<QString, QVector<VersionTag>> byCommit;
     for (const auto &tag : marked.value) byCommit[tag.commitOid].append(tag);
     for (auto &revision : revisions) revision.tags = byCommit.value(revision.hash);
+    if (historyCount == revisions.size()) return {OperationResult::ok({}), revisions};
     // Keep Git's ordering of the active history, including clock-skewed parents.
     // Insert standalone marked versions by time without displacing the current HEAD.
     auto standalone = revisions.mid(historyCount);
-    revisions.resize(historyCount);
     std::stable_sort(standalone.begin(), standalone.end(), [](const Revision &a, const Revision &b) { return a.committedAt > b.committedAt; });
+    QVector<Revision> merged;
+    merged.reserve(revisions.size());
+    qsizetype active = 0;
+    if (historyCount > 0) merged.append(revisions[active++]);
     for (const auto &revision : standalone)
     {
-        auto position = revisions.begin() + qMin(qsizetype(1), revisions.size());
-        while (position != revisions.end() && position->committedAt >= revision.committedAt) ++position;
-        revisions.insert(position, revision);
+        while (active < historyCount && revisions[active].committedAt >= revision.committedAt)
+            merged.append(revisions[active++]);
+        merged.append(revision);
     }
-    return {OperationResult::ok({}), revisions};
+    while (active < historyCount) merged.append(revisions[active++]);
+    return {OperationResult::ok({}), merged};
 }
 BackupResult<DiffData> GitRepository::diff(const QString &revision) const
 {

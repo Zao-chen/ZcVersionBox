@@ -33,6 +33,11 @@ OperationResult BackupEngine::commitTagChanges(BackupRecord record, const QVecto
     const auto *found = m_catalog.find(record.id);
     if (!found || !found->tagJournal.isEmpty()) return changedTags();
     const auto before = *found;
+    if (changes.isEmpty())
+    {
+        ++record.tagRevision;
+        return m_catalog.save(record);
+    }
     record.tagJournal = changes;
     ++record.tagRevision;
     auto saved = m_catalog.save(record);
