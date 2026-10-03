@@ -395,6 +395,12 @@ BackupTaskId BackupService::resolvePull(const RestoreRequest &r, bool apply, QOb
         return restore(r, c, std::move(f));
     return d->submitBackup(r.id, c, std::move(f), {}, r);
 }
+BackupTaskId BackupService::createTag(const TagRequest &r, QObject *c, Completion f)
+{ return d->mutate(r.id, c, std::move(f), [r](BackupEngine &e) { return e.createTag(r); }); }
+BackupTaskId BackupService::renameTag(const TagRequest &r, const QString &name, QObject *c, Completion f)
+{ return d->mutate(r.id, c, std::move(f), [r, name](BackupEngine &e) { return e.renameTag(r, name); }); }
+BackupTaskId BackupService::removeTag(const TagRequest &r, QObject *c, Completion f)
+{ return d->mutate(r.id, c, std::move(f), [r](BackupEngine &e) { return e.removeTag(r); }); }
 BackupTaskId BackupService::editMessage(const QString &id, const QString &commit, const QString &message, QObject *c, Completion f)
 {
     return d->mutate(id, c, std::move(f), [id, commit, message](BackupEngine &e)

@@ -2192,6 +2192,94 @@ class BackupCoreRegression : public QObject
         const auto paused = record(service, id);
         QCOMPARE(readFile(paused.recoveryPaths.first() + "/old"), QByteArray("one\n"));
     }
+    void importantVersionsPreserveContentAndIdentity()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/draft.txt";
+        writeFile(source, "first\n"); CHECK_OK(service.addLocal(source));
+        const auto id = testBackupId(source), first = head(service, id), repo = service.repoPath(id);
+        writeFile(source, "second\n"); CHECK_OK(service.backup(id));
+        const auto latest = head(service, id);
+        writeFile(repo + "/draft.txt", "external staged\n"); git(repo, {"add", "draft.txt"});
+        const auto index = git(repo, {"write-tree"}).output;
+        CHECK_OK(service.createTag(service.tagRequest(id, first, "  交稿版  ")));
+        QCOMPARE(git(repo, {"rev-parse", "refs/tags/交稿版"}).output.trimmed(), first);
+        QCOMPARE(head(service, id), latest);
+        QCOMPARE(git(repo, {"write-tree"}).output, index);
+        QCOMPARE(readFile(source), QByteArray("second\n"));
+        QVERIFY(!service.createTag(service.tagRequest(id, latest, "交稿版")).success);
+        for (const auto &name : {QString(), QString("bad name"), QString("a..b"), QString("-x"), QString("a\nb")})
+            QVERIFY(!service.createTag(service.tagRequest(id, latest, name)).success);
+        auto stale = service.tagRequest(id, first, "交稿版", latest);
+        QVERIFY(!service.removeTag(stale).success);
+        auto request = service.tagRequest(id, first, "交稿版", first);
+        CHECK_OK(service.renameTag(request, "定稿"));
+        QVERIFY(!service.removeTag(request).success);
+        CHECK_OK(service.removeTag(service.tagRequest(id, first, "定稿", first)));
+        QCOMPARE(head(service, id), latest);
+        QCOMPARE(git(repo, {"write-tree"}).output, index);
+        CHECK_OK(service.createTag(service.tagRequest(id, latest, "完成")));
+        QVERIFY(!service.editMessage(id, latest, "new description").success);
+        QCOMPARE(head(service, id), latest);
+        auto oldGeneration = service.tagRequest(id, first, "过期"); ++oldGeneration.generation;
+        QVERIFY(!service.createTag(oldGeneration).success);
+    }
+    void importantVersionsReadAnnotatedAndDetachedTags()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/draft.txt";
+        writeFile(source, "first\n"); CHECK_OK(service.addLocal(source));
+        const auto id = testBackupId(source), repo = service.repoPath(id), first = head(service, id);
+        git(repo, {"tag", "-a", "附注", "-m", "tag message"});
+        git(repo, {"tag", "别名"});
+        git(repo, {"commit", "--amend", "-m", "replaced outside"});
+        const auto current = head(service, id);
+        QVector<Revision> history; CHECK_OK(service.history(id, history));
+        QCOMPARE(history.size(), 2);
+        int marked = 0;
+        for (const auto &revision : history)
+            if (revision.hash == first) { QCOMPARE(revision.tags.size(), 2); marked += revision.tags.size(); }
+        QCOMPARE(marked, 2);
+        const auto tagOid = git(repo, {"rev-parse", "refs/tags/附注"}).output.trimmed();
+        CHECK_OK(service.renameTag(service.tagRequest(id, first, "附注", tagOid), "改名后"));
+        QCOMPARE(git(repo, {"rev-parse", "refs/tags/改名后"}).output.trimmed(), tagOid);
+        QCOMPARE(git(repo, {"rev-parse", "refs/tags/改名后^{}"}).output.trimmed(), first);
+        QCOMPARE(head(service, id), current);
+        BackupStats stats; CHECK_OK(service.statistics(id, stats)); QCOMPARE(stats.versionCount, 2);
+    }
+    void importantVersionsRecoverDurableJournal()
+    {
+        TestDirectory dir;
+        bool failSave = false, failFinal = false;
+        BackupDependencies deps;
+        deps.allowSave = [&](const BackupRecord &r) { return !failSave && !(failFinal && r.tagJournal.isEmpty()); };
+        const auto source = dir.path() + "/draft.txt";
+        writeFile(source, "first\n");
+        QString id, commit;
+        {
+            TestBackupService service(pathsIn(dir), nullptr, nullptr, deps);
+            CHECK_OK(service.addLocal(source)); id = testBackupId(source); commit = head(service, id);
+            failSave = true;
+            QVERIFY(!service.createTag(service.tagRequest(id, commit, "不能保存")).success);
+            QVERIFY(GitRepository(service.repoPath(id)).tagRefs().value.isEmpty());
+            failSave = false; failFinal = true;
+            QVERIFY(!service.createTag(service.tagRequest(id, commit, "已保存")).success);
+            QCOMPARE(record(service, id).tagJournal.size(), 1);
+            QCOMPARE(GitRepository(service.repoPath(id)).tagRefs().value.value("已保存"), commit);
+            failFinal = false;
+        }
+        TestBackupService reopened(pathsIn(dir)); CHECK_OK(reopened.reload());
+        QVERIFY(record(reopened, id).tagJournal.isEmpty());
+        QCOMPARE(GitRepository(reopened.repoPath(id)).tagRefs().value.value("已保存"), commit);
+        // Crash before update-ref: the durable intent is completed on the next task.
+        BackupCatalog catalog(pathsIn(dir)); CHECK_OK(catalog.load()); auto r = *catalog.find(id);
+        r.tagJournal = {{"恢复前", {}, commit}}; CHECK_OK(catalog.save(r));
+        CHECK_OK(reopened.reload());
+        QCOMPARE(GitRepository(reopened.repoPath(id)).tagRefs().value.value("恢复前"), commit);
+        QCOMPARE(readFile(source), QByteArray("first\n"));
+    }
     void editsDoNotIncludeStagedFiles()
     {
         TestDirectory dir;

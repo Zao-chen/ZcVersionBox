@@ -16,6 +16,12 @@ class GitRepository
     OperationResult clean() const;
     BackupResult<QString> stagedState(const QString &managedPath = ".") const;
     BackupResult<QVector<Revision>> history() const;
+    BackupResult<QVector<VersionTag>> tags() const;
+    BackupResult<QMap<QString, QString>> tagRefs(const QString &prefix = "refs/tags/") const;
+    OperationResult validateTagName(const QString &name) const;
+    OperationResult updateTags(const QVector<TagRefChange> &changes) const;
+    BackupResult<QString> tagEndpoint() const;
+    BackupResult<QMap<QString, QString>> fetchTags() const;
     BackupResult<DiffData> diff(const QString &revision) const;
     BackupResult<QString> diffText(const DiffData &data, const QString &file) const;
     OperationResult exportRevision(const QString &revision, const QString &relativePath, const QString &target, const BackupFiles &files) const;

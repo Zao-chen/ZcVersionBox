@@ -62,8 +62,15 @@ OperationResult BackupEngine::begin(std::shared_ptr<std::atomic_bool> cancellati
     for (const auto &path : {root + "/items", root + "/staging"})
         if (!QDir().mkpath(path))
             return OperationResult::fail("操作失败", "无法创建备份存储目录：" + path);
-    for (const auto &r : m_catalog.records())
+    for (const auto &r : records())
+    {
         m_generations[r.id] = qMax(m_generations.value(r.id), r.generation);
+        if (!r.tagJournal.isEmpty())
+        {
+            const auto recovered = recoverTags(r);
+            if (!recovered.success) result.warning += "\n" + recovered.message;
+        }
+    }
     return result;
 }
 void BackupEngine::end()
@@ -401,10 +408,9 @@ BackupResult<BackupStats> BackupEngine::statistics(const QString &id)
     stats.fileSize = files.second;
     stats.cacheSize = pathStats(m_catalog.repoPath(id) + "/.git/objects").second;
     const auto git = repository(id);
-    auto count = git.run({"rev-list", "--count", "HEAD"});
-    if (!count.success())
-        return {GitRepository::outcome(count)};
-    stats.versionCount = count.output.trimmed().toInt();
+    const auto versions = git.history();
+    if (!versions.result.success) return {versions.result};
+    stats.versionCount = versions.value.size();
     const auto remoteName = git.remoteName();
     if (remoteName.result.success)
     {
@@ -596,6 +602,11 @@ OperationResult BackupEngine::editMessage(const QString &id, const QString &comm
         return OperationResult::fail("无法编辑", "只能编辑最新的提交说明");
     if (current.value != r.lastCommit && !git.run({"diff", "--quiet", r.lastCommit, current.value, "--", r.repositoryPath}).success())
         return attention(r, "同步仓库在应用外发生内容变化，请先检查后再编辑说明");
+    const auto marked = git.tags();
+    if (!marked.result.success) return marked.result;
+    for (const auto &tag : marked.value)
+        if (tag.commitOid == current.value)
+            return OperationResult::fail("说明已固定", "重要版本的原有说明不可编辑。可以在“管理重要版本”中修改名称。");
     const auto before = r;
     r.operation = "edit-message";
     const auto saved = m_catalog.save(r);

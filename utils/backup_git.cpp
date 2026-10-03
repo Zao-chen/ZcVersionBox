@@ -4,6 +4,8 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 #include <QTimeZone>
+#include <QSet>
+#include <algorithm>
 
 GitRepository::GitRepository(QString path, GitRunner runner, std::shared_ptr<std::atomic_bool> cancel)
     : m_path(std::move(path)), m_runner(std::move(runner)), m_cancel(std::move(cancel)) {}
@@ -107,19 +109,43 @@ BackupResult<QString> GitRepository::stagedState(const QString &managedPath) con
 }
 BackupResult<QVector<Revision>> GitRepository::history() const
 {
-    const auto r = run({"log", "-z", "--format=%H%x00%h%x00%ct%x00%s"});
-    if (!r.success())
-        return {outcome(r, "打开备份失败")};
+    const auto marked = tags();
+    if (!marked.result.success) return {marked.result};
+    auto result = run({"log", "-z", "--format=%H%x00%h%x00%ct%x00%s", "HEAD", "--"});
+    if (!result.success()) return {outcome(result, "打开备份失败")};
     QVector<Revision> revisions;
-    const auto fields = r.output.split(QChar(0), Qt::KeepEmptyParts);
-    for (qsizetype i = 0; i + 3 < fields.size(); i += 4)
+    QSet<QString> seen;
+    const auto append = [&](const QString &output) -> bool
     {
-        bool valid = false;
-        const auto time = fields[i + 2].toLongLong(&valid);
-        if (!valid || fields[i].isEmpty())
-            return {OperationResult::fail("打开备份失败", "无法读取提交记录")};
-        revisions.append({fields[i], fields[i + 3], QDateTime::fromSecsSinceEpoch(time, QTimeZone::UTC), fields[i + 1]});
+        const auto fields = output.split(QChar(0), Qt::KeepEmptyParts);
+        for (qsizetype i = 0; i + 3 < fields.size(); i += 4)
+        {
+            bool valid = false;
+            const auto time = fields[i + 2].toLongLong(&valid);
+            if (!valid || fields[i].isEmpty()) return false;
+            if (seen.contains(fields[i])) continue;
+            seen.insert(fields[i]);
+            revisions.append({fields[i], fields[i + 3], QDateTime::fromSecsSinceEpoch(time, QTimeZone::UTC), fields[i + 1], {}});
+        }
+        return true;
+    };
+    if (!append(result.output)) return {OperationResult::fail("打开备份失败", "无法读取提交记录")};
+    QStringList extra;
+    for (const auto &tag : marked.value)
+        if (!seen.contains(tag.commitOid) && !extra.contains(tag.commitOid)) extra.append(tag.commitOid);
+    // Bound command-line length on Windows, while avoiding one Git process per row.
+    for (int offset = 0; offset < extra.size(); offset += 100)
+    {
+        QStringList args{"log", "--no-walk=unsorted", "-z", "--format=%H%x00%h%x00%ct%x00%s"};
+        args += extra.mid(offset, 100); args << "--";
+        result = run(args);
+        if (!result.success()) return {outcome(result)};
+        if (!append(result.output)) return {OperationResult::fail("打开备份失败", "无法读取重要版本")};
     }
+    QMap<QString, QVector<VersionTag>> byCommit;
+    for (const auto &tag : marked.value) byCommit[tag.commitOid].append(tag);
+    for (auto &revision : revisions) revision.tags = byCommit.value(revision.hash);
+    std::stable_sort(revisions.begin(), revisions.end(), [](const Revision &a, const Revision &b) { return a.committedAt > b.committedAt; });
     return {OperationResult::ok({}), revisions};
 }
 BackupResult<DiffData> GitRepository::diff(const QString &revision) const
