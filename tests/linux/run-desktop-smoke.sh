@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+command -v xprop >/dev/null || { echo 'Missing desktop smoke tool: xprop (install x11-utils)' >&2; exit 1; }
 if [[ -z ${DBUS_SESSION_BUS_ADDRESS:-} ]]; then
     exec dbus-run-session -- bash "$0" "$@"
 fi
