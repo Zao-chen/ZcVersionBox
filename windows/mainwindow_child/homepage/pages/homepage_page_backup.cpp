@@ -645,7 +645,8 @@ void HomePageBackupPage::refresh()
     auto state = m_states.value(id);
     if (state.generation != generation)
         state = {};
-    if (!m_requestedCommit.isEmpty())
+    const bool requestedCommit = !m_requestedCommit.isEmpty();
+    if (requestedCommit)
     {
         state.commit = m_requestedCommit;
         state.scroll = 0;
@@ -684,7 +685,10 @@ void HomePageBackupPage::refresh()
         }
         m_model.appendRow({message, date, hash, actions});
         if (revision.hash == state.commit)
+        {
             selectedRow = m_model.rowCount() - 1;
+            if (requestedCommit && revision.tags.isEmpty()) state.milestoneOnly = false;
+        }
     }
     m_loadedId = m_id;
     m_loadedGeneration = m_service->repositoryGeneration(m_id);

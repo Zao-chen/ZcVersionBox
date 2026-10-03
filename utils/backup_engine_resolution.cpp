@@ -27,6 +27,7 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareSyncResolution(const QS
 {
     auto checked = require(id);
     if (!checked.result.success) return {checked.result};
+    if (checked.value.state == BackupSyncState::ResolutionPending && !restart) return syncResolution(id);
     QString tagWarning;
     if (checked.value.state != BackupSyncState::NeedsAttention)
     {
@@ -37,7 +38,6 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareSyncResolution(const QS
         if (!checked.result.success) return {checked.result};
     }
     auto before = checked.value;
-    if (before.state == BackupSyncState::ResolutionPending && !restart) return syncResolution(id);
     if (before.state == BackupSyncState::NeedsAttention) return {OperationResult::warn("需要先检查备份", before.stateDetail)};
     if (before.state == BackupSyncState::ResolutionPending)
     {

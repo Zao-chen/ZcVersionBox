@@ -2357,6 +2357,69 @@ class BackupCoreRegression : public QObject
         QVector<Revision> versions; CHECK_OK(service.history(f.id, versions)); QCOMPARE(versions.size(), 1);
         QCOMPARE(readFile(f.source), QByteArray("initial\n"));
     }
+    void importantVersionsRebuildPreservesPushEndpoint()
+    {
+        RemoteFixture fixture;
+        auto &service = *fixture.service;
+        const auto repo = service.repoPath(fixture.id);
+        const auto pushUrl = QUrl::fromLocalFile(fixture.remote).toString();
+        git(repo, {"remote", "set-url", "--push", "origin", pushUrl});
+        const auto first = head(service, fixture.id);
+        CHECK_OK(service.createTag(service.tagRequest(fixture.id, first, "交稿版")));
+        CHECK_OK(service.synchronize(fixture.id, true));
+        writeFile(fixture.source, "latest\n");
+        CHECK_OK(service.backup(fixture.id));
+        CHECK_OK(service.synchronize(fixture.id, true));
+        const auto prepared = service.prepareRebuild(fixture.id);
+        CHECK_OK(prepared.result);
+        const auto rebuilt = service.rebuild(prepared.value);
+        CHECK_OK(rebuilt);
+        QCOMPARE(git(repo, {"remote", "get-url", "--push", "origin"}).output.trimmed(), pushUrl);
+        QCOMPARE(GitRepository(repo).tagEndpoint().value, prepared.value.endpoint);
+        QVERIFY2(rebuilt.warning.isEmpty(), qPrintable(rebuilt.warning));
+        QCOMPARE(git(fixture.remote, {"rev-parse", "HEAD"}).output.trimmed(), head(service, fixture.id));
+        QVERIFY(GitRepository(fixture.remote).tagRefs().value.isEmpty());
+        QCOMPARE(readFile(fixture.source), QByteArray("latest\n"));
+    }
+    void importantVersionsResumePreparedSyncOffline()
+    {
+        bool offline = false;
+        BackupDependencies dependencies;
+        dependencies.git = [&](const QString &repo, const QStringList &args, const GitOptions &options)
+        {
+            if (offline && (args.contains("fetch") || args.contains("ls-remote"))) return failedGit();
+            return runGit(repo, args, options);
+        };
+        RemoteFixture fixture(dependencies);
+        fixture.commitRemote("cloud\n");
+        writeFile(fixture.source, "local\n");
+        const auto prepared = fixture.service->prepareSyncResolution(fixture.id);
+        CHECK_OK(prepared.result);
+        QVERIFY(!prepared.value.id.isEmpty());
+        offline = true;
+        const auto resumed = fixture.service->prepareSyncResolution(fixture.id);
+        CHECK_OK(resumed.result);
+        QCOMPARE(resumed.value.id, prepared.value.id);
+        QCOMPARE(resumed.value.revision, prepared.value.revision);
+        QCOMPARE(readFile(fixture.source), QByteArray("local\n"));
+    }
+    void importantVersionsPullRetainsConcurrentDeletionWarning()
+    {
+        RemoteFixture fixture;
+        auto &service = *fixture.service;
+        const auto first = head(service, fixture.id);
+        CHECK_OK(service.createTag(service.tagRequest(fixture.id, first, "交稿版")));
+        CHECK_OK(service.synchronize(fixture.id, true));
+        CHECK_OK(service.removeTag(service.tagRequest(fixture.id, first, "交稿版", first)));
+        const auto remoteCommit = fixture.commitRemote("cloud\n");
+        git(fixture.writer, {"tag", "交稿版", remoteCommit});
+        git(fixture.writer, {"push", "--force", "origin", "refs/tags/交稿版"});
+        const auto pulled = service.synchronize(fixture.id, false);
+        CHECK_OK(pulled);
+        QVERIFY2(pulled.warning.contains("交稿版"), qPrintable(pulled.warning));
+        QCOMPARE(GitRepository(service.repoPath(fixture.id)).tagRefs().value.value("交稿版"), remoteCommit);
+        QCOMPARE(readFile(fixture.source), QByteArray("initial\n"));
+    }
     void importantVersionsPreserveContentAndIdentity()
     {
         TestDirectory dir;

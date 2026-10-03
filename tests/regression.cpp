@@ -1101,6 +1101,36 @@ class Regression : public QObject
         QCOMPARE(head(service, id), latest); QCOMPARE(readFile(source), QByteArray("second\n"));
         page.hide();
     }
+    void historyRequestedVersionOverridesMilestoneFilter()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/方案.md";
+        writeFile(source, "first\n");
+        QVERIFY(service.addLocal(source).success);
+        const auto id = encoded(source), first = head(service, id);
+        QVERIFY(service.createTag(service.tagRequest(id, first, "交稿版")).success);
+        writeFile(source, "second\n");
+        QVERIFY(service.backup(id).success);
+        const auto latest = head(service, id);
+        HomePageBackupPage page(&service);
+        page.setBackup(id);
+        settle(service);
+        auto *table = page.findChild<QTableView *>("table");
+        auto *filter = page.findChild<QAbstractButton *>("milestoneOnlySwitch");
+        QVERIFY(table);
+        QVERIFY(filter);
+        filter->setChecked(true);
+        page.setBackup(id, first);
+        settle(service);
+        QVERIFY(filter->isChecked());
+        QCOMPARE(table->currentIndex().data(Qt::UserRole + 1).toString(), first);
+        page.setBackup(id, latest);
+        settle(service);
+        QVERIFY(!filter->isChecked());
+        QCOMPARE(table->currentIndex().data(Qt::UserRole + 1).toString(), latest);
+        QVERIFY(!table->isRowHidden(table->currentIndex().row()));
+    }
     void renderImportantVersions()
     {
         TestDirectory dir; TestBackupService service(pathsIn(dir));

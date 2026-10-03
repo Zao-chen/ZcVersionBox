@@ -718,10 +718,19 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
     }
     const auto tags = syncTags(id, false);
     if (!tags.success) return tags;
+    const auto withTagWarning = [&tags](OperationResult result)
+    {
+        if (!tags.warning.isEmpty())
+        {
+            if (!result.warning.isEmpty()) result.warning += '\n';
+            result.warning += tags.warning;
+        }
+        return result;
+    };
     auto before = *m_catalog.find(id);
     const auto previous = git.head();
     if (!previous.result.success)
-        return previous.result;
+        return withTagWarning(previous.result);
     auto r = before;
     r.state = BackupSyncState::RemotePending;
     r.pendingCommit = previous.value;
@@ -729,7 +738,7 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
     r.operation = "pull";
     auto saved = m_catalog.save(r);
     if (!saved.success)
-        return saved; // Never change HEAD without a durable stop condition.
+        return withTagWarning(saved);
     auto pulled = git.pull();
     const auto current = git.head();
     if (!pulled.success)
@@ -739,15 +748,15 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
             const auto reset = m_catalog.save(before);
             if (!reset.success)
                 pulled.warning = reset.message;
-            return pulled;
+            return withTagWarning(pulled);
         }
-        return attention(r, "拉取未正常完成，仓库状态需要检查：" + pulled.message);
+        return withTagWarning(attention(r, "拉取未正常完成，仓库状态需要检查：" + pulled.message));
     }
     if (!current.result.success)
-        return attention(r, "拉取后无法确认仓库提交");
+        return withTagWarning(attention(r, "拉取后无法确认仓库提交"));
     const auto difference = git.run({"diff", "--quiet", previous.value, current.value, "--", r.repositoryPath});
     if (!difference.started || !difference.finished || (difference.exitCode != 0 && difference.exitCode != 1))
-        return attention(r, "无法确认拉取后的受管理内容");
+        return withTagWarning(attention(r, "无法确认拉取后的受管理内容"));
     r.operation.clear();
     if (difference.exitCode == 0)
     {
@@ -763,9 +772,9 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
     }
     saved = m_catalog.save(r);
     if (!saved.success)
-        return saved;
-    return r.state == BackupSyncState::RemotePending ? OperationResult::info("已拉取，源位置待处理", r.stateDetail, 6000)
-                                                     : OperationResult::ok("已同步", "受管理内容未变化，继续自动备份", 2000);
+        return withTagWarning(saved);
+    return withTagWarning(r.state == BackupSyncState::RemotePending ? OperationResult::info("已拉取，源位置待处理", r.stateDetail, 6000)
+                                                                    : OperationResult::ok("已同步", "受管理内容未变化，继续自动备份", 2000));
 }
 OperationResult BackupEngine::removeBackup(const QString &id)
 {
@@ -857,6 +866,14 @@ OperationResult BackupEngine::rebuild(const PreparedRebuild &request)
         auto configured = fresh.run({"remote", "add", remoteName.value, remote.output.trimmed()});
         if (!configured.success())
             return GitRepository::outcome(configured);
+        const auto pushUrls = git.run({"config", "--null", "--get-all", "remote." + remoteName.value + ".pushurl"});
+        if (!pushUrls.success() && (!pushUrls.started || !pushUrls.finished || pushUrls.exitCode != 1))
+            return GitRepository::outcome(pushUrls);
+        for (const auto &pushUrl : pushUrls.output.split(QChar(0), Qt::SkipEmptyParts))
+        {
+            const auto copied = fresh.run({"config", "--add", "remote." + remoteName.value + ".pushurl", pushUrl});
+            if (!copied.success()) return GitRepository::outcome(copied);
+        }
         auto target = git.targetRef();
         if (!target.result.success)
             return target.result;
@@ -869,6 +886,10 @@ OperationResult BackupEngine::rebuild(const PreparedRebuild &request)
     }
     const auto candidateHead = fresh.head();
     if (!candidateHead.result.success) return candidateHead.result;
+    const auto candidateEndpoint = fresh.tagEndpoint();
+    if (!candidateEndpoint.result.success) return candidateEndpoint.result;
+    if (candidateEndpoint.value != request.endpoint)
+        return OperationResult::warn("重建已取消", "候选仓库无法保留已确认的云端地址，原仓库保持不变。");
     BackupReplacement replacement(m_dependencies.files, m_catalog.repoPath(id) + "/.git", m_catalog.itemPath(id));
     if (!replacement.valid())
         return OperationResult::fail("重建失败", "无法暂存旧仓库");
@@ -880,6 +901,10 @@ OperationResult BackupEngine::rebuild(const PreparedRebuild &request)
     const auto currentTags = git.tagRefs();
     if (!currentTags.result.success || currentTags.value != request.tags)
         return OperationResult::warn("请重新确认重建", "准备重建期间里程碑标记发生变化，原仓库已保留。");
+    const auto currentEndpoint = git.tagEndpoint();
+    if (!currentEndpoint.result.success) return currentEndpoint.result;
+    if (currentEndpoint.value != request.endpoint)
+        return OperationResult::warn("请重新确认重建", "准备重建期间云端地址发生变化，原仓库已保留。");
     if (!currentHead.result.success || !currentBranch.result.success || currentHead.value != before.lastCommit || currentBranch.value != branch.value || !git.clean().success)
         return attention(before, "准备重建期间发现外部仓库修改，已停止替换原仓库");
     // The deletion intent survives replacement of .git and an offline restart.
