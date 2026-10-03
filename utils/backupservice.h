@@ -41,6 +41,10 @@ class BackupService : public QObject
     BackupTaskId restore(const RestoreRequest &request, QObject *context, Completion callback);
     BackupTaskId preparePullResolution(const QString &id, QObject *context, Reply<RestoreRequest> callback);
     BackupTaskId resolvePull(const RestoreRequest &request, bool applyToSource, QObject *context, Completion callback);
+    QVector<TagConflict> tagConflicts(const QString &id) const;
+    BackupTaskId resolveTagConflict(const QString &id, const TagConflict &conflict, const QString &newName, QObject *context, Completion callback = {});
+    BackupTaskId prepareRebuild(const QString &id, QObject *context, Reply<PreparedRebuild> callback);
+    BackupTaskId rebuild(const PreparedRebuild &request, QObject *context, Completion callback = {});
     BackupTaskId createTag(const TagRequest &request, QObject *context, Completion callback = {});
     BackupTaskId renameTag(const TagRequest &request, const QString &name, QObject *context, Completion callback = {});
     BackupTaskId removeTag(const TagRequest &request, QObject *context, Completion callback = {});

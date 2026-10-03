@@ -74,7 +74,7 @@ struct TagRequest
 };
 struct TagConflict
 {
-    QString name, localOid, remoteOid;
+    QString name, localOid, remoteOid, endpoint;
 };
 struct PreparedRebuild
 {
@@ -96,6 +96,7 @@ struct BackupRecord
     QMap<QString, TagRemoteState> tagRemotes;
     QVector<TagRefChange> tagJournal;
     quint64 tagRevision{0};
+    QString tagEndpoint;
     TrackedItem item() const;
 };
 

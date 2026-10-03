@@ -27,6 +27,15 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareSyncResolution(const QS
 {
     auto checked = require(id);
     if (!checked.result.success) return {checked.result};
+    QString tagWarning;
+    if (checked.value.state != BackupSyncState::NeedsAttention)
+    {
+        const auto tags = syncTags(id, false);
+        if (!tags.success) return {tags};
+        tagWarning = tags.warning;
+        checked = require(id);
+        if (!checked.result.success) return {checked.result};
+    }
     auto before = checked.value;
     if (before.state == BackupSyncState::ResolutionPending && !restart) return syncResolution(id);
     if (before.state == BackupSyncState::NeedsAttention) return {OperationResult::warn("需要先检查备份", before.stateDetail)};
@@ -71,7 +80,9 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareSyncResolution(const QS
             saved = m_catalog.save(before);
             if (!saved.success) return {saved};
             m_dependencies.files->remove(root);
-            return {OperationResult::ok("已是最新", "没有需要应用的更新。"), {}};
+            auto result = OperationResult::ok("已是最新", "历史版本与重要版本标记已更新，没有需要应用的文件变化。");
+            result.warning = tagWarning;
+            return {result, {}};
         }
     }
     record.pendingCommit = merge.remoteCommit(); record.operation.clear(); record.recoveryPaths.clear(); record.stateDetail = progress(session);
@@ -79,7 +90,9 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareSyncResolution(const QS
     if (!saved.success) return {saved};
     if (!before.resolutionSession.isEmpty() && before.resolutionSession != record.resolutionSession)
         m_dependencies.files->remove(resolutionPath(before));
-    return {OperationResult::info("同步差异已准备", record.stateDetail), session};
+    auto result = OperationResult::info("同步差异已准备", record.stateDetail);
+    result.warning = tagWarning;
+    return {result, session};
 }
 BackupResult<SyncResolutionSession> BackupEngine::syncResolution(const QString &id)
 {

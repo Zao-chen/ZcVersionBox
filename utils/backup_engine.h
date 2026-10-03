@@ -35,6 +35,9 @@ class BackupEngine
     OperationResult preview(const QString &id, const QString &commit);
     BackupResult<RestoreRequest> prepareRestore(const QString &id, const QString &commit, bool pulledVersion);
     OperationResult restore(const RestoreRequest &request);
+    OperationResult resolveTagConflict(const QString &id, const TagConflict &conflict, const QString &newName);
+    BackupResult<PreparedRebuild> prepareRebuild(const QString &id);
+    OperationResult rebuild(const PreparedRebuild &request);
     OperationResult createTag(const TagRequest &request);
     OperationResult renameTag(const TagRequest &request, const QString &name);
     OperationResult removeTag(const TagRequest &request);
@@ -81,6 +84,7 @@ class BackupEngine
     QString newId(const QString &source) const;
     OperationResult changeTag(const TagRequest &request, const QString &name, bool create);
     OperationResult commitTagChanges(BackupRecord record, const QVector<TagRefChange> &changes);
+    OperationResult syncTags(const QString &id, bool push);
     OperationResult recoverTags(BackupRecord record);
     QString resolutionPath(const BackupRecord &record) const;
     BackupResult<BackupRecord> resolutionRecord(const QString &id, const QString &sessionId = {});

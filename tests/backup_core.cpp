@@ -2192,6 +2192,118 @@ class BackupCoreRegression : public QObject
         const auto paused = record(service, id);
         QCOMPARE(readFile(paused.recoveryPaths.first() + "/old"), QByteArray("one\n"));
     }
+    void importantVersionsSynchronizeAcrossClients()
+    {
+        RemoteFixture f;
+        auto &service = *f.service;
+        const auto first = head(service, f.id);
+        CHECK_OK(service.createTag(service.tagRequest(f.id, first, "交稿版")));
+        CHECK_OK(service.synchronize(f.id, true));
+        QCOMPARE(GitRepository(f.remote).tagRefs().value.value("交稿版"), first);
+        TestDirectory secondDir;
+        TestBackupService second(pathsIn(secondDir));
+        auto imported = second.prepareImport(f.remote); CHECK_OK(imported.result);
+        const auto source = secondDir.path() + "/copy.txt";
+        CHECK_OK(second.finishImport(imported.value.sessionId, "source.txt", source));
+        const auto secondId = testBackupId(source);
+        CHECK_OK(second.removeTag(second.tagRequest(secondId, first, "交稿版", first)));
+        CHECK_OK(second.synchronize(secondId, true));
+        auto fetched = service.prepareSyncResolution(f.id); CHECK_OK(fetched.result);
+        QVERIFY(fetched.value.id.isEmpty());
+        QVERIFY(GitRepository(service.repoPath(f.id)).tagRefs().value.isEmpty());
+        CHECK_OK(service.createTag(service.tagRequest(f.id, first, "修改前")));
+        CHECK_OK(service.synchronize(f.id, true));
+        CHECK_OK(second.prepareSyncResolution(secondId).result);
+        CHECK_OK(second.renameTag(second.tagRequest(secondId, first, "修改前", first), "定稿"));
+        CHECK_OK(second.synchronize(secondId, true));
+        CHECK_OK(service.prepareSyncResolution(f.id).result);
+        const auto tags = GitRepository(service.repoPath(f.id)).tagRefs().value;
+        QCOMPARE(tags.size(), 1); QCOMPARE(tags.value("定稿"), first);
+        QCOMPARE(head(service, f.id), first); QCOMPARE(readFile(f.source), QByteArray("initial\n"));
+    }
+    void importantVersionsConflictsKeepBothCopies()
+    {
+        RemoteFixture f;
+        auto &service = *f.service;
+        const auto first = head(service, f.id);
+        CHECK_OK(service.createTag(service.tagRequest(f.id, first, "交稿版")));
+        const auto remoteCommit = f.commitRemote("cloud\n");
+        git(f.writer, {"tag", "交稿版"}); git(f.writer, {"push", "origin", "refs/tags/交稿版"});
+        QVERIFY(!service.prepareSyncResolution(f.id).result.success);
+        auto conflicts = service.tagConflicts(f.id); QCOMPARE(conflicts.size(), 1);
+        QCOMPARE(conflicts[0].localOid, first); QCOMPARE(conflicts[0].remoteOid, remoteCommit);
+        CHECK_OK(service.resolveTagConflict(f.id, conflicts[0], "交稿版-本机"));
+        QCOMPARE(GitRepository(service.repoPath(f.id)).tagRefs().value.value("交稿版"), remoteCommit);
+        QCOMPARE(GitRepository(service.repoPath(f.id)).tagRefs().value.value("交稿版-本机"), first);
+        QVERIFY(service.tagConflicts(f.id).isEmpty());
+        QVERIFY(!service.resolveTagConflict(f.id, conflicts[0], "旧弹窗").success);
+        QCOMPARE(head(service, f.id), first); QCOMPARE(readFile(f.source), QByteArray("initial\n"));
+        // A deletion racing an edited cloud tag retains the cloud version.
+        CHECK_OK(service.removeTag(service.tagRequest(f.id, remoteCommit, "交稿版", remoteCommit)));
+        git(f.writer, {"tag", "-f", "交稿版", first}); git(f.writer, {"push", "--force", "origin", "refs/tags/交稿版"});
+        const auto updated = service.prepareSyncResolution(f.id); CHECK_OK(updated.result);
+        QCOMPARE(GitRepository(service.repoPath(f.id)).tagRefs().value.value("交稿版"), first);
+        QCOMPARE(readFile(f.source), QByteArray("initial\n"));
+    }
+    void importantVersionsRetryAtomicRenameAfterRestart()
+    {
+        bool rejectTags = false;
+        BackupDependencies deps;
+        deps.git = [&](const QString &repo, const QStringList &args, const GitOptions &options)
+        {
+            if (rejectTags && args.contains("push") && args.contains("--atomic")) return failedGit();
+            return runGit(repo, args, options);
+        };
+        RemoteFixture f(deps); auto &service = *f.service;
+        const auto first = head(service, f.id);
+        CHECK_OK(service.createTag(service.tagRequest(f.id, first, "旧名称")));
+        CHECK_OK(service.synchronize(f.id, true));
+        CHECK_OK(service.renameTag(service.tagRequest(f.id, first, "旧名称", first), "新名称"));
+        rejectTags = true;
+        const auto failed = service.synchronize(f.id, true); QVERIFY(!failed.success);
+        QVERIFY(failed.title.contains("版本已上传"));
+        auto remoteTags = GitRepository(f.remote).tagRefs().value;
+        QVERIFY(remoteTags.contains("旧名称")); QVERIFY(!remoteTags.contains("新名称"));
+        f.service.reset(); rejectTags = false;
+        f.service = std::make_unique<TestBackupService>(f.paths, nullptr, nullptr, deps);
+        CHECK_OK(f.service->prepareSyncResolution(f.id).result);
+        QVERIFY(!GitRepository(f.service->repoPath(f.id)).tagRefs().value.contains("旧名称"));
+        CHECK_OK(f.service->synchronize(f.id, true));
+        remoteTags = GitRepository(f.remote).tagRefs().value;
+        QVERIFY(!remoteTags.contains("旧名称")); QCOMPARE(remoteTags.value("新名称"), first);
+    }
+    void importantVersionsRemoteAddressesIsolateDeletions()
+    {
+        RemoteFixture f; auto &service = *f.service;
+        const auto first = head(service, f.id);
+        CHECK_OK(service.createTag(service.tagRequest(f.id, first, "保留")));
+        CHECK_OK(service.synchronize(f.id, true));
+        const auto other = f.dir.path() + "/other.git";
+        git({}, {"clone", "--bare", f.remote, other});
+        CHECK_OK(service.removeTag(service.tagRequest(f.id, first, "保留", first)));
+        CHECK_OK(service.setRemote(f.id, other));
+        CHECK_OK(service.synchronize(f.id, true));
+        QCOMPARE(GitRepository(other).tagRefs().value.value("保留"), first);
+        QCOMPARE(GitRepository(f.remote).tagRefs().value.value("保留"), first);
+    }
+    void importantVersionsRebuildChecksConfirmedSnapshot()
+    {
+        RemoteFixture f; auto &service = *f.service;
+        const auto first = head(service, f.id);
+        CHECK_OK(service.createTag(service.tagRequest(f.id, first, "交稿版")));
+        CHECK_OK(service.synchronize(f.id, true));
+        auto prepared = service.prepareRebuild(f.id); CHECK_OK(prepared.result);
+        QCOMPARE(prepared.value.tags.size(), 1); QCOMPARE(prepared.value.remoteTags.size(), 1);
+        CHECK_OK(service.renameTag(service.tagRequest(f.id, first, "交稿版", first), "定稿"));
+        QVERIFY(!service.rebuild(prepared.value).success);
+        QCOMPARE(head(service, f.id), first);
+        prepared = service.prepareRebuild(f.id); CHECK_OK(prepared.result);
+        CHECK_OK(service.rebuild(prepared.value));
+        QVERIFY(GitRepository(service.repoPath(f.id)).tagRefs().value.isEmpty());
+        QVERIFY(GitRepository(f.remote).tagRefs().value.isEmpty());
+        QVector<Revision> versions; CHECK_OK(service.history(f.id, versions)); QCOMPARE(versions.size(), 1);
+        QCOMPARE(readFile(f.source), QByteArray("initial\n"));
+    }
     void importantVersionsPreserveContentAndIdentity()
     {
         TestDirectory dir;

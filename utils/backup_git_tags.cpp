@@ -1,6 +1,7 @@
 #include "backup_git.h"
 #include <QCryptographicHash>
 #include <QRegularExpression>
+#include <QSet>
 
 OperationResult GitRepository::validateTagName(const QString &name) const
 {
@@ -57,6 +58,15 @@ OperationResult GitRepository::updateTags(const QVector<TagRefChange> &changes) 
         if (change.before.isEmpty()) input += "create " + ref + ' ' + change.after.toUtf8() + '\n';
         else if (change.after.isEmpty()) input += "delete " + ref + ' ' + change.before.toUtf8() + '\n';
         else input += "update " + ref + ' ' + change.after.toUtf8() + ' ' + change.before.toUtf8() + '\n';
+    }
+    QSet<QString> retained;
+    for (const auto &change : changes)
+    {
+        if (change.before.isEmpty()) continue;
+        const auto commit = resolve(change.before);
+        if (!commit.result.success || retained.contains(commit.value)) continue;
+        retained.insert(commit.value);
+        input += "update refs/zcversionbox-history/" + commit.value.toUtf8() + ' ' + commit.value.toUtf8() + '\n';
     }
     input += "prepare\ncommit\n";
     return outcome(run({"update-ref", "--stdin"}, input, false), "标记未修改");

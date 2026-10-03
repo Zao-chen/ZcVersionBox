@@ -131,6 +131,9 @@ BackupResult<QVector<Revision>> GitRepository::history() const
     };
     if (!append(result.output)) return {OperationResult::fail("打开备份失败", "无法读取提交记录")};
     QStringList extra;
+    const auto retained = tagRefs("refs/zcversionbox-history/");
+    if (!retained.result.success) return {retained.result};
+    for (const auto &oid : retained.value) if (!seen.contains(oid) && !extra.contains(oid)) extra.append(oid);
     for (const auto &tag : marked.value)
         if (!seen.contains(tag.commitOid) && !extra.contains(tag.commitOid)) extra.append(tag.commitOid);
     // Bound command-line length on Windows, while avoiding one Git process per row.
@@ -313,7 +316,7 @@ OperationResult GitRepository::push(bool forceWithLease, const QString &expected
     const auto remote = remoteName();
     if (!remote.result.success)
         return remote.result;
-    QStringList args{"push", "--set-upstream"};
+    QStringList args{"push", "--set-upstream", "--no-follow-tags"};
     if (forceWithLease)
         args << "--force-with-lease=" + target.value + ":" + expectedRemote;
     args << remote.value << "HEAD:" + target.value;

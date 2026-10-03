@@ -36,6 +36,7 @@ bool readTagState(const QJsonValue &value, BackupRecord &record)
     const auto state = value.toObject();
     if (state["format"].toInt() != 1 || !state["remotes"].isObject() || !state["journal"].isArray()) return false;
     record.tagRevision = state["revision"].toString().toULongLong();
+    record.tagEndpoint = state["endpoint"].toString();
     const auto remotes = state["remotes"].toObject();
     for (auto it = remotes.begin(); it != remotes.end(); ++it)
     {
@@ -64,7 +65,7 @@ QJsonObject tagStateJson(const BackupRecord &record)
     QJsonArray journal;
     for (const auto &change : record.tagJournal)
         journal.append(QJsonObject{{"name", change.name}, {"before", change.before}, {"after", change.after}});
-    return {{"format", 1}, {"revision", QString::number(record.tagRevision)}, {"remotes", remotes}, {"journal", journal}};
+    return {{"format", 1}, {"revision", QString::number(record.tagRevision)}, {"endpoint", record.tagEndpoint}, {"remotes", remotes}, {"journal", journal}};
 }
 }
 TrackedItem BackupRecord::item() const
