@@ -312,8 +312,6 @@ void UpdateService::downloadUpdate(const UpdateRelease &release)
     m_downloadTimedOut = false;
     m_downloadWriteFailed = false;
     m_downloadReply = m_network->get(request);
-    emit downloadingChanged(true);
-    m_downloadTimeout->start(10 * 60 * 1000);
     connect(m_downloadReply, &QNetworkReply::readyRead, this, [this]
             {
         if (!m_downloadReply || !m_downloadFile)
@@ -326,6 +324,9 @@ void UpdateService::downloadUpdate(const UpdateRelease &release)
             {
         if (m_downloadReply)
             finishDownload(m_downloadReply); });
+    emit downloadingChanged(true);
+    emit downloadProgress(0, release.downloadSize);
+    m_downloadTimeout->start(10 * 60 * 1000);
 }
 
 void UpdateService::finishDownload(QNetworkReply *reply)

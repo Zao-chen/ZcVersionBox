@@ -76,6 +76,7 @@ void AboutPage::showAvailableUpdate()
 }
 void AboutPage::showRelease(const UpdateRelease &release)
 {
+        const auto expectedDownloadSize = release.downloadSize;
         QDialog dialog(this);
         dialog.setObjectName(QStringLiteral("updateDialog"));
         dialog.setWindowTitle(QStringLiteral("发现新版本"));
@@ -144,7 +145,8 @@ void AboutPage::showRelease(const UpdateRelease &release)
             status->setText(QStringLiteral("正在准备下载更新…"));
             downloadUpdate->setEnabled(false);
             m_updates->downloadUpdate(release); });
-        connect(m_updates, &UpdateService::downloadingChanged, &dialog, [downloadUpdate, later, progress, status](bool downloading)
+        connect(m_updates, &UpdateService::downloadingChanged, &dialog,
+                [downloadUpdate, later, progress, status](bool downloading)
                 {
             downloadUpdate->setEnabled(!downloading);
             downloadUpdate->setText(downloading ? QStringLiteral("下载中…") : QStringLiteral("下载并更新"));
@@ -154,6 +156,7 @@ void AboutPage::showRelease(const UpdateRelease &release)
             {
                 progress->setRange(0, 100);
                 progress->setValue(0);
+                progress->setTextVisible(true);
                 progress->show();
                 status->setText(QStringLiteral("正在下载更新…"));
             }
@@ -161,16 +164,22 @@ void AboutPage::showRelease(const UpdateRelease &release)
             {
                 progress->setVisible(false);
             } });
-        connect(m_updates, &UpdateService::downloadProgress, &dialog, [progress, status](qint64 received, qint64 total)
+        connect(m_updates, &UpdateService::downloadProgress, &dialog,
+                [progress, status, expectedDownloadSize](qint64 received, qint64 total)
                 {
-            if (total <= 0)
+            const auto effectiveTotal = total > 0 ? total : expectedDownloadSize;
+            if (effectiveTotal <= 0)
             {
-                progress->setRange(0, 100);
-                progress->setValue(0);
+                progress->setRange(0, 0);
+                progress->setTextVisible(false);
+                const auto downloadedMegabytes = received / (1024.0 * 1024.0);
+                status->setText(QStringLiteral("正在下载更新… 已下载 %1 MB")
+                                    .arg(QString::number(downloadedMegabytes, 'f', 1)));
                 return;
             }
-            const auto percentage = static_cast<int>((received * 100) / total);
+            const auto percentage = static_cast<int>((received * 100.0) / effectiveTotal);
             progress->setRange(0, 100);
+            progress->setTextVisible(true);
             progress->setValue(qBound(0, percentage, 100));
             status->setText(QStringLiteral("正在下载更新…")); });
         connect(m_updates, &UpdateService::downloadFinished, &dialog, [this, &dialog, progress, status](const QString &path)
