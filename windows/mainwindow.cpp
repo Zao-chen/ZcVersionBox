@@ -203,6 +203,9 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     ui->contextTitle->installEventFilter(this);
     m_overviewBadge = new NotificationDot(ui->overviewTab);
     ui->overviewTab->installEventFilter(this);
+    m_aboutBadge = new NotificationDot(ui->aboutTab);
+    m_aboutBadge->setObjectName("aboutNotificationBadge");
+    ui->aboutTab->installEventFilter(this);
     connect(ui->windowSplitter, &QSplitter::splitterMoved, this, [this]
             {
         if (ui->sidebar->width() >= 200)
@@ -288,6 +291,8 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     connect(m_updates, &UpdateService::automaticUpdateAvailable, this, [this](const UpdateRelease &release)
             {
         m_about->setAvailableUpdate(release);
+        m_hasUnreadUpdate = m_route.page != PageId::About;
+        updateUpdateBadge();
         m_notifications->showResult(OperationResult::info(
             QStringLiteral("发现新版本"),
             QStringLiteral("ZcVersionBox v%1 已发布。").arg(release.version), 8000),
@@ -621,6 +626,8 @@ void MainWindow::updateIcons()
     ui->sidebarList->viewport()->update();
     if (m_overviewBadge)
         m_overviewBadge->update();
+    if (m_aboutBadge)
+        m_aboutBadge->update();
 }
 void MainWindow::setToolbar(const QList<QAction *> &actions)
 {
@@ -815,6 +822,9 @@ void MainWindow::displayRoute(const Route &route)
     ui->generalTab->setChecked(route.page == PageId::GeneralSettings);
     ui->aiTab->setChecked(route.page == PageId::AiSettings);
     ui->aboutTab->setChecked(route.page == PageId::About);
+    if (route.page == PageId::About)
+        m_hasUnreadUpdate = false;
+    updateUpdateBadge();
     ui->moreButton->setVisible(isObjectPage(route.page));
     m_contextTitle = isObjectPage(route.page)     ? QFileInfo(m_backups->sourcePath(route.backupId)).fileName()
                      : isSettingsPage(route.page) ? "设置"
@@ -852,6 +862,11 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     {
         m_overviewBadge->move(ui->overviewTab->width() - m_overviewBadge->width() - 3, 3);
         m_overviewBadge->raise();
+    }
+    if (watched == ui->aboutTab && (event->type() == QEvent::Resize || event->type() == QEvent::Move) && m_aboutBadge)
+    {
+        m_aboutBadge->move(ui->aboutTab->width() - m_aboutBadge->width() - 3, 3);
+        m_aboutBadge->raise();
     }
 
     if (watched == ui->sidebar && event->type() == QEvent::Resize)
@@ -915,6 +930,20 @@ void MainWindow::updateConflictBadge()
         }
     }
     ui->overviewTab->setToolTip(hasConflict ? "概览 (存在同步差异，请继续处理)" : "概览");
+}
+void MainWindow::updateUpdateBadge()
+{
+    const bool badgeVisible = m_hasUnreadUpdate && m_route.page != PageId::About;
+    if (m_aboutBadge)
+    {
+        m_aboutBadge->setVisible(badgeVisible);
+        if (badgeVisible)
+        {
+            m_aboutBadge->move(ui->aboutTab->width() - m_aboutBadge->width() - 3, 3);
+            m_aboutBadge->raise();
+        }
+    }
+    ui->aboutTab->setToolTip(m_hasUnreadUpdate ? "关于 (有新版本)" : "关于");
 }
 void MainWindow::notify(const OperationResult &result) { m_notifications->showResult(result); }
 void MainWindow::startAutomaticUpdateCheck()

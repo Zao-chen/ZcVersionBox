@@ -78,6 +78,8 @@ class MainWindow : public QMainWindow
     int m_sidebarTargetWidth{-1};
     QVariantAnimation *m_sidebarAnimation{nullptr};
     QWidget *m_overviewBadge{nullptr};
+    QWidget *m_aboutBadge{nullptr};
+    bool m_hasUnreadUpdate{false};
     void displayRoute(const Route &route);
     void syncBackups();
     void syncSidebarSelection();
@@ -91,4 +93,5 @@ class MainWindow : public QMainWindow
     void updateIcons();
     void setToolbar(const QList<QAction *> &actions);
     void updateHeaderLayout();
+    void updateUpdateBadge();
 };
