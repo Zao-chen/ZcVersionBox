@@ -49,7 +49,7 @@ class HomePageDashboardPage : public QWidget
     oclero::qlementine::Switch *m_remoteSwitch;
     oclero::qlementine::Expander *m_expander;
     QAction *m_refresh;
-    QLabel *m_syncState, *m_syncDetail, *m_busy;
+    QLabel *m_syncState, *m_syncDetail;
     QPushButton *m_continueResolution, *m_recheck;
     void remoteToggled(bool checked);
     void rememberState();
