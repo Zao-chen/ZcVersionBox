@@ -28,6 +28,7 @@ class BackupUiActions;
 class QSystemTrayIcon;
 class QToolButton;
 class QVariantAnimation;
+class UpdateService;
 
 class MainWindow : public QMainWindow
 {
@@ -37,6 +38,7 @@ class MainWindow : public QMainWindow
     ~MainWindow();
     void navigate(const Route &route) { m_navigation.go(route); }
     void notify(const OperationResult &result);
+    void startAutomaticUpdateCheck();
 
   protected:
     void closeEvent(QCloseEvent *event) override;
@@ -68,6 +70,7 @@ class MainWindow : public QMainWindow
     SettingPage *m_general;
     SettingPageAiPage *m_ai;
     AboutPage *m_about;
+    UpdateService *m_updates{nullptr};
     QSystemTrayIcon *m_tray{nullptr};
     QList<QToolButton *> m_toolbarButtons;
     QString m_contextTitle;

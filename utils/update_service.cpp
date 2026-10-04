@@ -186,11 +186,29 @@ std::optional<UpdateRelease> UpdateService::parseRelease(const QByteArray &paylo
     return release;
 }
 
+void UpdateService::startAutomaticCheck(int delayMs)
+{
+    if (m_automaticCheckStarted)
+        return;
+    m_automaticCheckStarted = true;
+    QTimer::singleShot(qMax(0, delayMs), this, [this]
+                       {
+        if (m_checkReply)
+            return;
+        if (m_automaticCheckCanceled)
+            return;
+        m_automaticCheckPending = true;
+        checkForUpdates();
+    });
+}
+
 void UpdateService::checkForUpdates(const QString &currentVersion)
 {
     if (m_checkReply)
         return;
 
+    if (m_automaticCheckStarted && !m_automaticCheckPending)
+        m_automaticCheckCanceled = true;
     m_currentVersion = currentVersion.trimmed();
     if (m_currentVersion.isEmpty())
         m_currentVersion = QCoreApplication::applicationVersion();
@@ -198,7 +216,7 @@ void UpdateService::checkForUpdates(const QString &currentVersion)
     {
         UpdateCheckResult result;
         result.error = QStringLiteral("当前版本号格式无效");
-        emit checkFinished(result);
+        publishCheckResult(result);
         return;
     }
 
@@ -251,7 +269,16 @@ void UpdateService::finishCheck(QNetworkReply *reply)
     }
     reply->deleteLater();
     emit checkingChanged(false);
+    publishCheckResult(result);
+}
+
+void UpdateService::publishCheckResult(const UpdateCheckResult &result)
+{
+    const bool automatic = m_automaticCheckPending;
+    m_automaticCheckPending = false;
     emit checkFinished(result);
+    if (automatic && result.success && result.updateAvailable)
+        emit automaticUpdateAvailable(result.release);
 }
 
 void UpdateService::downloadUpdate(const UpdateRelease &release)

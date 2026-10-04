@@ -46,6 +46,7 @@ class UpdateService : public QObject
     bool isChecking() const { return m_checkReply != nullptr; }
     bool isDownloading() const { return m_downloadReply != nullptr; }
 
+    void startAutomaticCheck(int delayMs = 5000);
     void checkForUpdates(const QString &currentVersion = {});
     void downloadUpdate(const UpdateRelease &release);
     void cancelDownload();
@@ -59,6 +60,7 @@ class UpdateService : public QObject
   signals:
     void checkingChanged(bool checking);
     void checkFinished(const UpdateCheckResult &result);
+    void automaticUpdateAvailable(const UpdateRelease &release);
     void downloadingChanged(bool downloading);
     void downloadProgress(qint64 received, qint64 total);
     void downloadFinished(const QString &path);
@@ -76,8 +78,12 @@ class UpdateService : public QObject
     bool m_downloadWriteFailed{false};
     QTimer *m_checkTimeout;
     QTimer *m_downloadTimeout;
+    bool m_automaticCheckStarted{false};
+    bool m_automaticCheckCanceled{false};
+    bool m_automaticCheckPending{false};
 
     void finishCheck(QNetworkReply *reply);
+    void publishCheckResult(const UpdateCheckResult &result);
     void finishDownload(QNetworkReply *reply);
     static QString errorForReply(QNetworkReply *reply, bool timedOut);
     static QString downloadPath(const QString &fileName);

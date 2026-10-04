@@ -12,7 +12,7 @@
 #include <QResizeEvent>
 #include <QTextBrowser>
 #include <QVBoxLayout>
-AboutPage::AboutPage(QWidget *parent) : QWidget(parent), ui(new Ui::AboutPage)
+AboutPage::AboutPage(UpdateService *updates, QWidget *parent) : QWidget(parent), ui(new Ui::AboutPage), m_updates(updates)
 {
     ui->setupUi(this);
     ui->versionLabel->setText("版本 " + QCoreApplication::applicationVersion());
@@ -25,17 +25,29 @@ AboutPage::AboutPage(QWidget *parent) : QWidget(parent), ui(new Ui::AboutPage)
     ui->checkUpdatesButton->setProperty("primary", true);
     ui->checkUpdatesButton->setIcon(UiStyle::icon("refresh"));
 
-    m_updates = new UpdateService(this);
     connect(ui->checkUpdatesButton, &QPushButton::clicked, this, [this]
-            { m_updates->checkForUpdates(); });
+            {
+        if (m_updates->isChecking())
+            return;
+        if (m_availableUpdate)
+        {
+            showAvailableUpdate();
+            return;
+        }
+        m_manualCheckPending = true;
+        m_updates->checkForUpdates(); });
     connect(m_updates, &UpdateService::checkingChanged, this, [this](bool checking)
             {
         ui->checkUpdatesButton->setEnabled(!checking);
-        ui->checkUpdatesButton->setText(checking ? QStringLiteral("检查中…") : QStringLiteral("检查更新"));
+        ui->checkUpdatesButton->setText(checking ? QStringLiteral("检查中…") :
+            m_availableUpdate ? QStringLiteral("查看更新") : QStringLiteral("检查更新"));
         });
     connect(m_updates, &UpdateService::checkFinished, this, [this](const UpdateCheckResult &result)
             {
         ui->checkUpdatesButton->setEnabled(true);
+        if (!m_manualCheckPending)
+            return;
+        m_manualCheckPending = false;
         if (!result.success)
         {
             QMessageBox::warning(this, QStringLiteral("检查更新失败"), result.error);
@@ -47,7 +59,24 @@ AboutPage::AboutPage(QWidget *parent) : QWidget(parent), ui(new Ui::AboutPage)
                                      QStringLiteral("当前版本 v%1 已是最新稳定版本。").arg(result.release.currentVersion));
             return;
         }
+        setAvailableUpdate(result.release);
+        showAvailableUpdate(); });
+}
+void AboutPage::setAvailableUpdate(const UpdateRelease &release)
+{
+    m_availableUpdate = release;
+    ui->checkUpdatesButton->setText(QStringLiteral("查看更新"));
+    ui->checkUpdatesButton->setAccessibleName(QStringLiteral("查看更新"));
+}
+void AboutPage::showAvailableUpdate()
+{
+    if (m_availableUpdate)
+        showRelease(*m_availableUpdate);
+}
+void AboutPage::showRelease(const UpdateRelease &release)
+{
         QDialog dialog(this);
+        dialog.setObjectName(QStringLiteral("updateDialog"));
         dialog.setWindowTitle(QStringLiteral("发现新版本"));
         dialog.setModal(true);
         dialog.setMinimumSize(460, 320);
@@ -57,19 +86,20 @@ AboutPage::AboutPage(QWidget *parent) : QWidget(parent), ui(new Ui::AboutPage)
         layout->setContentsMargins(24, 24, 24, 20);
         layout->setSpacing(12);
 
-        auto *title = new QLabel(QStringLiteral("发现 ZcVersionBox v%1").arg(result.release.version), &dialog);
+        auto *title = new QLabel(QStringLiteral("发现 ZcVersionBox v%1").arg(release.version), &dialog);
         UiStyle::text(title, UiStyle::FontRole::Section);
         layout->addWidget(title);
 
-        auto *current = new QLabel(QStringLiteral("当前版本 v%1").arg(result.release.currentVersion), &dialog);
+        auto *current = new QLabel(QStringLiteral("当前版本 v%1").arg(release.currentVersion), &dialog);
         UiStyle::text(current, UiStyle::FontRole::Caption, true);
         layout->addWidget(current);
 
         auto *notes = new QTextBrowser(&dialog);
+        notes->setObjectName(QStringLiteral("updateNotes"));
         notes->setFrameShape(QFrame::NoFrame);
         notes->setOpenLinks(false);
         notes->setOpenExternalLinks(false);
-        notes->setMarkdown(result.release.notes.isEmpty() ? QStringLiteral("该版本暂无更新说明。") : result.release.notes);
+        notes->setMarkdown(release.notes.isEmpty() ? QStringLiteral("该版本暂无更新说明。") : release.notes);
         notes->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         notes->setMinimumHeight(180);
         layout->addWidget(notes, 1);
@@ -85,8 +115,7 @@ AboutPage::AboutPage(QWidget *parent) : QWidget(parent), ui(new Ui::AboutPage)
         connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
         dialog.exec();
         if (dialog.result() == QDialog::Accepted)
-            QDesktopServices::openUrl(result.release.releaseUrl);
-        });
+            QDesktopServices::openUrl(release.releaseUrl);
 }
 AboutPage::~AboutPage() = default;
 void AboutPage::resizeEvent(QResizeEvent *event)

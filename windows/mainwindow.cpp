@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "utils/update_service.h"
 #include "windows/mainwindow_child/aboutpage/aboutpage.h"
 #include "windows/mainwindow_child/homepage/homepage.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_backup.h"
@@ -275,6 +276,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         m_actions->addMenu()->popup(anchor->mapToGlobal(QPoint(0, anchor->height()))); });
 
     m_notifications = new NotificationBar(ui->content);
+    m_updates = new UpdateService(this);
     m_list = new HomePage(backups, this, m_backupModel, m_actions);
     m_dashboard = new HomePageDashboardPage(backups, this);
     m_history = new HomePageBackupPage(backups, this);
@@ -282,7 +284,19 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     m_conflict = new HomePageConflictPage(backups, this);
     m_general = new SettingPage(settings, theme, this);
     m_ai = new SettingPageAiPage(settings, this);
-    m_about = new AboutPage(this);
+    m_about = new AboutPage(m_updates, this);
+    connect(m_updates, &UpdateService::automaticUpdateAvailable, this, [this](const UpdateRelease &release)
+            {
+        m_about->setAvailableUpdate(release);
+        m_notifications->showResult(OperationResult::info(
+            QStringLiteral("发现新版本"),
+            QStringLiteral("ZcVersionBox v%1 已发布。").arg(release.version), 8000),
+            QStringLiteral("查看更新"), [this]
+            {
+                restoreWindow();
+                navigate({PageId::About});
+                m_about->showAvailableUpdate();
+            }); });
     for (QWidget *page : QList<QWidget *>{m_list, m_dashboard, m_history, m_diff, m_conflict, m_general, m_ai, m_about})
         ui->pages->addWidget(page);
     const auto wire = [this](auto *page)
@@ -903,6 +917,10 @@ void MainWindow::updateConflictBadge()
     ui->overviewTab->setToolTip(hasConflict ? "概览 (存在同步差异，请继续处理)" : "概览");
 }
 void MainWindow::notify(const OperationResult &result) { m_notifications->showResult(result); }
+void MainWindow::startAutomaticUpdateCheck()
+{
+    m_updates->startAutomaticCheck();
+}
 void MainWindow::restoreWindow()
 {
     if (isMinimized())
