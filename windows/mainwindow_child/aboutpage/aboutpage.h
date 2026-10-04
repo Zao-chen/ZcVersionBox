@@ -19,9 +19,4 @@ class AboutPage : public QWidget
   private:
     std::unique_ptr<Ui::AboutPage> ui;
     UpdateService *m_updates;
-    UpdateRelease m_release;
-    QString m_downloadedPath;
-
-    void setUpdateResult(const UpdateCheckResult &result);
-    void resetDownloadState();
 };

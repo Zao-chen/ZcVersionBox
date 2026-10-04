@@ -186,152 +186,20 @@
               </property>
              </spacer>
             </item>
+            <item>
+             <widget class="QPushButton" name="checkUpdatesButton">
+              <property name="text">
+               <string>检查更新</string>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>116</width>
+                <height>32</height>
+               </size>
+              </property>
+             </widget>
+            </item>
            </layout>
-          </item>
-          <item>
-           <widget class="QLabel" name="descriptionLabel">
-            <property name="text">
-             <string>自动备份文件与文件夹，保留每一次重要修改。
-在本地管理历史版本，并按需同步到云端。</string>
-            </property>
-            <property name="textFormat">
-             <enum>Qt::PlainText</enum>
-            </property>
-            <property name="wordWrap">
-             <bool>true</bool>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QLabel" name="technologyLabel">
-            <property name="text">
-             <string>使用 Qt Widgets 与 Qlementine 构建。</string>
-            </property>
-            <property name="textFormat">
-             <enum>Qt::PlainText</enum>
-            </property>
-            <property name="wordWrap">
-             <bool>true</bool>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QWidget" name="updateGroup">
-            <layout class="QVBoxLayout" name="updateLayout">
-             <property name="leftMargin">
-              <number>16</number>
-             </property>
-             <property name="topMargin">
-              <number>16</number>
-             </property>
-             <property name="rightMargin">
-              <number>16</number>
-             </property>
-             <property name="bottomMargin">
-              <number>16</number>
-             </property>
-             <property name="spacing">
-              <number>8</number>
-             </property>
-             <item>
-              <widget class="QLabel" name="updateTitleLabel">
-               <property name="text">
-                <string>软件更新</string>
-               </property>
-               <property name="textFormat">
-                <enum>Qt::PlainText</enum>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QLabel" name="updateStatusLabel">
-               <property name="text">
-                <string>手动检查 GitHub Releases 中的最新稳定版本。</string>
-               </property>
-               <property name="textFormat">
-                <enum>Qt::PlainText</enum>
-               </property>
-               <property name="wordWrap">
-                <bool>true</bool>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QLabel" name="updateDetailsLabel">
-               <property name="textFormat">
-                <enum>Qt::PlainText</enum>
-               </property>
-               <property name="wordWrap">
-                <bool>true</bool>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <widget class="QProgressBar" name="updateProgress">
-               <property name="maximum">
-                <number>100</number>
-               </property>
-               <property name="value">
-                <number>0</number>
-               </property>
-               <property name="textVisible">
-                <bool>false</bool>
-               </property>
-              </widget>
-             </item>
-             <item>
-              <layout class="QHBoxLayout" name="updateButtonsLayout">
-               <property name="spacing">
-                <number>8</number>
-               </property>
-               <item>
-                <widget class="QPushButton" name="checkUpdatesButton">
-                 <property name="text">
-                  <string>检查更新</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="downloadUpdateButton">
-                 <property name="text">
-                  <string>下载更新</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <widget class="QPushButton" name="openReleaseButton">
-                 <property name="text">
-                  <string>打开发布页</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-               <widget class="QPushButton" name="openDownloadedButton">
-                 <property name="text">
-                  <string>打开安装包</string>
-                 </property>
-                </widget>
-               </item>
-               <item>
-                <spacer name="updateButtonsSpace">
-                 <property name="orientation">
-                  <enum>Qt::Horizontal</enum>
-                 </property>
-                 <property name="sizeType">
-                  <enum>QSizePolicy::Expanding</enum>
-                 </property>
-                 <property name="sizeHint" stdset="0">
-                  <size>
-                   <width>0</width>
-                   <height>0</height>
-                  </size>
-                 </property>
-                </spacer>
-               </item>
-              </layout>
-             </item>
-            </layout>
-           </widget>
           </item>
          </layout>
         </widget>
