@@ -1,13 +1,12 @@
 #include "aboutpage.h"
 #include "ui_aboutpage.h"
+#include "windows/mainwindow_dialog.h"
 #include "windows/mainwindow_presentation.h"
 #include <QCoreApplication>
 #include <QDesktopServices>
-#include <QDialog>
 #include <QFileInfo>
-#include <QHBoxLayout>
 #include <QLabel>
-#include <QMessageBox>
+#include <QDialogButtonBox>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QResizeEvent>
@@ -51,13 +50,13 @@ AboutPage::AboutPage(UpdateService *updates, QWidget *parent) : QWidget(parent),
         m_manualCheckPending = false;
         if (!result.success)
         {
-            QMessageBox::warning(this, QStringLiteral("检查更新失败"), result.error);
+            UiDialog::showMessage(this, QStringLiteral("检查更新失败"), result.error, UiDialog::MessageType::Warning);
             return;
         }
         if (!result.updateAvailable)
         {
-            QMessageBox::information(this, QStringLiteral("已是最新版本"),
-                                     QStringLiteral("当前版本 v%1 已是最新稳定版本。").arg(result.release.currentVersion));
+            UiDialog::showMessage(this, QStringLiteral("已是最新版本"),
+                                  QStringLiteral("当前版本 v%1 已是最新稳定版本。").arg(result.release.currentVersion));
             return;
         }
         setAvailableUpdate(result.release);
@@ -77,16 +76,11 @@ void AboutPage::showAvailableUpdate()
 void AboutPage::showRelease(const UpdateRelease &release)
 {
         const auto expectedDownloadSize = release.downloadSize;
-        QDialog dialog(this);
-        dialog.setObjectName(QStringLiteral("updateDialog"));
-        dialog.setWindowTitle(QStringLiteral("发现新版本"));
-        dialog.setModal(true);
+        UiDialog::Dialog dialog(this, QStringLiteral("updateDialog"), QStringLiteral("发现新版本"));
         dialog.setMinimumSize(460, 320);
         dialog.setMaximumSize(720, 560);
         dialog.resize(560, 440);
-        auto *layout = new QVBoxLayout(&dialog);
-        layout->setContentsMargins(24, 24, 24, 20);
-        layout->setSpacing(12);
+        auto *layout = dialog.contentLayout();
 
         auto *title = new QLabel(QStringLiteral("发现 ZcVersionBox v%1").arg(release.version), &dialog);
         UiStyle::text(title, UiStyle::FontRole::Section);
@@ -102,6 +96,8 @@ void AboutPage::showRelease(const UpdateRelease &release)
         notes->setOpenLinks(false);
         notes->setOpenExternalLinks(false);
         notes->setMarkdown(release.notes.isEmpty() ? QStringLiteral("该版本暂无更新说明。") : release.notes);
+        UiStyle::surface(notes, UiStyle::Surface::Popup);
+        UiStyle::text(notes);
         notes->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         notes->setMinimumHeight(180);
         layout->addWidget(notes, 1);
@@ -120,25 +116,24 @@ void AboutPage::showRelease(const UpdateRelease &release)
         progress->setVisible(false);
         layout->addWidget(progress);
 
-        auto *buttonBar = new QWidget(&dialog);
-        auto *buttonLayout = new QHBoxLayout(buttonBar);
-        buttonLayout->setContentsMargins(0, 0, 0, 0);
-        auto *later = new QPushButton(QStringLiteral("稍后"), buttonBar);
-        auto *downloadUpdate = new QPushButton(QStringLiteral("下载并更新"), buttonBar);
-        buttonLayout->addWidget(later);
+        auto *buttonLayout = dialog.footerLayout();
+        auto *buttons = dialog.buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+        auto *later = buttons->button(QDialogButtonBox::Cancel);
+        auto *downloadUpdate = buttons->button(QDialogButtonBox::Ok);
+        later->setText(QStringLiteral("稍后"));
+        downloadUpdate->setText(QStringLiteral("下载并更新"));
         buttonLayout->addStretch();
-        buttonLayout->addWidget(downloadUpdate);
+        buttonLayout->addWidget(buttons);
         const bool canDownload = release.downloadUrl.isValid() && !release.downloadName.isEmpty();
         downloadUpdate->setEnabled(canDownload);
         downloadUpdate->setProperty("primary", canDownload);
         later->setAutoDefault(false);
         downloadUpdate->setAutoDefault(false);
-        layout->addWidget(buttonBar);
 
         if (!canDownload)
             status->setText(QStringLiteral("当前平台暂无可用安装包，请稍后通过项目发布页手动下载。"));
-        connect(later, &QPushButton::clicked, &dialog, &QDialog::reject);
-        connect(downloadUpdate, &QPushButton::clicked, &dialog, [this, &release, downloadUpdate, status]
+        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, [this, &release, downloadUpdate, status]
                 {
             if (m_updates->isDownloading())
                 return;

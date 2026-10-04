@@ -1,20 +1,21 @@
 #include "homepage_page_backup.h"
+#include "windows/mainwindow_dialog.h"
 #include "windows/mainwindow_presentation.h"
 #include <QComboBox>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QTimer>
 #include <QVBoxLayout>
 
-void HomePageBackupPage::trackTagDialog(QDialog *dialog)
+void HomePageBackupPage::trackTagDialog(UiDialog::Dialog *dialog)
 {
     m_tagDialog = dialog;
     m_editing = true;
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setWindowModality(Qt::WindowModal);
+    dialog->prepareAsync();
     connect(dialog, &QDialog::finished, this, [this]
     {
         m_tagDialog = nullptr;
@@ -28,12 +29,9 @@ void HomePageBackupPage::manageTags(const RevisionContext &context)
 {
     if (!isCurrentContext(context) || m_editing) return;
     const auto tags = revisionTags(context);
-    auto *dialog = new QDialog(this);
-    dialog->setObjectName("versionTagDialog");
-    dialog->setWindowTitle(tags.isEmpty() ? "标记为里程碑版本" : "管理里程碑版本");
-    dialog->setMinimumWidth(340);
-    auto *layout = new QVBoxLayout(dialog);
-    layout->setContentsMargins(24, 24, 24, 24); layout->setSpacing(12);
+    auto *dialog = new UiDialog::Dialog(this, QStringLiteral("versionTagDialog"),
+                                        tags.isEmpty() ? QStringLiteral("标记为里程碑版本") : QStringLiteral("管理里程碑版本"));
+    auto *layout = dialog->contentLayout();
     auto *selector = new QComboBox(dialog);
     selector->setObjectName("versionTagSelector");
     selector->setAccessibleName("选择里程碑标记");
@@ -41,6 +39,7 @@ void HomePageBackupPage::manageTags(const RevisionContext &context)
     selector->setVisible(tags.size() > 1);
     layout->addWidget(selector);
     auto *label = new QLabel("名称", dialog);
+    UiStyle::text(label);
     auto *name = new QLineEdit(dialog);
     name->setObjectName("versionTagName"); name->setAccessibleName("里程碑名称");
     name->setPlaceholderText("如：交稿版"); label->setBuddy(name);
@@ -51,7 +50,7 @@ void HomePageBackupPage::manageTags(const RevisionContext &context)
     auto *error = new QLabel(dialog);
     error->setObjectName("versionTagError"); error->setTextFormat(Qt::PlainText); error->setWordWrap(true);
     UiStyle::text(error, UiStyle::FontRole::Caption, true); error->hide(); layout->addWidget(error);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, dialog);
+    auto *buttons = dialog->buttonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel);
     buttons->button(QDialogButtonBox::Save)->setText("保存");
     buttons->button(QDialogButtonBox::Save)->setDefault(true);
     buttons->button(QDialogButtonBox::Cancel)->setText("取消");
@@ -60,9 +59,12 @@ void HomePageBackupPage::manageTags(const RevisionContext &context)
     {
         remove = new QPushButton("取消标记，保留版本", dialog);
         remove->setObjectName("removeVersionTagButton"); remove->setAutoDefault(false);
-        layout->addWidget(remove, 0, Qt::AlignLeft);
     }
-    layout->addWidget(buttons);
+    auto *footer = dialog->footerLayout();
+    if (remove)
+        footer->addWidget(remove);
+    footer->addStretch();
+    footer->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     const auto submit = [this, context, tags, dialog, name, selector, error, buttons, remove](bool deleting)
     {
@@ -105,20 +107,22 @@ void HomePageBackupPage::resolveTagConflicts()
     const auto id = m_id;
     const auto generation = m_service->repositoryGeneration(id), pageGeneration = m_contextGeneration;
     const auto conflict = conflicts.first();
-    auto *dialog = new QDialog(this);
-    dialog->setObjectName("versionTagConflictDialog"); dialog->setWindowTitle("处理里程碑标记"); dialog->setMinimumWidth(380);
-    auto *layout = new QVBoxLayout(dialog); layout->setContentsMargins(24, 24, 24, 24); layout->setSpacing(12);
+    auto *dialog = new UiDialog::Dialog(this, QStringLiteral("versionTagConflictDialog"), QStringLiteral("处理里程碑标记"));
+    auto *layout = dialog->contentLayout();
     auto *description = new QLabel(conflict.remoteOid.isEmpty() ? QString("云端已取消“%1”。可以保留本地标记并换一个名字，或使用云端的结果。").arg(conflict.name)
         : QString("云端的“%1”指向另一个版本。可以给本地标记换个名字以保留两份，或使用云端标记。历史内容会保留。").arg(conflict.name), dialog);
-    description->setTextFormat(Qt::PlainText); description->setWordWrap(true); layout->addWidget(description);
+    description->setTextFormat(Qt::PlainText); description->setWordWrap(true); UiStyle::text(description); layout->addWidget(description);
     auto *name = new QLineEdit(conflict.name + "-本机", dialog);
     name->setObjectName("conflictTagName"); name->setAccessibleName("本地标记的新名称"); layout->addWidget(name);
-    auto *error = new QLabel(dialog); error->setTextFormat(Qt::PlainText); error->setWordWrap(true); error->hide(); layout->addWidget(error);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, dialog);
+    auto *error = new QLabel(dialog); error->setTextFormat(Qt::PlainText); error->setWordWrap(true); UiStyle::text(error, UiStyle::FontRole::Caption, true); error->hide(); layout->addWidget(error);
+    auto *buttons = dialog->buttonBox(QDialogButtonBox::Cancel);
     auto *keep = buttons->addButton("给本地换个名字", QDialogButtonBox::ActionRole);
     auto *cloud = buttons->addButton("使用云端", QDialogButtonBox::ActionRole);
     keep->setObjectName("keepBothTagsButton"); cloud->setObjectName("useRemoteTagButton"); keep->setDefault(true);
-    buttons->button(QDialogButtonBox::Cancel)->setText("取消"); layout->addWidget(buttons);
+    buttons->button(QDialogButtonBox::Cancel)->setText("取消");
+    auto *footer = dialog->footerLayout();
+    footer->addStretch();
+    footer->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     const auto submit = [this, id, generation, pageGeneration, conflict, dialog, name, error, keep, cloud](bool both)
     {
