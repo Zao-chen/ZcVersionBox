@@ -91,6 +91,7 @@ int main(int argc, char *argv[])
     QObject::connect(&monitor, &BackupMonitor::notification, &window, &MainWindow::notify);
     monitor.start();
     window.show();
+    window.startAutomaticUpdateCheck();
 #ifdef Q_OS_MACOS
     setupMacTitleBar(window.winId());
 #endif

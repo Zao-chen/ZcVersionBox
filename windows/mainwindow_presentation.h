@@ -6,6 +6,7 @@
 #include <QPointer>
 #include <QTimer>
 #include <QWidget>
+#include <functional>
 
 class QAction;
 class QAbstractItemView;
@@ -93,7 +94,7 @@ class NotificationBar : public QWidget
     Q_OBJECT
   public:
     explicit NotificationBar(QWidget *parent);
-    void showResult(const OperationResult &result);
+    void showResult(const OperationResult &result, const QString &actionText = {}, std::function<void()> action = {});
     void dismiss();
 
   protected:
@@ -106,6 +107,8 @@ class NotificationBar : public QWidget
     QLabel *m_title;
     QLabel *m_text;
     QPushButton *m_detailsButton;
+    QPushButton *m_actionButton;
+    std::function<void()> m_action;
     QToolButton *m_close;
     QPointer<oclero::qlementine::Popover> m_popover;
     QTimer m_timer;
