@@ -23,6 +23,7 @@ Navigation 继续使用 PageId / Route 和明确的备份 ID，不依赖显示�
 | main.cpp | 应用级服务和监控，既有命令行添加入口 |
 | windows/mainwindow.* | Designer 窗口、上下文头部、Sidebar、页面装配、应用菜单、托盘和置顶 |
 | windows/mainwindow_navigation.* | 路由、前进后退、删除与重建后的导航失效处理 |
+| windows/mainwindow_dialog.* | 业务弹窗外壳、统一布局/模态/按钮区、确认/消息/文本输入工厂；不接管原生文件选择器 |
 | windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.* | 只读备份展示模型、独立筛选代理、紧凑行 delegate 与行菜单交互 |
 | windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.* | 复用添加和对象 QAction，标准添加/导入/危险操作对话框 |
 | windows/mainwindow_presentation.* | 字体/颜色角色、Qlementine 主题、少量样式钩子、通知与 Popover、标准确认 |
@@ -61,6 +62,7 @@ Navigation 继续使用 PageId / Route 和明确的备份 ID，不依赖显示�
 - AI 模型请求由 SettingsService 管理，绑定服务商和请求代次。Key、URL 或服务商变化使旧请求失效；手动模型名称不要求出现在获取列表中。Spinner 表达异步 AI 请求；Git 和文件操作通过独立后台队列执行，概览另显示忙态。
 - 回填 Switch 不写配置；云端同步由 Switch 统一控制展开与收起，开启时展开配置并聚焦地址输入框，已有配置时默认展开，关闭时收起配置并移除已保存的地址。
 - 删除、重建确认在打开时捕获对象 ID 和仓库代次，默认按钮和焦点均为取消。导航变化不会将确认应用到另一个对象。
+- 业务弹窗统一使用 `UiDialog::Dialog`：内容区固定 24/24/24/20 边距和 12 间距，默认使用窗口模态、浮层表面和底部 footer；同步任务弹窗通过 `prepareAsync()` 采用 `open()` 和关闭即销毁。确认、消息和文本输入分别由统一工厂提供。原生 `QFileDialog` 保留为平台文件浏览入口；命令行模式的 `QMessageBox` 仅作为无主窗口的错误/通知兜底。
 - 通知是主区子浮层，不参与页面布局。长消息在 Popover 中完整、可选择复制；展开详情暂停自动隐藏，关闭后恢复剩余计时。新通知关闭旧详情，Escape/外部点击可关闭，释放弹出窗口后返回焦点。浮层不拥有后台请求或业务提交的生命周期。
 - BackupMonitor 属于应用，由 `main.cpp` 显式启动；500 ms 静默窗口合并事件，最长合并 5 s，完整检查后 30 s 再校验。独立扫描不占服务忙态；自动备份/审计走后台优先级，页面任务默认前台。创建/销毁页面、筛选、刷新和滚动不重建监控。
 

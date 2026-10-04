@@ -118,6 +118,7 @@ add_library(zc_ui STATIC
     windows/mainwindow.h windows/mainwindow.cpp windows/mainwindow.ui
     windows/mainwindow_navigation.h windows/mainwindow_navigation.cpp
     windows/mainwindow_presentation.h windows/mainwindow_presentation.cpp
+    windows/mainwindow_dialog.h windows/mainwindow_dialog.cpp
     windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.h windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.cpp
     windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.h windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.cpp
     windows/mainwindow_child/homepage/homepage.h windows/mainwindow_child/homepage/homepage.cpp windows/mainwindow_child/homepage/homepage.ui

@@ -13,6 +13,10 @@ class QAction;
 class QMenu;
 class QDialog;
 class QAbstractButton;
+namespace UiDialog
+{
+class Dialog;
+}
 class HomePageBackupPage : public QWidget
 {
     Q_OBJECT
@@ -78,7 +82,7 @@ class HomePageBackupPage : public QWidget
     void manageTags(const RevisionContext &context);
     void resolveTagConflicts();
     QVector<VersionTag> revisionTags(const RevisionContext &context) const;
-    void trackTagDialog(QDialog *dialog);
+    void trackTagDialog(UiDialog::Dialog *dialog);
     RevisionContext revisionContext(const QModelIndex &index) const;
     bool isCurrentContext(const RevisionContext &context) const;
     QModelIndex indexForRevision(const RevisionContext &context) const;

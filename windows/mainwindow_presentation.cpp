@@ -1,12 +1,11 @@
 #include "windows/mainwindow_presentation.h"
+#include "windows/mainwindow_dialog.h"
 #include "utils/settingsservice.h"
 #include <QAbstractItemView>
 #include <QAction>
 #include <QApplication>
 #include <QBitmap>
 #include <QDesktopServices>
-#include <QDialog>
-#include <QDialogButtonBox>
 #include <QEvent>
 #include <QFile>
 #include <QFocusFrame>
@@ -15,7 +14,6 @@
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QLabel>
-#include <QMessageBox>
 #include <QPainter>
 #include <QLineEdit>
 #include <QPlainTextEdit>
@@ -826,29 +824,10 @@ QString formatBytes(qint64 bytes)
 }
 bool confirmAction(QWidget *owner, const QString &text, const QString &action)
 {
-    QDialog dialog(owner);
-    dialog.setWindowTitle(action);
-    auto *layout = new QVBoxLayout(&dialog);
-    layout->setContentsMargins(24, 24, 24, 24);
-    layout->setSpacing(24);
-    auto *label = new QLabel(text, &dialog);
-    label->setWordWrap(true);
-    label->setTextFormat(Qt::PlainText);
-    layout->addWidget(label);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
-    auto *confirm = buttons->addButton(action, QDialogButtonBox::AcceptRole);
-    confirm->setAutoDefault(false);
-    buttons->button(QDialogButtonBox::Cancel)->setText("取消");
-    buttons->button(QDialogButtonBox::Cancel)->setDefault(true);
-    buttons->button(QDialogButtonBox::Cancel)->setFocus();
-    layout->addWidget(buttons);
-    QObject::connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    QObject::connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    dialog.resize(480, dialog.sizeHint().height());
-    return dialog.exec() == QDialog::Accepted;
+    return UiDialog::confirm(owner, text, action);
 }
 void openLocalPath(QWidget *owner, const QString &path)
 {
     if (!QDesktopServices::openUrl(QUrl::fromLocalFile(path)))
-        QMessageBox::warning(owner, "打开失败", "无法打开目标路径");
+        UiDialog::showMessage(owner, QStringLiteral("打开失败"), QStringLiteral("无法打开目标路径"), UiDialog::MessageType::Warning);
 }

@@ -1,4 +1,5 @@
 #include "homepage_page_trackfiles.h"
+#include "windows/mainwindow_dialog.h"
 #include "windows/mainwindow_presentation.h"
 #include <QAction>
 #include <QApplication>
@@ -7,7 +8,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QFileDialog>
-#include <QInputDialog>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -126,13 +127,13 @@ void BackupUiActions::addLocal(bool directory)
 }
 void BackupUiActions::importRemote()
 {
-    auto *dialog = new QDialog(m_owner);
-    dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setWindowTitle("从云端导入备份");
-    auto *layout = new QVBoxLayout(dialog);
-    layout->setContentsMargins(24, 24, 24, 24);
-    layout->setSpacing(12);
-    layout->addWidget(new QLabel("云端仓库地址", dialog));
+    auto *dialog = new UiDialog::Dialog(m_owner, QStringLiteral("remoteImportDialog"), QStringLiteral("从云端导入备份"));
+    dialog->prepareAsync();
+    dialog->setMinimumWidth(520);
+    auto *layout = dialog->contentLayout();
+    auto *urlLabel = new QLabel("云端仓库地址", dialog);
+    UiStyle::text(urlLabel);
+    layout->addWidget(urlLabel);
     auto *url = new QLineEdit(dialog);
     url->setAccessibleName("云端仓库地址");
     url->setPlaceholderText("https://github.com/user/repo.git");
@@ -140,13 +141,16 @@ void BackupUiActions::importRemote()
     auto *status = new QLabel(dialog);
     status->setWordWrap(true);
     status->setTextFormat(Qt::PlainText);
+    UiStyle::text(status, UiStyle::FontRole::Caption, true);
     layout->addWidget(status);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
+    auto *buttons = dialog->buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     buttons->button(QDialogButtonBox::Ok)->setText("读取仓库");
     buttons->button(QDialogButtonBox::Cancel)->setText("取消");
     auto *check = buttons->addButton("检查链接", QDialogButtonBox::ActionRole);
     check->setFlat(true);
-    layout->addWidget(buttons);
+    auto *footer = dialog->footerLayout();
+    footer->addStretch();
+    footer->addWidget(buttons);
     connect(check, &QPushButton::clicked, dialog, [this, dialog, check, status, url]
             {
         const auto address = url->text();
@@ -189,11 +193,13 @@ void BackupUiActions::importRemote()
 }
 void BackupUiActions::chooseImport(const PreparedImport &prepared)
 {
-    QDialog selection(m_owner);
-    selection.setWindowTitle("选择版本控制内容");
-    auto *layout = new QVBoxLayout(&selection);
-    layout->setContentsMargins(24, 24, 24, 24);
-    layout->addWidget(new QLabel("选择整个仓库、一个文件或一个子目录。", &selection));
+    UiDialog::Dialog selection(m_owner, QStringLiteral("importSelectionDialog"), QStringLiteral("选择版本控制内容"));
+    selection.setMinimumWidth(520);
+    auto *layout = selection.contentLayout();
+    auto *description = new QLabel("选择整个仓库、一个文件或一个子目录。", &selection);
+    description->setWordWrap(true);
+    UiStyle::text(description);
+    layout->addWidget(description);
     auto *entries = new QComboBox(&selection);
     entries->setObjectName("importEntryCombo");
     entries->setAccessibleName("导入内容");
@@ -204,10 +210,13 @@ void BackupUiActions::chooseImport(const PreparedImport &prepared)
             entries->setCurrentIndex(entries->count() - 1);
     }
     layout->addWidget(entries);
-    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &selection);
-    layout->addWidget(buttons);
-    connect(buttons, &QDialogButtonBox::accepted, &selection, &QDialog::accept);
-    connect(buttons, &QDialogButtonBox::rejected, &selection, &QDialog::reject);
+    auto *buttons = selection.buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("导入"));
+    buttons->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("取消"));
+    auto *footer = selection.footerLayout();
+    footer->addStretch();
+    footer->addWidget(buttons);
+    selection.bindButtonBox(buttons);
     selection.resize(520, selection.sizeHint().height());
     const QPointer<BackupUiActions> guard(this);
     if (selection.exec() != QDialog::Accepted || !guard)
@@ -227,7 +236,7 @@ void BackupUiActions::chooseImport(const PreparedImport &prepared)
         if (!folder.isEmpty() && guard)
         {
             bool accepted = false;
-            const auto name = QInputDialog::getText(m_owner, "追踪文件夹名称", "本地文件夹名称", QLineEdit::Normal, defaultName, &accepted).trimmed();
+            const auto name = UiDialog::getText(m_owner, QStringLiteral("追踪文件夹名称"), QStringLiteral("本地文件夹名称"), defaultName, &accepted).trimmed();
             if (accepted && !name.isEmpty() && name != "." && name != ".." && !name.contains('/') && !name.contains('\\'))
                 target = QDir(folder).filePath(name);
         }
