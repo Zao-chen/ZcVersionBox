@@ -4,7 +4,6 @@
 #include <QCoreApplication>
 #include <QDesktopServices>
 #include <QDialog>
-#include <QDialogButtonBox>
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -117,43 +116,36 @@ void AboutPage::showRelease(const UpdateRelease &release)
         progress->setVisible(false);
         layout->addWidget(progress);
 
-        auto *buttons = new QDialogButtonBox(Qt::Horizontal, &dialog);
-        auto *openRelease = buttons->addButton(QStringLiteral("打开发布页"), QDialogButtonBox::AcceptRole);
-        auto *downloadUpdate = buttons->addButton(QStringLiteral("下载更新"), QDialogButtonBox::ActionRole);
-        auto *later = buttons->addButton(QStringLiteral("稍后"), QDialogButtonBox::RejectRole);
+        auto *buttonBar = new QWidget(&dialog);
+        auto *buttonLayout = new QHBoxLayout(buttonBar);
+        buttonLayout->setContentsMargins(0, 0, 0, 0);
+        auto *later = new QPushButton(QStringLiteral("稍后"), buttonBar);
+        auto *downloadUpdate = new QPushButton(QStringLiteral("下载并更新"), buttonBar);
+        buttonLayout->addWidget(later);
+        buttonLayout->addStretch();
+        buttonLayout->addWidget(downloadUpdate);
         const bool canDownload = release.downloadUrl.isValid() && !release.downloadName.isEmpty();
-        downloadUpdate->setVisible(canDownload);
+        downloadUpdate->setEnabled(canDownload);
         downloadUpdate->setProperty("primary", canDownload);
-        openRelease->setAutoDefault(false);
-        downloadUpdate->setAutoDefault(false);
         later->setAutoDefault(false);
-        layout->addWidget(buttons);
-        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        downloadUpdate->setAutoDefault(false);
+        layout->addWidget(buttonBar);
 
-        QString downloadedPath;
         if (!canDownload)
-            status->setText(QStringLiteral("当前平台暂无可用安装包，请打开发布页手动下载。"));
-        connect(downloadUpdate, &QPushButton::clicked, &dialog, [this, &dialog, &release, downloadUpdate, status, &downloadedPath]
+            status->setText(QStringLiteral("当前平台暂无可用安装包，请稍后通过项目发布页手动下载。"));
+        connect(later, &QPushButton::clicked, &dialog, &QDialog::reject);
+        connect(downloadUpdate, &QPushButton::clicked, &dialog, [this, &release, downloadUpdate, status]
                 {
-            if (!downloadedPath.isEmpty())
-            {
-                QDesktopServices::openUrl(QUrl::fromLocalFile(downloadedPath));
-                return;
-            }
             if (m_updates->isDownloading())
-            {
-                m_updates->cancelDownload();
                 return;
-            }
             status->setText(QStringLiteral("正在准备下载更新…"));
             downloadUpdate->setEnabled(false);
             m_updates->downloadUpdate(release); });
         connect(m_updates, &UpdateService::downloadingChanged, &dialog, [downloadUpdate, later, progress, status](bool downloading)
                 {
-            downloadUpdate->setEnabled(true);
-            downloadUpdate->setText(downloading ? QStringLiteral("取消下载") : QStringLiteral("下载更新"));
-            later->setEnabled(!downloading);
+            downloadUpdate->setEnabled(!downloading);
+            downloadUpdate->setText(downloading ? QStringLiteral("下载中…") : QStringLiteral("下载并更新"));
+            later->setEnabled(true);
             progress->setVisible(downloading);
             if (downloading)
             {
@@ -175,18 +167,17 @@ void AboutPage::showRelease(const UpdateRelease &release)
             progress->setRange(0, 100);
             progress->setValue(qBound(0, percentage, 100));
             status->setText(QStringLiteral("正在下载更新… %1%").arg(progress->value())); });
-        connect(m_updates, &UpdateService::downloadFinished, &dialog, [downloadUpdate, progress, status, &downloadedPath](const QString &path)
+        connect(m_updates, &UpdateService::downloadFinished, &dialog, [this, &dialog, progress, status](const QString &path)
                 {
-            downloadedPath = path;
             progress->setVisible(false);
-            downloadUpdate->setEnabled(true);
-            downloadUpdate->setText(QStringLiteral("打开安装包"));
-            status->setText(QStringLiteral("更新包已下载：%1").arg(QFileInfo(path).fileName())); });
+            status->setText(QStringLiteral("更新包已下载：%1，正在打开安装包…").arg(QFileInfo(path).fileName()));
+            QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+            dialog.accept(); });
         connect(m_updates, &UpdateService::downloadFailed, &dialog, [downloadUpdate, progress, status](const QString &error)
                 {
             progress->setVisible(false);
             downloadUpdate->setEnabled(true);
-            downloadUpdate->setText(QStringLiteral("下载更新"));
+            downloadUpdate->setText(QStringLiteral("下载并更新"));
             status->setText(QStringLiteral("下载失败：%1").arg(error)); });
         connect(&dialog, &QDialog::finished, &dialog, [this]
                 {
