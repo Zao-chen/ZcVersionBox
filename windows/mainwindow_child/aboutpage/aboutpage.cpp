@@ -3,8 +3,15 @@
 #include "windows/mainwindow_presentation.h"
 #include <QCoreApplication>
 #include <QDesktopServices>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QHBoxLayout>
+#include <QLabel>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QResizeEvent>
+#include <QTextBrowser>
+#include <QVBoxLayout>
 AboutPage::AboutPage(QWidget *parent) : QWidget(parent), ui(new Ui::AboutPage)
 {
     ui->setupUi(this);
@@ -40,15 +47,44 @@ AboutPage::AboutPage(QWidget *parent) : QWidget(parent), ui(new Ui::AboutPage)
                                      QStringLiteral("当前版本 v%1 已是最新稳定版本。").arg(result.release.currentVersion));
             return;
         }
-        QMessageBox message(QMessageBox::Information, QStringLiteral("发现新版本"),
-                            QStringLiteral("发现 ZcVersionBox v%1。\n\n%2")
-                                .arg(result.release.version,
-                                     result.release.notes.isEmpty() ? QStringLiteral("该版本暂无更新说明。") : result.release.notes),
-                            QMessageBox::NoButton, this);
-        auto *openRelease = message.addButton(QStringLiteral("打开发布页"), QMessageBox::AcceptRole);
-        message.addButton(QStringLiteral("稍后"), QMessageBox::RejectRole);
-        message.exec();
-        if (message.clickedButton() == openRelease)
+        QDialog dialog(this);
+        dialog.setWindowTitle(QStringLiteral("发现新版本"));
+        dialog.setModal(true);
+        dialog.setMinimumSize(460, 320);
+        dialog.setMaximumSize(720, 560);
+        dialog.resize(560, 440);
+        auto *layout = new QVBoxLayout(&dialog);
+        layout->setContentsMargins(24, 24, 24, 20);
+        layout->setSpacing(12);
+
+        auto *title = new QLabel(QStringLiteral("发现 ZcVersionBox v%1").arg(result.release.version), &dialog);
+        UiStyle::text(title, UiStyle::FontRole::Section);
+        layout->addWidget(title);
+
+        auto *current = new QLabel(QStringLiteral("当前版本 v%1").arg(result.release.currentVersion), &dialog);
+        UiStyle::text(current, UiStyle::FontRole::Caption, true);
+        layout->addWidget(current);
+
+        auto *notes = new QTextBrowser(&dialog);
+        notes->setFrameShape(QFrame::NoFrame);
+        notes->setOpenLinks(false);
+        notes->setOpenExternalLinks(false);
+        notes->setMarkdown(result.release.notes.isEmpty() ? QStringLiteral("该版本暂无更新说明。") : result.release.notes);
+        notes->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+        notes->setMinimumHeight(180);
+        layout->addWidget(notes, 1);
+
+        auto *buttons = new QDialogButtonBox(Qt::Horizontal, &dialog);
+        auto *openRelease = buttons->addButton(QStringLiteral("打开发布页"), QDialogButtonBox::AcceptRole);
+        auto *later = buttons->addButton(QStringLiteral("稍后"), QDialogButtonBox::RejectRole);
+        openRelease->setProperty("primary", true);
+        openRelease->setAutoDefault(false);
+        later->setAutoDefault(false);
+        layout->addWidget(buttons);
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        dialog.exec();
+        if (dialog.result() == QDialog::Accepted)
             QDesktopServices::openUrl(result.release.releaseUrl);
         });
 }

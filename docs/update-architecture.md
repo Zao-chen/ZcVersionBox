@@ -7,7 +7,7 @@ ZcVersionBox 的软件更新由关于页应用信息右侧的“检查更新”�
 1. 通过 HTTPS 请求 `https://api.github.com/repos/Zao-chen/ZcVersionBox/releases/latest`。
 2. 只接受稳定 Release，并严格校验 `vMAJOR.MINOR.PATCH` 版本号。
 3. 使用数值比较主、次、补丁版本，不按字符串排序。
-4. 显示当前版本、最新版本、发布说明和 GitHub 发布页。
+4. 在固定尺寸的对话框中显示当前版本、最新版本和 Markdown 发布说明；说明区域可滚动，避免长文本撑大窗口，并提供打开 GitHub 发布页的入口。
 
 网络请求有 12 秒超时。HTTP 错误、TLS 错误、JSON 格式错误和版本号错误都会显示为可重试的检查失败，不会改变本地文件或应用设置。
 
