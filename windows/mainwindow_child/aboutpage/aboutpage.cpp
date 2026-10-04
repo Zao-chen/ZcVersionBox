@@ -184,8 +184,6 @@ void AboutPage::showRelease(const UpdateRelease &release)
             if (m_updates->isDownloading())
                 m_updates->cancelDownload(); });
         dialog.exec();
-        if (dialog.result() == QDialog::Accepted)
-            QDesktopServices::openUrl(release.releaseUrl);
 }
 AboutPage::~AboutPage() = default;
 void AboutPage::resizeEvent(QResizeEvent *event)
