@@ -1,6 +1,7 @@
 #include "backup_test_support.h"
 #include "utils/backupmonitor.h"
 #include "utils/gitcommand.h"
+#include "utils/update_service.h"
 #include "windows/mainwindow.h"
 #include "windows/mainwindow_child/homepage/homepage.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_backup.h"
@@ -2536,6 +2537,36 @@ class Regression : public QObject
         QVERIFY(!tipLabel->mask().isEmpty());
 #endif
         QToolTip::hideText();
+    }
+
+    void updateNotificationBadgeAndNavigation()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        FakeAi gateway;
+        SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen);
+        window.show();
+
+        auto *updates = window.findChild<UpdateService *>();
+        auto *aboutTab = window.findChild<QToolButton *>("aboutTab");
+        auto *badge = window.findChild<QWidget *>("aboutNotificationBadge");
+        QVERIFY(updates && aboutTab && badge);
+        window.navigate({PageId::GeneralSettings});
+        QVERIFY(!badge->isVisible());
+
+        UpdateRelease release;
+        release.currentVersion = "0.1.0";
+        release.version = "0.2.0";
+        release.releaseUrl = QUrl("https://github.com/Zao-chen/ZcVersionBox/releases/tag/v0.2.0");
+        updates->automaticUpdateAvailable(release);
+        QTRY_VERIFY(badge->isVisible());
+        QVERIFY(aboutTab->toolTip().contains("有新版本"));
+
+        window.navigate({PageId::About});
+        QTRY_VERIFY(!badge->isVisible());
+        QCOMPARE(aboutTab->toolTip(), QString("关于"));
     }
 
   private:

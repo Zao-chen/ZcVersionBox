@@ -29,6 +29,7 @@
 #include <QToolTip>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <utility>
 #include <oclero/qlementine/style/QlementineStyle.hpp>
 #include <oclero/qlementine/style/Theme.hpp>
 #include <oclero/qlementine/utils/IconUtils.hpp>
@@ -208,6 +209,15 @@ class AppStyle final : public QlementineStyle
     const QColor &toolButtonForegroundColor(MouseState mouse, ColorRole) const override
     {
         return mouse == MouseState::Disabled ? theme().secondaryColorDisabled : theme().secondaryColor;
+    }
+    const QColor &progressBarValueColor(MouseState mouse) const override
+    {
+        static const QColor lightValueColor("#1890ff");
+        static const QColor darkValueColor("#5086ff");
+        static const QColor disabledValueColor("#8a8a8a");
+        if (mouse == MouseState::Disabled)
+            return disabledValueColor;
+        return theme().backgroundColorMain1.lightness() < 128 ? darkValueColor : lightValueColor;
     }
     QColor listItemBackgroundColor(MouseState mouse, SelectionState selected, FocusState, ActiveState,
                                    const QModelIndex &, const QWidget *) const override
@@ -625,6 +635,18 @@ NotificationBar::NotificationBar(QWidget *parent) : QWidget(parent)
     body->addWidget(m_title);
     body->addWidget(m_text);
     body->addWidget(m_detailsButton, 0, Qt::AlignLeft);
+    m_actionButton = new QPushButton(this);
+    m_actionButton->setObjectName("notificationActionButton");
+    m_actionButton->setFlat(true);
+    m_actionButton->setAutoDefault(false);
+    m_actionButton->hide();
+    body->addWidget(m_actionButton, 0, Qt::AlignLeft);
+    connect(m_actionButton, &QPushButton::clicked, this, [this]
+            {
+        const auto action = m_action;
+        dismiss();
+        if (action)
+            action(); });
     layout->addLayout(body, 1);
     auto *closeAction = UiStyle::action(this, "dismissNotification", "关闭提示", "close");
     m_close = UiStyle::toolButton(this, closeAction, true);
@@ -658,8 +680,10 @@ void NotificationBar::dismiss()
     m_details.clear();
     m_title->clear();
     m_text->clear();
+    m_action = {};
+    m_actionButton->hide();
 }
-void NotificationBar::showResult(const OperationResult &result)
+void NotificationBar::showResult(const OperationResult &result, const QString &actionText, std::function<void()> action)
 {
     if (result.title.isEmpty() && result.warning.isEmpty() && result.success)
         return;
@@ -674,6 +698,9 @@ void NotificationBar::showResult(const OperationResult &result)
     m_text->setText(compact.size() > 110 ? compact.left(107) + "…" : compact);
     m_text->setVisible(!compact.isEmpty());
     m_detailsButton->setVisible(compact.size() > 110 || body.contains('\n'));
+    m_action = std::move(action);
+    m_actionButton->setText(actionText);
+    m_actionButton->setVisible(!actionText.isEmpty() && bool(m_action));
     m_remaining = result.duration;
     updateColors();
     positionOverlay();
