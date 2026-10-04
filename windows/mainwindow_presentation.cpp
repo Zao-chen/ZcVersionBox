@@ -612,7 +612,7 @@ NotificationBar::NotificationBar(QWidget *parent) : QWidget(parent)
     layout->setSpacing(12);
     m_symbol = new QLabel(this);
     m_symbol->setFixedWidth(20);
-    m_symbol->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
+    m_symbol->setAlignment(Qt::AlignVCenter | Qt::AlignHCenter);
     layout->addWidget(m_symbol);
     auto *body = new QVBoxLayout;
     body->setContentsMargins(0, 0, 0, 0);
