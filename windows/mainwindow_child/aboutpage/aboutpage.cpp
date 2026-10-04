@@ -113,6 +113,9 @@ void AboutPage::showRelease(const UpdateRelease &release)
         auto *progress = new QProgressBar(&dialog);
         progress->setObjectName(QStringLiteral("updateProgress"));
         progress->setTextVisible(true);
+        progress->setMinimumHeight(16);
+        progress->setMaximumHeight(20);
+        progress->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         progress->setVisible(false);
         layout->addWidget(progress);
 
@@ -149,7 +152,9 @@ void AboutPage::showRelease(const UpdateRelease &release)
             progress->setVisible(downloading);
             if (downloading)
             {
-                progress->setRange(0, 0);
+                progress->setRange(0, 100);
+                progress->setValue(0);
+                progress->show();
                 status->setText(QStringLiteral("正在下载更新…"));
             }
             else if (progress->isVisible())
@@ -160,13 +165,14 @@ void AboutPage::showRelease(const UpdateRelease &release)
                 {
             if (total <= 0)
             {
-                progress->setRange(0, 0);
+                progress->setRange(0, 100);
+                progress->setValue(0);
                 return;
             }
             const auto percentage = static_cast<int>((received * 100) / total);
             progress->setRange(0, 100);
             progress->setValue(qBound(0, percentage, 100));
-            status->setText(QStringLiteral("正在下载更新… %1%").arg(progress->value())); });
+            status->setText(QStringLiteral("正在下载更新…")); });
         connect(m_updates, &UpdateService::downloadFinished, &dialog, [this, &dialog, progress, status](const QString &path)
                 {
             progress->setVisible(false);
