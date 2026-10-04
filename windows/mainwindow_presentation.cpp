@@ -210,6 +210,15 @@ class AppStyle final : public QlementineStyle
     {
         return mouse == MouseState::Disabled ? theme().secondaryColorDisabled : theme().secondaryColor;
     }
+    const QColor &progressBarValueColor(MouseState mouse) const override
+    {
+        static const QColor lightValueColor("#1890ff");
+        static const QColor darkValueColor("#5086ff");
+        static const QColor disabledValueColor("#8a8a8a");
+        if (mouse == MouseState::Disabled)
+            return disabledValueColor;
+        return theme().backgroundColorMain1.lightness() < 128 ? darkValueColor : lightValueColor;
+    }
     QColor listItemBackgroundColor(MouseState mouse, SelectionState selected, FocusState, ActiveState,
                                    const QModelIndex &, const QWidget *) const override
     {
