@@ -1,4 +1,6 @@
 #include "homepage_page_diff.h"
+#include "homepage_diff_delegate.h"
+#include "homepage_diff_view.h"
 #include "ui_homepage_page_diff.h"
 #include "windows/mainwindow_presentation.h"
 #include <QAction>
@@ -6,150 +8,13 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QHideEvent>
-#include <QPainter>
 #include <QPointer>
 #include <QResizeEvent>
 #include <QScrollBar>
 #include <QShowEvent>
-#include <QStyledItemDelegate>
-#include <QSyntaxHighlighter>
-#include <QTextCharFormat>
 #include <QTimer>
 #include <oclero/qlementine/widgets/Expander.hpp>
 #include <oclero/qlementine/widgets/LoadingSpinner.hpp>
-
-namespace
-{
-enum FileRole
-{
-    PathRole = Qt::UserRole + 1,
-    StatusRole,
-    SummaryRole
-};
-
-QString statusText(const QString &status)
-{
-    const QMap<QChar, QString> labels{{'A', "新增"}, {'D', "删除"}, {'M', "修改"}, {'R', "重命名"}, {'C', "复制"}, {'T', "类型变化"}};
-    return status.isEmpty() ? QStringLiteral("变更") : labels.value(status.front(), status);
-}
-
-QColor statusBadgeColor(const QString &status, const UiStyle::Colors &colors)
-{
-    if (status.startsWith('A'))
-        return colors.added;
-    if (status.startsWith('D'))
-        return colors.removed;
-    if (status.startsWith('M'))
-        return QColor(220, 130, 20); // 暖橙色
-    if (status.startsWith('R') || status.startsWith('C'))
-        return QColor(30, 136, 229); // 科技蓝
-    return colors.secondary;
-}
-
-class DiffHighlighter : public QSyntaxHighlighter
-{
-  public:
-    using QSyntaxHighlighter::QSyntaxHighlighter;
-
-  protected:
-    void highlightBlock(const QString &line) override
-    {
-        const auto colors = UiStyle::colors();
-        QTextCharFormat format;
-        if (line.startsWith("diff --git") || line.startsWith("index ") || line.startsWith("@@") ||
-            line.startsWith("--- ") || line.startsWith("+++ ") || line.startsWith("\\ ") || line.startsWith("Binary files "))
-            format.setForeground(colors.secondary);
-        else if (line.startsWith('+'))
-            format.setForeground(colors.added);
-        else if (line.startsWith('-'))
-            format.setForeground(colors.removed);
-        else
-            return;
-        setFormat(0, line.size(), format);
-    }
-};
-
-class FileDelegate : public QStyledItemDelegate
-{
-  public:
-    using QStyledItemDelegate::QStyledItemDelegate;
-    QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &) const override
-    {
-        return {0, UiStyle::rowHeight(58, UiStyle::font(UiStyle::FontRole::Body), true)};
-    }
-
-    void paint(QPainter *painter, const QStyleOptionViewItem &opt, const QModelIndex &index) const override
-    {
-        const auto colors = UiStyle::colors();
-        painter->save();
-        painter->setRenderHint(QPainter::Antialiasing);
-
-        const auto row = opt.rect.adjusted(0, 2, 0, -2);
-        if (opt.state.testFlag(QStyle::State_Selected) || opt.state.testFlag(QStyle::State_MouseOver))
-        {
-            painter->setPen(Qt::NoPen);
-            painter->setBrush(opt.state.testFlag(QStyle::State_Selected) ? colors.selected : colors.hover);
-            painter->drawRoundedRect(row, 8, 8);
-        }
-        if (UiStyle::isKeyboardNavigationActive() && opt.state.testFlag(QStyle::State_HasFocus))
-        {
-            painter->setPen(colors.secondary);
-            painter->setBrush(Qt::NoBrush);
-            painter->drawRoundedRect(QRectF(row).adjusted(.5, .5, -.5, -.5), 8, 8);
-        }
-
-        const auto font = UiStyle::font(UiStyle::FontRole::Body);
-        const auto caption = UiStyle::font(UiStyle::FontRole::Caption);
-        const auto textRect = row.adjusted(12, 7, -12, -7);
-
-        // 状态徽章 (Badge)
-        const auto status = index.data(StatusRole).toString();
-        const auto badgeName = statusText(status);
-        const auto badgeCol = statusBadgeColor(status, colors);
-
-        QFont badgeFont = caption;
-        badgeFont.setPointSize(caption.pointSize() > 2 ? caption.pointSize() - 1 : 9);
-        QFontMetrics badgeFm(badgeFont);
-        const int badgeTextW = badgeFm.horizontalAdvance(badgeName);
-        const int badgeW = badgeTextW + 10;
-        const int badgeH = badgeFm.height() + 4;
-        const QRect badgeRect(textRect.right() - badgeW, textRect.y() + 1, badgeW, badgeH);
-
-        QColor badgeBg = badgeCol;
-        badgeBg.setAlpha(36);
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(badgeBg);
-        painter->drawRoundedRect(badgeRect, 4, 4);
-
-        painter->setFont(badgeFont);
-        painter->setPen(badgeCol);
-        painter->drawText(badgeRect, Qt::AlignCenter, badgeName);
-
-        // 主标题：文件名
-        const int titleW = textRect.width() - badgeW - 8;
-        painter->setFont(font);
-        painter->setPen(colors.text);
-        painter->drawText(QRect(textRect.x(), textRect.y(), titleW, QFontMetrics(font).height()),
-                          Qt::AlignVCenter | Qt::AlignLeft,
-                          QFontMetrics(font).elidedText(index.data().toString(), Qt::ElideRight, titleW));
-
-        // 副标题：仅纯粹统计 (如 +2 / -1)
-        const auto summary = index.data(SummaryRole).toString();
-        const QString subText = (!summary.isEmpty() && summary != "-") ? summary : QString();
-
-        if (!subText.isEmpty())
-        {
-            painter->setFont(caption);
-            painter->setPen(colors.secondary);
-            painter->drawText(QRect(textRect.x(), textRect.y() + QFontMetrics(font).height() + 3, textRect.width(), QFontMetrics(caption).height()),
-                              Qt::AlignVCenter | Qt::AlignLeft,
-                              subText);
-        }
-
-        painter->restore();
-    }
-};
-} // namespace
 
 HomePageDiffPage::HomePageDiffPage(BackupService *service, SettingsService *settings, AiGateway *gateway, QWidget *parent)
     : QWidget(parent), ui(new Ui::HomePageDiffPage), m_service(service), m_settings(settings), m_gateway(gateway)
@@ -159,7 +24,7 @@ HomePageDiffPage::HomePageDiffPage(BackupService *service, SettingsService *sett
     // 文件列表模型与委托
     ui->files->setModel(&m_model);
     UiStyle::flatView(ui->files);
-    ui->files->setItemDelegate(new FileDelegate(ui->files));
+    ui->files->setItemDelegate(new DiffFileDelegate(ui->files));
     ui->files->setAccessibleName("变更文件");
 
     // 字体与样式初始化
@@ -167,12 +32,6 @@ HomePageDiffPage::HomePageDiffPage(BackupService *service, SettingsService *sett
     UiStyle::text(ui->filesCount, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->currentFilePath, UiStyle::FontRole::Body, false);
     UiStyle::text(ui->analysisStatus, UiStyle::FontRole::Caption, true);
-    UiStyle::text(ui->imageNoticeTitle, UiStyle::FontRole::Section, false);
-    UiStyle::text(ui->imageNoticeDesc, UiStyle::FontRole::Caption, true);
-
-    UiStyle::text(ui->content, UiStyle::FontRole::Code);
-    ui->content->setAccessibleName("版本原始差异");
-    m_highlighter = new DiffHighlighter(ui->content->document());
 
     // 顶部操作动作与 Spinner
     m_analyze = UiStyle::action(this, "analyzeAction", "AI 智能速读", "sparkles");
@@ -244,8 +103,7 @@ void HomePageDiffPage::rememberState()
     if (!m_valid || m_repositoryGeneration != m_service->repositoryGeneration(m_id))
         return;
     if (!m_currentFile.isEmpty())
-        m_fileScrolls[m_currentFile] = {ui->visualBrowser->horizontalScrollBar()->value(),
-                                        ui->visualBrowser->verticalScrollBar()->value()};
+        m_fileScrolls[m_currentFile] = ui->diffView->scrollPosition();
 
     m_states[m_id + '\n' + m_diff.newCommit] = {
         m_repositoryGeneration,
@@ -283,8 +141,7 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
     m_fileScrolls.clear();
     m_currentParsedDiff = {};
     m_currentRawDiff.clear();
-    ui->visualBrowser->clear();
-    ui->content->clear();
+    ui->diffView->clear();
     m_model.clear();
     m_hasAnalysis = false;
     m_analysisText.clear();
@@ -360,12 +217,9 @@ void HomePageDiffPage::loadFile()
         return;
 
     if (!m_currentFile.isEmpty())
-        m_fileScrolls[m_currentFile] = {ui->visualBrowser->horizontalScrollBar()->value(),
-                                        ui->visualBrowser->verticalScrollBar()->value()};
+        m_fileScrolls[m_currentFile] = ui->diffView->scrollPosition();
 
     m_currentFile = current.data(PathRole).toString();
-    const QString status = current.data(StatusRole).toString();
-    const QString summary = current.data(SummaryRole).toString();
 
     ui->currentFilePath->setText(m_currentFile);
     ui->currentFilePath->setToolTip(m_currentFile);
@@ -375,8 +229,7 @@ void HomePageDiffPage::loadFile()
     const auto id = m_id;
     const auto repositoryGeneration = m_repositoryGeneration;
 
-    ui->visualBrowser->clear();
-    ui->content->clear();
+    ui->diffView->clear();
 
     m_service->diffText(id, m_diff, m_currentFile, this, [this, id, scroll, generation, repositoryGeneration](const BackupResult<QString> &reply) {
         if (!m_active || generation != m_fileGeneration || id != m_id || repositoryGeneration != m_service->repositoryGeneration(id))
@@ -387,77 +240,15 @@ void HomePageDiffPage::loadFile()
         m_currentRawDiff = reply.value;
         m_currentParsedDiff = DiffParser::parse(reply.value);
 
-        renderCurrentDiff();
+        ui->diffView->setDiff(m_currentParsedDiff, m_currentRawDiff, m_currentFile, m_service->sourcePath(m_id));
 
         QTimer::singleShot(0, this, [this, scroll, generation] {
             if (generation == m_fileGeneration)
             {
-                ui->visualBrowser->horizontalScrollBar()->setValue(scroll.x());
-                ui->visualBrowser->verticalScrollBar()->setValue(scroll.y());
+                ui->diffView->setScrollPosition(scroll);
             }
         });
     });
-}
-
-void HomePageDiffPage::renderCurrentDiff()
-{
-    const auto colors = UiStyle::colors();
-    const QString codeFontFamily = UiStyle::font(UiStyle::FontRole::Code).family();
-
-    // 检查是否为图片文件
-    const QString lowerPath = m_currentFile.toLower();
-    const bool isImage = lowerPath.endsWith(".png") || lowerPath.endsWith(".jpg") ||
-                         lowerPath.endsWith(".jpeg") || lowerPath.endsWith(".webp") ||
-                         lowerPath.endsWith(".svg") || lowerPath.endsWith(".ico") ||
-                         lowerPath.endsWith(".bmp");
-
-    if (m_currentParsedDiff.isBinary && isImage)
-    {
-        ui->diffStack->setCurrentWidget(ui->imagePage);
-        ui->imageNoticeTitle->setText(QStringLiteral("图片文件变更 · %1").arg(QFileInfo(m_currentFile).fileName()));
-        ui->imageNoticeDesc->setText(QStringLiteral("此文件为图像格式，已记录当前版本变更。"));
-
-        const QString fullPath = m_service->sourcePath(m_id) + "/" + m_currentFile;
-        QPixmap pixmap(fullPath);
-        if (!pixmap.isNull())
-        {
-            if (pixmap.width() > 400 || pixmap.height() > 300)
-                pixmap = pixmap.scaled(400, 300, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-            ui->imagePreview->setPixmap(pixmap);
-        }
-        else
-        {
-            ui->imagePreview->setText(QStringLiteral("(无法直接加载本地图像预览)"));
-        }
-        return;
-    }
-
-    if (ui->content->toPlainText() != m_currentRawDiff)
-        ui->content->setPlainText(m_currentRawDiff);
-
-    // 统一永远展示纯正的左右对比结构 (Side-by-Side)
-    ui->diffStack->setCurrentWidget(ui->visualPage);
-
-    DiffParser::RenderColors renderColors;
-    renderColors.canvas = colors.canvas;
-    renderColors.surface = colors.sidebar;
-    renderColors.text = colors.text;
-    renderColors.secondaryText = colors.secondary;
-    renderColors.border = colors.separator;
-
-    renderColors.addedBg = colors.added;
-    renderColors.addedText = colors.added;
-    renderColors.addedWordBg = colors.added;
-
-    renderColors.removedBg = colors.removed;
-    renderColors.removedText = colors.removed;
-    renderColors.removedWordBg = colors.removed;
-
-    renderColors.headerBg = colors.sidebar;
-    renderColors.emptyBg = colors.sidebar;
-
-    const QString html = DiffParser::renderHtml(m_currentParsedDiff, DiffParser::ViewMode::SideBySide, renderColors, codeFontFamily);
-    ui->visualBrowser->setHtml(html);
 }
 
 void HomePageDiffPage::copyCurrentPath()
@@ -470,9 +261,8 @@ void HomePageDiffPage::copyCurrentPath()
 
 void HomePageDiffPage::refreshTheme()
 {
-    m_highlighter->rehighlight();
+    ui->diffView->refreshTheme();
     ui->files->viewport()->update();
-    renderCurrentDiff();
 }
 
 void HomePageDiffPage::analyze()

@@ -3062,6 +3062,29 @@ class BackupCoreRegression : public QObject
         QCOMPARE(parsedBinary.isBinary, true);
         const auto binHtml = DiffParser::renderHtml(parsedBinary, DiffParser::ViewMode::SideBySide, colors, "monospace");
         QVERIFY(binHtml.contains("二进制文件变更"));
+
+        // diffHunk
+        const auto hunkParsed = DiffParser::diffHunk("common header\n", "local line 1\nlocal line 2\n",
+                                                     "remote line 1 modified\n", "common footer\n", 1);
+        QCOMPARE(hunkParsed.deletedCount, 2);
+        QCOMPARE(hunkParsed.addedCount, 1);
+        const auto hunkHtml = DiffParser::renderHtml(hunkParsed, DiffParser::ViewMode::SideBySide, colors, "monospace",
+                                                     QStringLiteral("此电脑上的内容 (本地)"),
+                                                     QStringLiteral("云端的内容 (云端)"));
+        QVERIFY(hunkHtml.contains("此电脑上的内容 (本地)"));
+        QVERIFY(hunkHtml.contains("云端的内容 (云端)"));
+        QVERIFY(hunkHtml.contains("common header"));
+        QVERIFY(hunkHtml.contains("local"));
+        QVERIFY(hunkHtml.contains("remote"));
+        QVERIFY(hunkHtml.contains("common footer"));
+
+        // diffTexts
+        const auto textParsed = DiffParser::diffTexts("header\nalpha\nbeta\nfooter\n",
+                                                      "header\nalpha modified\ngamma\nbeta\nfooter\n", 1);
+        QVERIFY(textParsed.addedCount > 0);
+        const auto textHtml = DiffParser::renderHtml(textParsed, DiffParser::ViewMode::SideBySide, colors, "monospace");
+        QVERIFY(textHtml.contains("alpha"));
+        QVERIFY(textHtml.contains("gamma"));
     }
 
   private:

@@ -1354,8 +1354,6 @@ class Regression : public QObject
         remote->click(); settle(f.service);
         page.findChild<QPushButton *>("previousButton")->click();
         QVERIFY(local->isChecked());
-        page.findChild<QPushButton *>("expandContentButton")->click(); settle(f.service);
-        QVERIFY(page.findChild<QPlainTextEdit *>("localContent")->toPlainText().contains("本地第二段"));
         select("project/image.bin");
         QVERIFY(local->text().contains("本地文件"));
         local->click(); settle(f.service);
@@ -1450,7 +1448,10 @@ class Regression : public QObject
         QVERIFY(local->isEnabled()); QVERIFY(!local->isChecked());
         QVERIFY(!page->findChild<QPushButton *>("remoteChoice")->isChecked());
         // Removed objects invalidate a queued content reply and all navigation entries.
-        page->findChild<QPushButton *>("expandContentButton")->click();
+        auto *files = page->findChild<QListView *>("files");
+        for (int i = 0; i < files->model()->rowCount(); ++i)
+            if (files->model()->index(i, 0).data().toString().contains("image.bin"))
+                files->setCurrentIndex(files->model()->index(i, 0));
         QVERIFY(f.service.removeBackup(f.id).success); settle(f.service);
         QVERIFY(window.findChild<HomePage *>()->isVisible());
         window.findChild<QToolButton *>("backButton")->click(); settle(f.service);

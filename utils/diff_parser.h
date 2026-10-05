@@ -65,6 +65,18 @@ struct ParsedDiff
 // 解析 Git unified diff 格式文本
 ParsedDiff parse(const QString &rawDiff);
 
+// 基于两个文本计算行级与词级差异
+ParsedDiff diffTexts(const QString &oldText, const QString &newText, int startLine = 1);
+
+// 基于冲突 Hunk (before, local, remote, after) 生成 ParsedDiff
+ParsedDiff diffHunk(const QByteArray &beforeBytes, const QByteArray &localBytes,
+                    const QByteArray &remoteBytes, const QByteArray &afterBytes,
+                    int startLine = 1);
+
+// 基于 LCS 的轻量级词级差异计算
+void computeWordDiff(const QString &oldText, const QString &newText,
+                     QVector<TextSpan> &oldSpans, QVector<TextSpan> &newSpans);
+
 // 生成富文本 HTML 视图 (支持 SideBySide 和 Unified)
 enum class ViewMode
 {
@@ -89,6 +101,8 @@ struct RenderColors
     QColor emptyBg;
 };
 
-QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &colors, const QString &fontFamily);
+QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &colors, const QString &fontFamily,
+                   const QString &oldHeader = QStringLiteral("修改前 (旧版本)"),
+                   const QString &newHeader = QStringLiteral("修改后 (当前版本)"));
 
 } // namespace DiffParser

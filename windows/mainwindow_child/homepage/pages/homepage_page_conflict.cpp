@@ -1,4 +1,6 @@
 #include "homepage_page_conflict.h"
+#include "homepage_diff_delegate.h"
+#include "homepage_diff_view.h"
 #include "ui_homepage_page_conflict.h"
 #include "windows/mainwindow_presentation.h"
 #include <QFileInfo>
@@ -41,7 +43,17 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
         UiStyle::text(editor, UiStyle::FontRole::Code);
         editor->setLineWrapMode(QPlainTextEdit::WidgetWidth);
         editor->setWordWrapMode(QTextOption::WrapAnywhere);
+        editor->setMaximumHeight(0);
     }
+    ui->localTitle->setMaximumHeight(0);
+    ui->remoteTitle->setMaximumHeight(0);
+    ui->localTitle->setVisible(false);
+    ui->remoteTitle->setVisible(false);
+    ui->localLayout->setContentsMargins(0, 0, 0, 0);
+    ui->remoteLayout->setContentsMargins(0, 0, 0, 0);
+    setTabOrder(ui->localChoice, ui->remoteContent);
+    setTabOrder(ui->remoteContent, ui->remoteChoice);
+
     ui->localContent->setAccessibleName("此电脑上的内容");
     ui->remoteContent->setAccessibleName("云端的内容");
     ui->resultContent->setAccessibleName("最终文件内容");
@@ -49,18 +61,17 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
     ui->files->setAccessibleName("同步差异文件");
     ui->files->setModel(&m_files);
     UiStyle::flatView(ui->files);
+    ui->files->setItemDelegate(new DiffFileDelegate(ui->files));
     ui->splitter->setStretchFactor(0, 0);
     ui->splitter->setStretchFactor(1, 1);
     ui->splitter->setSizes({180, 560});
     ui->localChoice->setCheckable(true);
     ui->remoteChoice->setCheckable(true);
-    ui->expandContentButton->setCheckable(true);
     connect(ui->localChoice, &QPushButton::clicked, this, [this] { choose(ConflictChoice::Local); });
     connect(ui->remoteChoice, &QPushButton::clicked, this, [this] { choose(ConflictChoice::Remote); });
     connect(ui->files->selectionModel(), &QItemSelectionModel::currentChanged, this, [this] { selectFile(); });
     connect(ui->previousButton, &QPushButton::clicked, this, [this] { moveQuestion(false); });
     connect(ui->nextButton, &QPushButton::clicked, this, [this] { moveQuestion(true); });
-    connect(ui->expandContentButton, &QPushButton::toggled, this, [this] { showQuestion(); });
     connect(ui->previewButton, &QPushButton::clicked, this, &HomePageConflictPage::preparePreview);
     connect(ui->applyButton, &QPushButton::clicked, this, &HomePageConflictPage::apply);
     connect(ui->editChoicesButton, &QPushButton::clicked, this, [this]
@@ -94,6 +105,8 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
             ui->localContent->clear();
             ui->remoteContent->clear();
             ui->resultContent->clear();
+            ui->diffView->clear();
+            ui->previewDiffView->clear();
             updateActions();
         }
     });
@@ -119,6 +132,8 @@ void HomePageConflictPage::deactivate()
     ++m_contentRequest;
     m_busy = false;
     m_prepared = {};
+    ui->diffView->clear();
+    ui->previewDiffView->clear();
     updateActions();
 }
 void HomePageConflictPage::setBackup(const QString &id)
@@ -137,6 +152,8 @@ void HomePageConflictPage::setBackup(const QString &id)
     ui->localContent->clear();
     ui->remoteContent->clear();
     ui->resultContent->clear();
+    ui->diffView->clear();
+    ui->previewDiffView->clear();
     load();
 }
 void HomePageConflictPage::load(bool restart, bool resumePreview)
@@ -222,9 +239,12 @@ void HomePageConflictPage::populateFiles()
         }
         for (const auto &change : m_previewFiles)
         {
-            const auto status = change.status == "D" ? "删除" : change.status == "A" ? "新增" : change.status == "=" ? "保留" : change.status == "-" ? "保持删除" : "修改";
-            auto *item = new QStandardItem(QString("%1 · %2").arg(status, change.path));
-            item->setToolTip(item->text() + (change.summary.isEmpty() ? QString() : '\n' + change.summary));
+            auto *item = new QStandardItem(change.path);
+            item->setEditable(false);
+            item->setData(change.path, DiffFileRole::PathRole);
+            item->setData(change.status, DiffFileRole::StatusRole);
+            item->setData(change.summary.isEmpty() ? QString() : change.summary, DiffFileRole::SummaryRole);
+            item->setToolTip(QString("%1 · %2%3").arg(statusText(change.status), change.path, change.summary.isEmpty() ? QString() : "\n" + change.summary));
             m_files.appendRow(item);
         }
         if (m_files.rowCount()) ui->files->setCurrentIndex(m_files.index(0, 0));
@@ -235,8 +255,13 @@ void HomePageConflictPage::populateFiles()
         {
             int done = 0;
             for (const auto &hunk : file.hunks) done += hunk.choice != ConflictChoice::Unresolved;
-            auto *item = new QStandardItem(QString("%1/%2 · %3").arg(done).arg(file.hunks.size()).arg(file.path));
-            item->setToolTip(item->text() + (file.managed ? QString() : "\n仅影响备份仓库"));
+            const bool fileResolved = (done == file.hunks.size());
+            auto *item = new QStandardItem(file.path);
+            item->setEditable(false);
+            item->setData(file.path, DiffFileRole::PathRole);
+            item->setData(fileResolved ? QStringLiteral("✓") : QStringLiteral("!"), DiffFileRole::StatusRole);
+            item->setData(QString("%1/%2 · %3").arg(done).arg(file.hunks.size()).arg(file.managed ? QStringLiteral("待处理") : QStringLiteral("仅影响备份仓库")), DiffFileRole::SummaryRole);
+            item->setToolTip(QString("%1\n%2/%3 处已确认%4").arg(file.path).arg(done).arg(file.hunks.size()).arg(file.managed ? QString() : "\n仅影响备份仓库"));
             m_files.appendRow(item);
         }
         ui->files->setCurrentIndex(m_files.index(m_file, 0));
@@ -254,8 +279,6 @@ void HomePageConflictPage::selectFile()
     const auto file = m_session.files.value(m_file);
     for (int i = 0; i < file.hunks.size(); ++i)
         if (file.hunks[i].choice == ConflictChoice::Unresolved) { m_hunk = i; break; }
-    const QSignalBlocker blocker(ui->expandContentButton);
-    ui->expandContentButton->setChecked(false);
     showQuestion();
 }
 void HomePageConflictPage::showQuestion()
@@ -272,14 +295,46 @@ void HomePageConflictPage::showQuestion()
     ui->localChoice->setChecked(hunk.choice == ConflictChoice::Local);
     ui->remoteChoice->setChecked(hunk.choice == ConflictChoice::Remote);
     ui->selectionLabel->setText(hunk.choice == ConflictChoice::Unresolved ? "尚未选择" : hunk.choice == ConflictChoice::Local ? "已选择本地" : "已选择云端");
-    const bool full = file.wholeFile || ui->expandContentButton->isChecked();
-    ui->expandContentButton->setVisible(!file.wholeFile);
-    ui->expandContentButton->setText(full ? "收起完整内容" : "展开完整内容");
     for (auto *editor : {ui->localContent, ui->remoteContent}) editor->setExtraSelections({});
-    if (full)
+    if (file.wholeFile)
     {
-        loadContent(ui->localContent, file.path, ConflictSide::Local, request);
-        loadContent(ui->remoteContent, file.path, ConflictSide::Remote, request);
+        ui->diffView->showNotice(QStringLiteral("正在读取内容…"), QStringLiteral("正在加载本地与云端内容以生成对比…"));
+        m_hasLocalText = false;
+        m_hasRemoteText = false;
+        m_currentLocalText.clear();
+        m_currentRemoteText.clear();
+
+        const auto ctx = context();
+        const auto session = m_session.id;
+        const auto revision = m_session.revision;
+        const auto filePath = file.path;
+
+        ui->localContent->setPlainText("正在读取内容…");
+        ui->remoteContent->setPlainText("正在读取内容…");
+
+        m_service->syncContent(m_id, session, file.path, ConflictSide::Local, this,
+            [this, ctx, session, revision, request, filePath](const BackupResult<ConflictContent> &reply)
+        {
+            if (!current(ctx) || session != m_session.id || revision != m_session.revision || request != m_contentRequest) return;
+            ui->localContent->setPlainText(reply.result.success ? reply.value.text : reply.result.title + "：" + reply.result.message);
+            m_hasLocalText = true;
+            m_currentLocalText = reply.result.success ? reply.value.text : QString();
+            if (m_hasRemoteText)
+                ui->diffView->setTexts(m_currentLocalText, m_currentRemoteText, filePath, m_service->sourcePath(m_id),
+                                       QStringLiteral("此电脑上的内容 (本地)"), QStringLiteral("云端的内容 (云端)"));
+        });
+
+        m_service->syncContent(m_id, session, file.path, ConflictSide::Remote, this,
+            [this, ctx, session, revision, request, filePath](const BackupResult<ConflictContent> &reply)
+        {
+            if (!current(ctx) || session != m_session.id || revision != m_session.revision || request != m_contentRequest) return;
+            ui->remoteContent->setPlainText(reply.result.success ? reply.value.text : reply.result.title + "：" + reply.result.message);
+            m_hasRemoteText = true;
+            m_currentRemoteText = reply.result.success ? reply.value.text : QString();
+            if (m_hasLocalText)
+                ui->diffView->setTexts(m_currentLocalText, m_currentRemoteText, filePath, m_service->sourcePath(m_id),
+                                       QStringLiteral("此电脑上的内容 (本地)"), QStringLiteral("云端的内容 (云端)"));
+        });
     }
     else
     {
@@ -296,6 +351,10 @@ void HomePageConflictPage::showQuestion()
         };
         show(ui->localContent, hunk.local);
         show(ui->remoteContent, hunk.remote);
+
+        ui->diffView->setHunk(hunk.before, hunk.local, hunk.remote, hunk.after, 1,
+                              file.path, m_service->sourcePath(m_id),
+                              QStringLiteral("此电脑上的内容 (本地)"), QStringLiteral("云端的内容 (云端)"));
     }
     updateActions();
 }
@@ -351,10 +410,9 @@ void HomePageConflictPage::moveQuestion(bool next)
     }
     m_file = questions[target].first;
     m_hunk = questions[target].second;
-    const QSignalBlocker selection(ui->files->selectionModel()), expansion(ui->expandContentButton);
+    const QSignalBlocker selection(ui->files->selectionModel());
     ui->files->setCurrentIndex(m_files.index(m_file, 0));
     ui->files->scrollTo(ui->files->currentIndex());
-    ui->expandContentButton->setChecked(false);
     showQuestion();
 }
 void HomePageConflictPage::preparePreview()
@@ -400,10 +458,91 @@ void HomePageConflictPage::showResult()
     ui->resultPath->setText(change.path);
     ui->resultPath->setCursorPosition(0);
     ui->resultScope->setText(change.summary);
-    if (!valid) ui->resultContent->setPlainText("源内容没有变化。确认后保存同步版本关系并恢复自动备份。");
-    else if (change.status == "D") ui->resultContent->setPlainText("此文件将在应用时删除。");
-    else if (change.status == "-") ui->resultContent->setPlainText("源位置中已不存在此文件，应用后继续保持删除。");
-    else loadContent(ui->resultContent, change.path, ConflictSide::Result, request);
+    if (!valid)
+    {
+        ui->resultContent->setPlainText("源内容没有变化。确认后保存同步版本关系并恢复自动备份。");
+        ui->previewDiffView->showNotice(QStringLiteral("源内容没有变化"), QStringLiteral("确认后保存同步版本关系并恢复自动备份。"));
+    }
+    else if (change.status == "D")
+    {
+        ui->resultContent->setPlainText("此文件将在应用时删除。");
+        ui->previewDiffView->showNotice(QStringLiteral("文件将被删除"), QStringLiteral("应用同步后，源位置中的此文件将被删除。"));
+    }
+    else if (change.status == "-")
+    {
+        ui->resultContent->setPlainText("源位置中已不存在此文件，应用后继续保持删除。");
+        ui->previewDiffView->showNotice(QStringLiteral("继续保持删除"), QStringLiteral("源位置中已不存在此文件，应用后继续保持删除。"));
+    }
+    else if (change.status == "=")
+    {
+        ui->resultContent->setPlainText("此文件未做更改，保留当前源内容。");
+        ui->previewDiffView->showNotice(QStringLiteral("文件内容保留"), QStringLiteral("此文件未做更改，保留当前源内容。"));
+    }
+    else
+    {
+        ui->previewDiffView->showNotice(QStringLiteral("正在读取合并结果…"), QStringLiteral("正在加载合并前后的内容…"));
+        ui->resultContent->setPlainText("正在读取内容…");
+
+        const auto ctx = context();
+        const auto session = m_session.id;
+        const auto revision = m_session.revision;
+        const auto changePath = change.path;
+        const auto status = change.status;
+
+        if (status == "A")
+        {
+            m_service->syncContent(m_id, session, changePath, ConflictSide::Result, this,
+                [this, ctx, session, revision, request, changePath](const BackupResult<ConflictContent> &reply)
+            {
+                if (!current(ctx) || session != m_session.id || revision != m_session.revision || request != m_contentRequest) return;
+                const QString text = reply.result.success ? reply.value.text : reply.result.title + "：" + reply.result.message;
+                ui->resultContent->setPlainText(text);
+                ui->previewDiffView->setTexts(QString(), reply.result.success ? reply.value.text : QString(),
+                                              changePath, m_service->sourcePath(m_id),
+                                              QStringLiteral("修改前 (本地)"), QStringLiteral("修改后 (合并结果)"));
+            });
+        }
+        else
+        {
+            struct MergeDiffState {
+                QString localText;
+                QString resultText;
+                bool hasLocal{false};
+                bool hasResult{false};
+            };
+            auto mergeState = std::make_shared<MergeDiffState>();
+
+            m_service->syncContent(m_id, session, changePath, ConflictSide::Local, this,
+                [this, ctx, session, revision, request, changePath, mergeState](const BackupResult<ConflictContent> &reply)
+            {
+                if (!current(ctx) || session != m_session.id || revision != m_session.revision || request != m_contentRequest) return;
+                mergeState->hasLocal = true;
+                mergeState->localText = reply.result.success ? reply.value.text : QString();
+                if (mergeState->hasResult)
+                {
+                    ui->previewDiffView->setTexts(mergeState->localText, mergeState->resultText,
+                                                  changePath, m_service->sourcePath(m_id),
+                                                  QStringLiteral("修改前 (本地)"), QStringLiteral("修改后 (合并结果)"));
+                }
+            });
+
+            m_service->syncContent(m_id, session, changePath, ConflictSide::Result, this,
+                [this, ctx, session, revision, request, changePath, mergeState](const BackupResult<ConflictContent> &reply)
+            {
+                if (!current(ctx) || session != m_session.id || revision != m_session.revision || request != m_contentRequest) return;
+                const QString text = reply.result.success ? reply.value.text : reply.result.title + "：" + reply.result.message;
+                ui->resultContent->setPlainText(text);
+                mergeState->hasResult = true;
+                mergeState->resultText = reply.result.success ? reply.value.text : QString();
+                if (mergeState->hasLocal)
+                {
+                    ui->previewDiffView->setTexts(mergeState->localText, mergeState->resultText,
+                                                  changePath, m_service->sourcePath(m_id),
+                                                  QStringLiteral("修改前 (本地)"), QStringLiteral("修改后 (合并结果)"));
+                }
+            });
+        }
+    }
     updateActions();
 }
 void HomePageConflictPage::apply()
@@ -455,7 +594,6 @@ void HomePageConflictPage::updateActions()
     const bool laterQuestion = m_file + 1 < m_session.files.size() || m_hunk + 1 < m_session.files.value(m_file).hunks.size();
     const bool otherUnresolved = m_session.remaining() > (m_session.files.value(m_file).hunks.value(m_hunk).choice == ConflictChoice::Unresolved ? 1 : 0);
     ui->nextButton->setEnabled(valid && !m_busy && question && (laterQuestion || otherUnresolved));
-    ui->expandContentButton->setEnabled(valid && !m_busy);
     ui->previewButton->setVisible(!m_preview);
     ui->previewButton->setEnabled(editable && m_session.remaining() == 0);
     ui->previewButton->setToolTip(m_session.remaining() ? QString("还有 %1 处未选择").arg(m_session.remaining()) : QString());
@@ -466,6 +604,9 @@ void HomePageConflictPage::updateActions()
 }
 void HomePageConflictPage::refreshTheme()
 {
+    ui->diffView->refreshTheme();
+    ui->previewDiffView->refreshTheme();
+    ui->files->viewport()->update();
     for (auto *editor : {ui->localContent, ui->remoteContent})
     {
         auto selections = editor->extraSelections();
