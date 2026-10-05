@@ -57,7 +57,6 @@ class HomePageDiffPage : public QWidget
     AiGateway *m_gateway;
     QStandardItemModel m_model;
     QAction *m_analyze;
-    QSyntaxHighlighter *m_highlighter;
     oclero::qlementine::LoadingSpinner *m_spinner;
     oclero::qlementine::Expander *m_expander{nullptr};
 
@@ -75,6 +74,5 @@ class HomePageDiffPage : public QWidget
     void analyze();
     void updateLoadingState();
     void updateResponsiveLayout();
-    void renderCurrentDiff();
     void copyCurrentPath();
 };

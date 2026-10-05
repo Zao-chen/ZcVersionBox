@@ -211,137 +211,7 @@
         </widget>
        </item>
        <item>
-        <widget class="QStackedWidget" name="diffStack">
-         <property name="currentIndex">
-          <number>0</number>
-         </property>
-         <widget class="QWidget" name="visualPage">
-          <layout class="QVBoxLayout" name="visualPageLayout">
-           <property name="leftMargin">
-            <number>0</number>
-           </property>
-           <property name="topMargin">
-            <number>0</number>
-           </property>
-           <property name="rightMargin">
-            <number>0</number>
-           </property>
-           <property name="bottomMargin">
-            <number>0</number>
-           </property>
-           <item>
-            <widget class="QTextBrowser" name="visualBrowser">
-             <property name="frameShape">
-              <enum>QFrame::NoFrame</enum>
-             </property>
-             <property name="openExternalLinks">
-              <bool>false</bool>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </widget>
-         <widget class="QWidget" name="rawPage">
-          <layout class="QVBoxLayout" name="rawPageLayout">
-           <property name="leftMargin">
-            <number>0</number>
-           </property>
-           <property name="topMargin">
-            <number>0</number>
-           </property>
-           <property name="rightMargin">
-            <number>0</number>
-           </property>
-           <property name="bottomMargin">
-            <number>0</number>
-           </property>
-           <item>
-            <widget class="QPlainTextEdit" name="content">
-             <property name="readOnly">
-              <bool>true</bool>
-             </property>
-             <property name="frameShape">
-              <enum>QFrame::NoFrame</enum>
-             </property>
-             <property name="lineWrapMode">
-              <enum>QPlainTextEdit::NoWrap</enum>
-             </property>
-             <property name="placeholderText">
-              <string>此版本没有可显示的文本变更。</string>
-             </property>
-            </widget>
-           </item>
-          </layout>
-         </widget>
-         <widget class="QWidget" name="imagePage">
-          <layout class="QVBoxLayout" name="imagePageLayout">
-           <property name="spacing">
-            <number>12</number>
-           </property>
-           <property name="leftMargin">
-            <number>16</number>
-           </property>
-           <property name="topMargin">
-            <number>24</number>
-           </property>
-           <property name="rightMargin">
-            <number>16</number>
-           </property>
-           <property name="bottomMargin">
-            <number>24</number>
-           </property>
-           <item>
-            <widget class="QLabel" name="imageNoticeTitle">
-             <property name="font">
-              <font>
-               <pointsize>11</pointsize>
-               <bold>true</bold>
-              </font>
-             </property>
-             <property name="alignment">
-              <set>Qt::AlignCenter</set>
-             </property>
-             <property name="text">
-              <string>图片或非文本文件</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QLabel" name="imageNoticeDesc">
-             <property name="alignment">
-              <set>Qt::AlignCenter</set>
-             </property>
-             <property name="text">
-              <string/>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QLabel" name="imagePreview">
-             <property name="alignment">
-              <set>Qt::AlignCenter</set>
-             </property>
-             <property name="text">
-              <string/>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <spacer name="imageSpacer">
-             <property name="orientation">
-              <enum>Qt::Vertical</enum>
-             </property>
-             <property name="sizeHint" stdset="0">
-              <size>
-               <width>0</width>
-               <height>0</height>
-              </size>
-             </property>
-            </spacer>
-           </item>
-          </layout>
-         </widget>
-        </widget>
+        <widget class="HomePageDiffView" name="diffView" native="true"/>
        </item>
        <item>
         <widget class="QWidget" name="analysisContent">
@@ -382,4 +252,12 @@
  </widget>
  <resources/>
  <connections/>
+ <customwidgets>
+  <customwidget>
+   <class>HomePageDiffView</class>
+   <extends>QWidget</extends>
+   <header>windows/mainwindow_child/homepage/pages/homepage_diff_view.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
 </ui>

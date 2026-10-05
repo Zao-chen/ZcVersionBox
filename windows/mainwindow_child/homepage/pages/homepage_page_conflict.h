@@ -35,6 +35,8 @@ class HomePageConflictPage : public QWidget
     quint64 m_repository{0}, m_context{0}, m_contentRequest{0};
     int m_file{0}, m_hunk{0};
     bool m_active{false}, m_busy{false}, m_preview{false};
+    QString m_currentLocalText, m_currentRemoteText;
+    bool m_hasLocalText{false}, m_hasRemoteText{false};
     Context context() const;
     bool current(const Context &context) const;
     void rememberPosition();

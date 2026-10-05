@@ -50,6 +50,31 @@ QVector<Token> tokenize(const QString &text)
     return tokens;
 }
 
+// 将文本格式化为带行内高亮的 HTML 片段
+QString spansToHtml(const QString &text, const QVector<TextSpan> &spans, const QString &wordBgHex)
+{
+    if (spans.isEmpty())
+        return text.toHtmlEscaped();
+
+    QString html;
+    for (const auto &span : spans)
+    {
+        QString sub = text.mid(span.start, span.length).toHtmlEscaped();
+        if (span.highlighted && !wordBgHex.isEmpty())
+        {
+            html += QString("<span style=\"background-color:%1; border-radius:2px; font-weight:600;\">%2</span>")
+                        .arg(wordBgHex, sub);
+        }
+        else
+        {
+            html += sub;
+        }
+    }
+    return html;
+}
+
+} // namespace
+
 // 基于 LCS 的轻量级词级差异计算
 void computeWordDiff(const QString &oldText, const QString &newText,
                      QVector<TextSpan> &oldSpans, QVector<TextSpan> &newSpans)
@@ -140,31 +165,6 @@ void computeWordDiff(const QString &oldText, const QString &newText,
     oldSpans = makeSpans(oldTokens, oldMatched);
     newSpans = makeSpans(newTokens, newMatched);
 }
-
-// 将文本格式化为带行内高亮的 HTML 片段
-QString spansToHtml(const QString &text, const QVector<TextSpan> &spans, const QString &wordBgHex)
-{
-    if (spans.isEmpty())
-        return text.toHtmlEscaped();
-
-    QString html;
-    for (const auto &span : spans)
-    {
-        QString sub = text.mid(span.start, span.length).toHtmlEscaped();
-        if (span.highlighted && !wordBgHex.isEmpty())
-        {
-            html += QString("<span style=\"background-color:%1; border-radius:2px; font-weight:600;\">%2</span>")
-                        .arg(wordBgHex, sub);
-        }
-        else
-        {
-            html += sub;
-        }
-    }
-    return html;
-}
-
-} // namespace
 
 ParsedDiff parse(const QString &rawDiff)
 {
@@ -391,7 +391,413 @@ ParsedDiff parse(const QString &rawDiff)
     return result;
 }
 
-QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &colors, const QString &fontFamily)
+ParsedDiff diffHunk(const QByteArray &beforeBytes, const QByteArray &localBytes,
+                    const QByteArray &remoteBytes, const QByteArray &afterBytes,
+                    int startLine)
+{
+    ParsedDiff result;
+    auto toLines = [](const QByteArray &bytes) {
+        if (bytes.isEmpty())
+            return QStringList();
+        QString s = QString::fromUtf8(bytes).replace("\r\n", "\n").replace('\r', '\n');
+        QStringList lines = s.split('\n');
+        if (!lines.isEmpty() && lines.last().isEmpty())
+            lines.removeLast();
+        return lines;
+    };
+
+    const auto beforeLines = toLines(beforeBytes);
+    const auto localLines = toLines(localBytes);
+    const auto remoteLines = toLines(remoteBytes);
+    const auto afterLines = toLines(afterBytes);
+
+    int oldNum = startLine;
+    int newNum = startLine;
+
+    // 1. Context before hunk
+    for (const auto &line : beforeLines)
+    {
+        SideBySideRow sbs;
+        sbs.oldLineNumber = oldNum++;
+        sbs.oldText = line;
+        sbs.oldType = LineType::Context;
+        sbs.newLineNumber = newNum++;
+        sbs.newText = line;
+        sbs.newType = LineType::Context;
+        result.sideBySideRows.append(sbs);
+
+        UnifiedRow uni;
+        uni.oldLineNumber = sbs.oldLineNumber;
+        uni.newLineNumber = sbs.newLineNumber;
+        uni.text = line;
+        uni.type = LineType::Context;
+        result.unifiedRows.append(uni);
+    }
+
+    // 2. Local (deleted / left) and Remote (added / right)
+    result.deletedCount += localLines.size();
+    result.addedCount += remoteLines.size();
+
+    int pairCount = std::min(localLines.size(), remoteLines.size());
+    QVector<QVector<TextSpan>> delSpans(localLines.size());
+    QVector<QVector<TextSpan>> addSpans(remoteLines.size());
+    for (int p = 0; p < pairCount; ++p)
+    {
+        computeWordDiff(localLines[p], remoteLines[p], delSpans[p], addSpans[p]);
+    }
+    for (int d = pairCount; d < localLines.size(); ++d)
+    {
+        if (!localLines[d].isEmpty())
+            delSpans[d].append({0, (int)localLines[d].length(), true});
+    }
+    for (int a = pairCount; a < remoteLines.size(); ++a)
+    {
+        if (!remoteLines[a].isEmpty())
+            addSpans[a].append({0, (int)remoteLines[a].length(), true});
+    }
+
+    for (int d = 0; d < localLines.size(); ++d)
+    {
+        UnifiedRow uni;
+        uni.oldLineNumber = oldNum + d;
+        uni.newLineNumber = -1;
+        uni.text = localLines[d];
+        uni.spans = delSpans[d];
+        uni.type = LineType::Deleted;
+        result.unifiedRows.append(uni);
+    }
+    for (int a = 0; a < remoteLines.size(); ++a)
+    {
+        UnifiedRow uni;
+        uni.oldLineNumber = -1;
+        uni.newLineNumber = newNum + a;
+        uni.text = remoteLines[a];
+        uni.spans = addSpans[a];
+        uni.type = LineType::Added;
+        result.unifiedRows.append(uni);
+    }
+
+    int maxRows = std::max(localLines.size(), remoteLines.size());
+    for (int r = 0; r < maxRows; ++r)
+    {
+        SideBySideRow sbs;
+        if (r < localLines.size())
+        {
+            sbs.oldLineNumber = oldNum + r;
+            sbs.oldText = localLines[r];
+            sbs.oldSpans = delSpans[r];
+            sbs.oldType = LineType::Deleted;
+        }
+        else
+        {
+            sbs.oldType = LineType::Empty;
+        }
+
+        if (r < remoteLines.size())
+        {
+            sbs.newLineNumber = newNum + r;
+            sbs.newText = remoteLines[r];
+            sbs.newSpans = addSpans[r];
+            sbs.newType = LineType::Added;
+        }
+        else
+        {
+            sbs.newType = LineType::Empty;
+        }
+        result.sideBySideRows.append(sbs);
+    }
+    oldNum += localLines.size();
+    newNum += remoteLines.size();
+
+    // 3. Context after hunk
+    for (const auto &line : afterLines)
+    {
+        SideBySideRow sbs;
+        sbs.oldLineNumber = oldNum++;
+        sbs.oldText = line;
+        sbs.oldType = LineType::Context;
+        sbs.newLineNumber = newNum++;
+        sbs.newText = line;
+        sbs.newType = LineType::Context;
+        result.sideBySideRows.append(sbs);
+
+        UnifiedRow uni;
+        uni.oldLineNumber = sbs.oldLineNumber;
+        uni.newLineNumber = sbs.newLineNumber;
+        uni.text = line;
+        uni.type = LineType::Context;
+        result.unifiedRows.append(uni);
+    }
+
+    return result;
+}
+
+ParsedDiff diffTexts(const QString &oldText, const QString &newText, int startLine)
+{
+    ParsedDiff result;
+    if (oldText == newText)
+    {
+        if (oldText.isEmpty())
+            return result;
+        QString s = oldText;
+        s.replace("\r\n", "\n").replace('\r', '\n');
+        QStringList lines = s.split('\n');
+        if (!lines.isEmpty() && lines.last().isEmpty())
+            lines.removeLast();
+        int lineNum = startLine;
+        for (const auto &line : lines)
+        {
+            SideBySideRow sbs;
+            sbs.oldLineNumber = lineNum;
+            sbs.newLineNumber = lineNum++;
+            sbs.oldText = line;
+            sbs.newText = line;
+            sbs.oldType = LineType::Context;
+            sbs.newType = LineType::Context;
+            result.sideBySideRows.append(sbs);
+
+            UnifiedRow uni;
+            uni.oldLineNumber = sbs.oldLineNumber;
+            uni.newLineNumber = sbs.newLineNumber;
+            uni.text = line;
+            uni.type = LineType::Context;
+            result.unifiedRows.append(uni);
+        }
+        return result;
+    }
+
+    auto splitLines = [](const QString &text) {
+        if (text.isEmpty())
+            return QStringList();
+        QString s = text;
+        s.replace("\r\n", "\n").replace('\r', '\n');
+        QStringList lines = s.split('\n');
+        if (!lines.isEmpty() && lines.last().isEmpty())
+            lines.removeLast();
+        return lines;
+    };
+
+    const QStringList oldLines = splitLines(oldText);
+    const QStringList newLines = splitLines(newText);
+    const int n = oldLines.size();
+    const int m = newLines.size();
+
+    int prefix = 0;
+    while (prefix < n && prefix < m && oldLines[prefix] == newLines[prefix])
+        ++prefix;
+
+    int suffix = 0;
+    while (suffix < (n - prefix) && suffix < (m - prefix) &&
+           oldLines[n - 1 - suffix] == newLines[m - 1 - suffix])
+        ++suffix;
+
+    int oldNum = startLine;
+    int newNum = startLine;
+
+    for (int i = 0; i < prefix; ++i)
+    {
+        SideBySideRow sbs;
+        sbs.oldLineNumber = oldNum++;
+        sbs.newLineNumber = newNum++;
+        sbs.oldText = oldLines[i];
+        sbs.newText = newLines[i];
+        sbs.oldType = LineType::Context;
+        sbs.newType = LineType::Context;
+        result.sideBySideRows.append(sbs);
+
+        UnifiedRow uni;
+        uni.oldLineNumber = sbs.oldLineNumber;
+        uni.newLineNumber = sbs.newLineNumber;
+        uni.text = oldLines[i];
+        uni.type = LineType::Context;
+        result.unifiedRows.append(uni);
+    }
+
+    const int midN = n - prefix - suffix;
+    const int midM = m - prefix - suffix;
+
+    if (midN > 0 || midM > 0)
+    {
+        QVector<bool> oldMatched(midN, false);
+        QVector<bool> newMatched(midM, false);
+
+        if (midN > 0 && midM > 0 && (qint64)midN * midM <= 2000 * 2000)
+        {
+            QVector<QVector<int>> dp(midN + 1, QVector<int>(midM + 1, 0));
+            for (int i = 1; i <= midN; ++i)
+            {
+                for (int j = 1; j <= midM; ++j)
+                {
+                    if (oldLines[prefix + i - 1] == newLines[prefix + j - 1])
+                        dp[i][j] = dp[i - 1][j - 1] + 1;
+                    else
+                        dp[i][j] = std::max(dp[i - 1][j], dp[i][j - 1]);
+                }
+            }
+            int i = midN, j = midM;
+            while (i > 0 && j > 0)
+            {
+                if (oldLines[prefix + i - 1] == newLines[prefix + j - 1])
+                {
+                    oldMatched[i - 1] = true;
+                    newMatched[j - 1] = true;
+                    --i;
+                    --j;
+                }
+                else if (dp[i - 1][j] >= dp[i][j - 1])
+                {
+                    --i;
+                }
+                else
+                {
+                    --j;
+                }
+            }
+        }
+
+        int oi = 0, ni = 0;
+        while (oi < midN || ni < midM)
+        {
+            if (oi < midN && ni < midM && oldMatched[oi] && newMatched[ni])
+            {
+                SideBySideRow sbs;
+                sbs.oldLineNumber = oldNum++;
+                sbs.newLineNumber = newNum++;
+                sbs.oldText = oldLines[prefix + oi];
+                sbs.newText = newLines[prefix + ni];
+                sbs.oldType = LineType::Context;
+                sbs.newType = LineType::Context;
+                result.sideBySideRows.append(sbs);
+
+                UnifiedRow uni;
+                uni.oldLineNumber = sbs.oldLineNumber;
+                uni.newLineNumber = sbs.newLineNumber;
+                uni.text = oldLines[prefix + oi];
+                uni.type = LineType::Context;
+                result.unifiedRows.append(uni);
+
+                ++oi;
+                ++ni;
+            }
+            else
+            {
+                QVector<int> delIndices;
+                QVector<int> addIndices;
+                while (oi < midN && !oldMatched[oi])
+                {
+                    delIndices.append(prefix + oi);
+                    ++oi;
+                }
+                while (ni < midM && !newMatched[ni])
+                {
+                    addIndices.append(prefix + ni);
+                    ++ni;
+                }
+
+                result.deletedCount += delIndices.size();
+                result.addedCount += addIndices.size();
+
+                int pairCount = std::min(delIndices.size(), addIndices.size());
+                QVector<QVector<TextSpan>> delSpans(delIndices.size());
+                QVector<QVector<TextSpan>> addSpans(addIndices.size());
+
+                for (int p = 0; p < pairCount; ++p)
+                {
+                    computeWordDiff(oldLines[delIndices[p]], newLines[addIndices[p]],
+                                    delSpans[p], addSpans[p]);
+                }
+                for (int d = pairCount; d < delIndices.size(); ++d)
+                {
+                    if (!oldLines[delIndices[d]].isEmpty())
+                        delSpans[d].append({0, (int)oldLines[delIndices[d]].length(), true});
+                }
+                for (int a = pairCount; a < addIndices.size(); ++a)
+                {
+                    if (!newLines[addIndices[a]].isEmpty())
+                        addSpans[a].append({0, (int)newLines[addIndices[a]].length(), true});
+                }
+
+                for (int d = 0; d < delIndices.size(); ++d)
+                {
+                    UnifiedRow uni;
+                    uni.oldLineNumber = oldNum + d;
+                    uni.newLineNumber = -1;
+                    uni.text = oldLines[delIndices[d]];
+                    uni.spans = delSpans[d];
+                    uni.type = LineType::Deleted;
+                    result.unifiedRows.append(uni);
+                }
+                for (int a = 0; a < addIndices.size(); ++a)
+                {
+                    UnifiedRow uni;
+                    uni.oldLineNumber = -1;
+                    uni.newLineNumber = newNum + a;
+                    uni.text = newLines[addIndices[a]];
+                    uni.spans = addSpans[a];
+                    uni.type = LineType::Added;
+                    result.unifiedRows.append(uni);
+                }
+
+                int maxRows = std::max(delIndices.size(), addIndices.size());
+                for (int r = 0; r < maxRows; ++r)
+                {
+                    SideBySideRow sbs;
+                    if (r < delIndices.size())
+                    {
+                        sbs.oldLineNumber = oldNum + r;
+                        sbs.oldText = oldLines[delIndices[r]];
+                        sbs.oldSpans = delSpans[r];
+                        sbs.oldType = LineType::Deleted;
+                    }
+                    else
+                    {
+                        sbs.oldType = LineType::Empty;
+                    }
+
+                    if (r < addIndices.size())
+                    {
+                        sbs.newLineNumber = newNum + r;
+                        sbs.newText = newLines[addIndices[r]];
+                        sbs.newSpans = addSpans[r];
+                        sbs.newType = LineType::Added;
+                    }
+                    else
+                    {
+                        sbs.newType = LineType::Empty;
+                    }
+                    result.sideBySideRows.append(sbs);
+                }
+
+                oldNum += delIndices.size();
+                newNum += addIndices.size();
+            }
+        }
+    }
+
+    for (int i = n - suffix; i < n; ++i)
+    {
+        SideBySideRow sbs;
+        sbs.oldLineNumber = oldNum++;
+        sbs.newLineNumber = newNum++;
+        sbs.oldText = oldLines[i];
+        sbs.newText = newLines[m - n + i];
+        sbs.oldType = LineType::Context;
+        sbs.newType = LineType::Context;
+        result.sideBySideRows.append(sbs);
+
+        UnifiedRow uni;
+        uni.oldLineNumber = sbs.oldLineNumber;
+        uni.newLineNumber = sbs.newLineNumber;
+        uni.text = oldLines[i];
+        uni.type = LineType::Context;
+        result.unifiedRows.append(uni);
+    }
+
+    return result;
+}
+
+QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &colors, const QString &fontFamily,
+                   const QString &oldHeader, const QString &newHeader)
 {
     if (diff.isBinary)
     {
@@ -456,10 +862,11 @@ QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &co
         ".empty-cell { background-color: %12; color: transparent; user-select: none; }"
         ".col-divider { border-right: 1px solid %6; }"
         "</style></head><body><table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">"
-        "<tr class=\"top-bar\"><th colspan=\"2\" class=\"col-divider\">修改前 (旧版本)</th><th colspan=\"2\">修改后 (当前版本)</th></tr>")
+        "<tr class=\"top-bar\"><th colspan=\"2\" class=\"col-divider\">%13</th><th colspan=\"2\">%14</th></tr>")
         .arg(fontFamily, colors.canvas.name(), textColor,
              headerBg, colors.secondaryText.name(), borderColor,
-             numColor, delBg, delText, addBg, addText, emptyBg);
+             numColor, delBg, delText, addBg, addText, emptyBg)
+        .arg(oldHeader.toHtmlEscaped(), newHeader.toHtmlEscaped());
 
     if (mode == ViewMode::SideBySide)
     {

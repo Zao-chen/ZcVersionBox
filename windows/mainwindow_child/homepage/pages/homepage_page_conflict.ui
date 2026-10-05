@@ -194,7 +194,10 @@
               </property>
              </widget>
             </item>
-            <item>
+                        <item>
+             <widget class="HomePageDiffView" name="diffView" native="true"/>
+            </item>
+<item>
              <widget class="QWidget" name="sides">
               <layout class="QHBoxLayout" name="sidesLayout">
                <property name="leftMargin">
@@ -251,12 +254,7 @@
                     <property name="tabChangesFocus">
                      <bool>true</bool>
                     </property>
-                    <property name="minimumSize">
-                     <size>
-                      <width>0</width>
-                      <height>110</height>
-                     </size>
-                    </property>
+                    <property name="maximumSize"><size><width>16777215</width><height>0</height></size></property>
                    </widget>
                   </item>
                   <item>
@@ -311,12 +309,7 @@
                     <property name="tabChangesFocus">
                      <bool>true</bool>
                     </property>
-                    <property name="minimumSize">
-                     <size>
-                      <width>0</width>
-                      <height>110</height>
-                     </size>
-                    </property>
+                    <property name="maximumSize"><size><width>16777215</width><height>0</height></size></property>
                    </widget>
                   </item>
                   <item>
@@ -454,7 +447,10 @@
               </property>
              </widget>
             </item>
-            <item>
+                        <item>
+             <widget class="HomePageDiffView" name="previewDiffView" native="true"/>
+            </item>
+<item>
              <widget class="QPlainTextEdit" name="resultContent">
               <property name="readOnly">
                <bool>true</bool>
@@ -462,12 +458,7 @@
               <property name="tabChangesFocus">
                <bool>true</bool>
               </property>
-              <property name="minimumSize">
-               <size>
-                <width>0</width>
-                <height>110</height>
-               </size>
-              </property>
+              <property name="maximumSize"><size><width>16777215</width><height>0</height></size></property>
              </widget>
             </item>
            </layout>
@@ -551,4 +542,12 @@
  </widget>
  <resources />
  <connections />
+ <customwidgets>
+  <customwidget>
+   <class>HomePageDiffView</class>
+   <extends>QWidget</extends>
+   <header>windows/mainwindow_child/homepage/pages/homepage_diff_view.h</header>
+   <container>1</container>
+  </customwidget>
+ </customwidgets>
 </ui>
