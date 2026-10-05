@@ -17,7 +17,7 @@
 HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *parent) : QWidget(parent), ui(new Ui::HomePageDashboardPage), m_service(service)
 {
     ui->setupUi(this);
-    for (auto *label : {ui->sourceLabel, ui->repositoryLabel, ui->stateValue, ui->versionCaption, ui->fileCaption, ui->sizeCaption, ui->cacheCaption, ui->remoteHint})
+    for (auto *label : {ui->sourceLabel, ui->repositoryLabel, ui->stateValue, ui->versionCaption, ui->fileCaption, ui->sizeCaption, ui->cacheCaption})
         UiStyle::text(label, UiStyle::FontRole::Caption, true);
     for (auto *value : {ui->versionValue, ui->fileValue, ui->sizeValue, ui->cacheValue})
         UiStyle::text(value, UiStyle::FontRole::Object);
@@ -38,16 +38,13 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
     m_syncDetail->setObjectName("syncDetailLabel");
     m_syncDetail->setWordWrap(true);
     m_syncDetail->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    m_busy = new QLabel("正在处理备份任务…", syncPanel);
-    m_busy->setObjectName("backupBusyLabel");
-    for (auto *label : {m_syncState, m_syncDetail, m_busy})
+    for (auto *label : {m_syncState, m_syncDetail})
     {
         label->setTextFormat(Qt::PlainText);
         syncLayout->addWidget(label);
     }
     UiStyle::text(m_syncState, UiStyle::FontRole::Body);
     UiStyle::text(m_syncDetail, UiStyle::FontRole::Caption, true);
-    UiStyle::text(m_busy, UiStyle::FontRole::Caption, true);
     m_continueResolution = new QPushButton("继续处理同步差异…", syncPanel);
     m_continueResolution->setObjectName("continueResolutionButton");
     m_recheck = new QPushButton("重新检查", syncPanel);
@@ -266,8 +263,10 @@ void HomePageDashboardPage::updateActions()
     const bool present = m_service->contains(m_id);
     const auto state = m_service->syncState(m_id);
     const bool pending = present && (state == BackupSyncState::RemotePending || state == BackupSyncState::ResolutionPending);
-    m_busy->setVisible(busy);
-    m_syncState->setText(present ? backupStateText(state) : QString());
+    auto stateText = present ? backupStateText(state) : QString();
+    if (busy)
+        stateText = stateText.isEmpty() ? QStringLiteral("正在处理备份任务…") : stateText + " · 正在处理备份任务…";
+    m_syncState->setText(stateText);
     QString detail;
     for (const auto &item : m_service->trackedItems())
         if (item.id == m_id)
