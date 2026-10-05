@@ -329,16 +329,6 @@
              </widget>
             </item>
             <item>
-             <widget class="QPushButton" name="expandContentButton">
-              <property name="text">
-               <string>展开完整内容</string>
-              </property>
-              <property name="autoDefault">
-               <bool>false</bool>
-              </property>
-             </widget>
-            </item>
-            <item>
              <widget class="QWidget" name="questionNavigation">
               <layout class="QHBoxLayout" name="questionNavigationLayout">
                <property name="leftMargin">

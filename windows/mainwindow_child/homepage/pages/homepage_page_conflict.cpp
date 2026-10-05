@@ -67,13 +67,11 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
     ui->splitter->setSizes({180, 560});
     ui->localChoice->setCheckable(true);
     ui->remoteChoice->setCheckable(true);
-    ui->expandContentButton->setCheckable(true);
     connect(ui->localChoice, &QPushButton::clicked, this, [this] { choose(ConflictChoice::Local); });
     connect(ui->remoteChoice, &QPushButton::clicked, this, [this] { choose(ConflictChoice::Remote); });
     connect(ui->files->selectionModel(), &QItemSelectionModel::currentChanged, this, [this] { selectFile(); });
     connect(ui->previousButton, &QPushButton::clicked, this, [this] { moveQuestion(false); });
     connect(ui->nextButton, &QPushButton::clicked, this, [this] { moveQuestion(true); });
-    connect(ui->expandContentButton, &QPushButton::toggled, this, [this] { showQuestion(); });
     connect(ui->previewButton, &QPushButton::clicked, this, &HomePageConflictPage::preparePreview);
     connect(ui->applyButton, &QPushButton::clicked, this, &HomePageConflictPage::apply);
     connect(ui->editChoicesButton, &QPushButton::clicked, this, [this]
@@ -281,8 +279,6 @@ void HomePageConflictPage::selectFile()
     const auto file = m_session.files.value(m_file);
     for (int i = 0; i < file.hunks.size(); ++i)
         if (file.hunks[i].choice == ConflictChoice::Unresolved) { m_hunk = i; break; }
-    const QSignalBlocker blocker(ui->expandContentButton);
-    ui->expandContentButton->setChecked(false);
     showQuestion();
 }
 void HomePageConflictPage::showQuestion()
@@ -299,13 +295,10 @@ void HomePageConflictPage::showQuestion()
     ui->localChoice->setChecked(hunk.choice == ConflictChoice::Local);
     ui->remoteChoice->setChecked(hunk.choice == ConflictChoice::Remote);
     ui->selectionLabel->setText(hunk.choice == ConflictChoice::Unresolved ? "尚未选择" : hunk.choice == ConflictChoice::Local ? "已选择本地" : "已选择云端");
-    const bool full = file.wholeFile || ui->expandContentButton->isChecked();
-    ui->expandContentButton->setVisible(!file.wholeFile);
-    ui->expandContentButton->setText(full ? "收起完整内容" : "展开完整内容");
     for (auto *editor : {ui->localContent, ui->remoteContent}) editor->setExtraSelections({});
-    if (full)
+    if (file.wholeFile)
     {
-        ui->diffView->showNotice(QStringLiteral("正在读取完整内容…"), QStringLiteral("正在加载本地与云端内容以生成对比…"));
+        ui->diffView->showNotice(QStringLiteral("正在读取内容…"), QStringLiteral("正在加载本地与云端内容以生成对比…"));
         m_hasLocalText = false;
         m_hasRemoteText = false;
         m_currentLocalText.clear();
@@ -417,10 +410,9 @@ void HomePageConflictPage::moveQuestion(bool next)
     }
     m_file = questions[target].first;
     m_hunk = questions[target].second;
-    const QSignalBlocker selection(ui->files->selectionModel()), expansion(ui->expandContentButton);
+    const QSignalBlocker selection(ui->files->selectionModel());
     ui->files->setCurrentIndex(m_files.index(m_file, 0));
     ui->files->scrollTo(ui->files->currentIndex());
-    ui->expandContentButton->setChecked(false);
     showQuestion();
 }
 void HomePageConflictPage::preparePreview()
@@ -602,7 +594,6 @@ void HomePageConflictPage::updateActions()
     const bool laterQuestion = m_file + 1 < m_session.files.size() || m_hunk + 1 < m_session.files.value(m_file).hunks.size();
     const bool otherUnresolved = m_session.remaining() > (m_session.files.value(m_file).hunks.value(m_hunk).choice == ConflictChoice::Unresolved ? 1 : 0);
     ui->nextButton->setEnabled(valid && !m_busy && question && (laterQuestion || otherUnresolved));
-    ui->expandContentButton->setEnabled(valid && !m_busy);
     ui->previewButton->setVisible(!m_preview);
     ui->previewButton->setEnabled(editable && m_session.remaining() == 0);
     ui->previewButton->setToolTip(m_session.remaining() ? QString("还有 %1 处未选择").arg(m_session.remaining()) : QString());
