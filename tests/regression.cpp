@@ -5,6 +5,9 @@
 #include "windows/mainwindow.h"
 #include "windows/mainwindow_child/homepage/homepage.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_backup.h"
+#include "windows/mainwindow_child/homepage/pages/homepage_page_branches.h"
+#include <QTabWidget>
+#include <QTimer>
 #include "windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_diff.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_conflict.h"
@@ -21,6 +24,7 @@
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QCheckBox>
 #include <QFile>
 #include <QFontInfo>
 #include <QGlyphRun>
@@ -2255,6 +2259,92 @@ class Regression : public QObject
         QTest::mouseClick(popover, Qt::LeftButton, {}, QPoint(-12, -12));
         QTRY_VERIFY(!popover);
         QTRY_VERIFY(!notification.isVisible());
+    }
+    void branchUiBrowsingGraphAndConfirmation()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/项目/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        QVERIFY(service.renameBranch(id, service.branchContext(id).ref, "main").success);
+        QVERIFY(service.createBranch(id, "试验方案").success);
+        QVERIFY(service.switchBranch(id, "refs/heads/试验方案").success);
+        writeFile(source, "topic\n"); QVERIFY(service.backup(id).success); const auto topic = head(service, id);
+        QVERIFY(service.switchBranch(id, "refs/heads/main").success);
+        writeFile(source, "main\n"); QVERIFY(service.backup(id).success); const auto main = head(service, id);
+        FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen); window.show();
+        window.navigate({PageId::Branches, id}); settle(service);
+        auto *page = window.findChild<HomePageBranchesPage *>(); QVERIFY(page);
+        auto *table = page->findChild<QTableView *>("branches"); QVERIFY(table);
+        QCOMPARE(table->model()->rowCount(), 2);
+        auto *selector = window.findChild<QComboBox *>("branchSelector"); QVERIFY(selector);
+        QCOMPARE(selector->currentData().toString(), QString("refs/heads/main"));
+        table->setCurrentIndex(table->model()->index(1, 0));
+        page->findChild<QPushButton *>("viewHistory")->click(); settle(service);
+        QCOMPARE(head(service, id), main); QCOMPARE(readFile(source), QByteArray("main\n"));
+        window.navigate({PageId::Branches, id}); settle(service);
+        auto *views = page->findChild<QTabWidget *>("views"); views->setCurrentIndex(1); settle(service);
+        auto *graph = page->findChild<QTableView *>("graph"); QCOMPARE(graph->model()->rowCount(), 3);
+        const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS"); if (!output.isEmpty()) QDir().mkpath(output);
+        for (int theme = 0; theme < 2; ++theme)
+        {
+            for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+            {
+                window.resize(size); QTest::qWait(160); QCOMPARE(window.size(), size);
+                if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/branches-graph-%1-%2.png").arg(theme).arg(size.width())));
+                views->setCurrentIndex(0); QTest::qWait(30);
+                if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/branches-list-%1-%2.png").arg(theme).arg(size.width())));
+                views->setCurrentIndex(1); settle(service);
+            }
+            m_theme->toggle();
+        }
+        Route compare{PageId::Diff, id, topic}; compare.oldCommit = main;
+        window.navigate(compare); settle(service); QCOMPARE(head(service, id), main);
+        window.navigate({PageId::Branches, id}); settle(service);
+        bool cancelled = false, cancelVisible = false; QTimer dismiss;
+        connect(&dismiss, &QTimer::timeout, this, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (dialog && dialog->objectName() == "switchBranchDialog") {
+                dismiss.stop(); cancelled = true;
+                auto *box = dialog->findChild<QDialogButtonBox *>();
+                auto *button = box ? box->button(QDialogButtonBox::Cancel) : nullptr;
+                cancelVisible = button && button->isVisible() && dialog->rect().contains(button->mapTo(dialog, button->rect().center()));
+                if (button) button->click(); else dialog->reject();
+            }
+        });
+        dismiss.start(10); page->requestSwitch(id, "refs/heads/试验方案"); QTRY_VERIFY_WITH_TIMEOUT(cancelled, 10000); settle(service);
+        QVERIFY(cancelVisible);
+        QCOMPARE(head(service, id), main); QCOMPARE(readFile(source), QByteArray("main\n"));
+        bool confirmed = false, confirmVisible = false; QTimer accept;
+        connect(&accept, &QTimer::timeout, this, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (dialog && dialog->objectName() == "switchBranchDialog") {
+                accept.stop(); confirmed = true;
+                auto *box = dialog->findChild<QDialogButtonBox *>();
+                auto *button = box ? box->button(QDialogButtonBox::Ok) : nullptr;
+                confirmVisible = button && button->isVisible() && dialog->rect().contains(button->mapTo(dialog, button->rect().center()));
+                if (!output.isEmpty()) dialog->grab().save(output + "/branch-switch-confirmation.png");
+                if (button) button->click(); else dialog->reject();
+            }
+        });
+        accept.start(10); page->requestSwitch(id, "refs/heads/试验方案"); QTRY_VERIFY_WITH_TIMEOUT(confirmed, 10000); settle(service);
+        QVERIFY(confirmVisible);
+        QCOMPARE(head(service, id), topic); QCOMPARE(readFile(source), QByteArray("topic\n"));
+        bool created = false; QTimer create;
+        connect(&create, &QTimer::timeout, this, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!dialog || dialog->objectName() != "createBranchDialog") return;
+            create.stop();
+            dialog->findChild<QLineEdit *>("branchName")->setText("界面创建");
+            dialog->findChild<QCheckBox *>()->setChecked(false);
+            auto *button = dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok);
+            created = button->isVisible(); button->click();
+        });
+        create.start(10); page->createFrom(id, topic); settle(service); QVERIFY(created);
+        QCOMPARE(runGit(service.repoPath(id), {"rev-parse", "refs/heads/界面创建"}).output.trimmed(), topic);
+        QCOMPARE(service.branchContext(id).ref, QString("refs/heads/试验方案"));
     }
     void renderAllPages()
     {

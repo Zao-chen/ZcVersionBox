@@ -19,6 +19,7 @@ class HomePageDashboardPage;
 class HomePageBackupPage;
 class HomePageDiffPage;
 class HomePageConflictPage;
+class HomePageBranchesPage;
 class SettingPage;
 class SettingPageAiPage;
 class AboutPage;
@@ -67,6 +68,9 @@ class MainWindow : public QMainWindow
     HomePageBackupPage *m_history;
     HomePageDiffPage *m_diff;
     HomePageConflictPage *m_conflict;
+    HomePageBranchesPage *m_branches;
+    quint64 m_branchRequest{0};
+    void updateBranchSelector();
     SettingPage *m_general;
     SettingPageAiPage *m_ai;
     AboutPage *m_about;

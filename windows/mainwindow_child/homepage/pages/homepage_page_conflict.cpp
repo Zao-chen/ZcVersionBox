@@ -4,6 +4,7 @@
 #include "ui_homepage_page_conflict.h"
 #include "windows/mainwindow_presentation.h"
 #include <QFileInfo>
+#include <QPushButton>
 #include <QPointer>
 #include <QResizeEvent>
 #include <QScrollBar>
@@ -82,11 +83,25 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
         showQuestion();
     });
     connect(ui->laterButton, &QPushButton::clicked, this, [this] { emit navigate({PageId::Dashboard, m_id}); });
+    auto *cancel = new QPushButton("取消本次处理", this);
+    cancel->setObjectName("cancelResolutionButton");
+    ui->laterButton->parentWidget()->layout()->addWidget(cancel);
+    connect(cancel, &QPushButton::clicked, this, [this] {
+        const auto ctx = context(); const auto session = m_session.id;
+        const QPointer<HomePageConflictPage> guard(this);
+        if (m_busy || session.isEmpty() || !confirmAction(this, "取消本次处理？已有选择将清除，源文件保持原样。", "取消处理") || !guard || !current(ctx)) return;
+        m_busy = true; updateActions();
+        m_service->cancelResolution(ctx.id, session, this, [this, ctx](const OperationResult &r) {
+            if (!current(ctx)) return;
+            m_busy = false; emit notification(r);
+            if (r.success) emit navigate({PageId::History, ctx.id}); else updateActions();
+        });
+    });
     connect(ui->reanalyzeButton, &QPushButton::clicked, this, [this]
     {
         const auto ctx = context();
         const QPointer<HomePageConflictPage> guard(this);
-        if (confirmAction(this, "将重新获取云端并分析当前源内容。已有选择会清空，需要重新逐处确认。", "重新分析") && guard && current(ctx))
+        if (confirmAction(this, m_session.mergeRef.isEmpty() ? "将重新获取云端并分析当前源内容。已有选择会清空，需要重新逐处确认。" : "将按所选方案的最新版本重新分析。已有选择会清空，需要重新逐处确认。", "重新分析") && guard && current(ctx))
             load(true);
     });
     connect(service, &BackupService::repositoryChanged, this, [this](const QString &id)
@@ -197,6 +212,9 @@ void HomePageConflictPage::load(bool restart, bool resumePreview)
 void HomePageConflictPage::acceptSession(const SyncResolutionSession &session, bool restorePosition, bool resumePreview)
 {
     m_session = session;
+    ui->pageTitle->setText(session.mergeRef.isEmpty() ? QStringLiteral("处理同步差异") : QString("合并 %1 → %2").arg(session.remoteLabel, session.localLabel));
+    ui->localContent->setAccessibleName(session.localLabel);
+    ui->remoteContent->setAccessibleName(session.remoteLabel);
     m_prepared = {};
     if (restorePosition)
     {
@@ -291,14 +309,19 @@ void HomePageConflictPage::showQuestion()
     ui->questionTitle->setText(QString("%1 · 第 %2 / %3 处").arg(file.path).arg(m_hunk + 1).arg(file.hunks.size()));
     ui->localChoice->setText((hunk.choice == ConflictChoice::Local ? QStringLiteral("✓ ") : QString()) + choiceText(file, true));
     ui->remoteChoice->setText((hunk.choice == ConflictChoice::Remote ? QStringLiteral("✓ ") : QString()) + choiceText(file, false));
+    if (!m_session.mergeRef.isEmpty())
+    {
+        ui->localChoice->setText(ui->localChoice->text().replace("本地", "“" + m_session.localLabel + "”"));
+        ui->remoteChoice->setText(ui->remoteChoice->text().replace("云端", "“" + m_session.remoteLabel + "”"));
+    }
     const QSignalBlocker localBlock(ui->localChoice), remoteBlock(ui->remoteChoice);
     ui->localChoice->setChecked(hunk.choice == ConflictChoice::Local);
     ui->remoteChoice->setChecked(hunk.choice == ConflictChoice::Remote);
-    ui->selectionLabel->setText(hunk.choice == ConflictChoice::Unresolved ? "尚未选择" : hunk.choice == ConflictChoice::Local ? "已选择本地" : "已选择云端");
+    ui->selectionLabel->setText(hunk.choice == ConflictChoice::Unresolved ? "尚未选择" : "已选择：" + (hunk.choice == ConflictChoice::Local ? m_session.localLabel : m_session.remoteLabel));
     for (auto *editor : {ui->localContent, ui->remoteContent}) editor->setExtraSelections({});
     if (file.wholeFile)
     {
-        ui->diffView->showNotice(QStringLiteral("正在读取内容…"), QStringLiteral("正在加载本地与云端内容以生成对比…"));
+        ui->diffView->showNotice(QStringLiteral("正在读取内容…"), QStringLiteral("正在加载双方内容以生成对比…"));
         m_hasLocalText = false;
         m_hasRemoteText = false;
         m_currentLocalText.clear();
@@ -321,7 +344,7 @@ void HomePageConflictPage::showQuestion()
             m_currentLocalText = reply.result.success ? reply.value.text : QString();
             if (m_hasRemoteText)
                 ui->diffView->setTexts(m_currentLocalText, m_currentRemoteText, filePath, m_service->sourcePath(m_id),
-                                       QStringLiteral("此电脑上的内容 (本地)"), QStringLiteral("云端的内容 (云端)"));
+                                       m_session.localLabel, m_session.remoteLabel);
         });
 
         m_service->syncContent(m_id, session, file.path, ConflictSide::Remote, this,
@@ -333,7 +356,7 @@ void HomePageConflictPage::showQuestion()
             m_currentRemoteText = reply.result.success ? reply.value.text : QString();
             if (m_hasLocalText)
                 ui->diffView->setTexts(m_currentLocalText, m_currentRemoteText, filePath, m_service->sourcePath(m_id),
-                                       QStringLiteral("此电脑上的内容 (本地)"), QStringLiteral("云端的内容 (云端)"));
+                                       m_session.localLabel, m_session.remoteLabel);
         });
     }
     else
@@ -354,7 +377,7 @@ void HomePageConflictPage::showQuestion()
 
         ui->diffView->setHunk(hunk.before, hunk.local, hunk.remote, hunk.after, 1,
                               file.path, m_service->sourcePath(m_id),
-                              QStringLiteral("此电脑上的内容 (本地)"), QStringLiteral("云端的内容 (云端)"));
+                              m_session.localLabel, m_session.remoteLabel);
     }
     updateActions();
 }
@@ -579,6 +602,7 @@ void HomePageConflictPage::updateActions()
 {
     const bool valid = m_active && !m_session.id.isEmpty();
     const bool editable = valid && !m_busy && !m_session.stale;
+    if (auto *cancel = findChild<QPushButton *>("cancelResolutionButton")) cancel->setEnabled(valid && !m_busy);
     const bool question = !m_session.files.isEmpty();
     ui->progressLabel->setText(valid ? QString("已处理 %1 / %2 处").arg(m_session.total() - m_session.remaining()).arg(m_session.total()) : QString());
     ui->reanalyzeButton->setVisible(m_session.stale);

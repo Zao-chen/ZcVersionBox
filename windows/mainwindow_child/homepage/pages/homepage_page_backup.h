@@ -23,12 +23,13 @@ class HomePageBackupPage : public QWidget
   public:
     HomePageBackupPage(BackupService *service, QWidget *parent = nullptr);
     ~HomePageBackupPage();
-    void setBackup(const QString &id, const QString &commit = {});
+    void setBackup(const QString &id, const QString &commit = {}, const QString &branchRef = {});
     void refresh();
     void deactivate();
     QList<QAction *> toolbarActions() const;
   signals:
     void navigate(const Route &route);
+    void createBranchRequested(const QString &id, const QString &commit);
     void notification(const OperationResult &result);
 
   protected:
@@ -50,13 +51,16 @@ class HomePageBackupPage : public QWidget
         QString commit;
         quint64 repositoryGeneration{0};
         quint64 pageGeneration{0};
+        BranchContext workingBranch;
     };
     std::unique_ptr<Ui::HomePageBackupPage> ui;
     BackupService *m_service;
     QString m_id;
+    QString m_branchRef;
     QString m_loadedId;
     QString m_requestedCommit;
     quint64 m_loadedGeneration{0};
+    BranchContext m_loadedBranch;
     QHash<QString, ViewState> m_states;
     QStandardItemModel m_model;
     QAction *m_compare;

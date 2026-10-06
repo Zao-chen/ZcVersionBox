@@ -13,7 +13,8 @@ enum class PageId
     GeneralSettings,
     AiSettings,
     About,
-    Conflict
+    Conflict,
+    Branches
 };
 struct Route
 {
@@ -21,16 +22,17 @@ struct Route
     QString backupId;
     QString commit;
     QString provider;
+    QString branchRef, oldCommit;
     bool operator==(const Route &other) const
     {
-        return page == other.page && backupId == other.backupId && commit == other.commit && provider == other.provider;
+        return page == other.page && backupId == other.backupId && commit == other.commit && provider == other.provider && branchRef == other.branchRef && oldCommit == other.oldCommit;
     }
 };
 Q_DECLARE_METATYPE(Route)
 
 inline bool isObjectPage(PageId page)
 {
-    return page == PageId::Dashboard || page == PageId::History || page == PageId::Diff || page == PageId::Conflict;
+    return page == PageId::Dashboard || page == PageId::History || page == PageId::Diff || page == PageId::Conflict || page == PageId::Branches;
 }
 inline bool isSettingsPage(PageId page)
 {

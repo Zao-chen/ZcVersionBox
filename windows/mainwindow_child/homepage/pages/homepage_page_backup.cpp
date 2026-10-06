@@ -334,7 +334,7 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     UiStyle::text(ui->milestoneFilterLabel, UiStyle::FontRole::Body);
     ui->filterLayout->insertWidget(1, m_milestoneOnly);
     ui->tagConflictButton->hide();
-    connect(m_milestoneOnly, &QAbstractButton::toggled, this, [this] { applyFilter(); rememberState(); });
+    connect(m_milestoneOnly, &QAbstractButton::toggled, this, [this] { applyFilter(); rememberState(); refresh(); });
     connect(ui->tagConflictButton, &QPushButton::clicked, this, &HomePageBackupPage::resolveTagConflicts);
     ui->table->setModel(&m_model);
     ui->table->setAccessibleName("历史版本");
@@ -423,11 +423,18 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
             {
         if (m_loading || item->column() != 0)
             return;
+        const auto context = revisionContext(item->index());
+        if (!isCurrentContext(context))
+        {
+            emit notification(OperationResult::warn("说明未修改", "工作方案已变化，请刷新后重新编辑。"));
+            m_refreshPending = true;
+            return;
+        }
         const auto id = m_id;
         const auto generation = m_service->repositoryGeneration(id);
-        m_service->editMessage(id, item->data(CommitRole).toString(), item->text(), this, [this, id, generation](const OperationResult &result)
+        m_service->editMessage(id, item->data(CommitRole).toString(), item->text(), this, [this, id, generation, context](const OperationResult &result)
         {
-            if (id == m_id && generation == m_service->repositoryGeneration(id))
+            if (id == m_id && generation == m_service->repositoryGeneration(id) && isCurrentContext(context))
             {
                 emit notification(result);
                 refresh();
@@ -464,7 +471,7 @@ QList<QAction *> HomePageBackupPage::toolbarActions() const { return {m_refresh}
 void HomePageBackupPage::rememberState()
 {
     if (!m_id.isEmpty() && m_loadedId == m_id && m_loadedGeneration == m_service->repositoryGeneration(m_id))
-        m_states[m_id] = {m_loadedGeneration, selectedCommit(), ui->table->verticalScrollBar()->value(), m_milestoneOnly->isChecked()};
+        m_states[m_id + '\n' + m_branchRef] = {m_loadedGeneration, selectedCommit(), ui->table->verticalScrollBar()->value(), m_milestoneOnly->isChecked()};
 }
 void HomePageBackupPage::deactivate()
 {
@@ -475,7 +482,7 @@ void HomePageBackupPage::deactivate()
     if (m_tagDialog) m_tagDialog->reject();
     closeRevisionMenu();
 }
-void HomePageBackupPage::setBackup(const QString &id, const QString &commit)
+void HomePageBackupPage::setBackup(const QString &id, const QString &commit, const QString &branchRef)
 {
     rememberState();
     ++m_contextGeneration;
@@ -483,18 +490,21 @@ void HomePageBackupPage::setBackup(const QString &id, const QString &commit)
     closeRevisionMenu();
     m_id = id;
     m_requestedCommit = commit;
+    m_branchRef = branchRef;
     refresh();
 }
 HomePageBackupPage::RevisionContext HomePageBackupPage::revisionContext(const QModelIndex &index) const
 {
     if (!index.isValid() || index.model() != &m_model || m_loadedId != m_id)
         return {};
-    return {m_id, index.data(CommitRole).toString(), m_loadedGeneration, m_contextGeneration};
+    return {m_id, index.data(CommitRole).toString(), m_loadedGeneration, m_contextGeneration, m_loadedBranch};
 }
 bool HomePageBackupPage::isCurrentContext(const RevisionContext &context) const
 {
+    const auto working = m_service->branchContext(context.backupId);
     return !context.commit.isEmpty() && context.backupId == m_id && context.backupId == m_loadedId &&
            context.pageGeneration == m_contextGeneration && context.repositoryGeneration == m_service->repositoryGeneration(context.backupId) &&
+           context.workingBranch.ref == working.ref && context.workingBranch.version == working.version &&
            m_service->contains(context.backupId);
 }
 QModelIndex HomePageBackupPage::indexForRevision(const RevisionContext &context) const
@@ -533,7 +543,7 @@ void HomePageBackupPage::restoreRevision(const RevisionContext &context)
             return;
         }
         const auto name = QFileInfo(m_service->sourcePath(context.backupId)).fileName();
-        const auto question = QString("将“%1”恢复到版本 %2？\n\n源文件或文件夹中的当前内容将被该版本替换。历史版本记录会保留。").arg(name, context.commit.left(8));
+        const auto question = QString("将“%1”恢复到版本 %2？\n正在使用的方案：%3\n\n源文件或文件夹中的当前内容将被该版本替换。历史版本记录会保留。").arg(name, context.commit.left(8), prepared.value.branchRef.mid(11));
         const QPointer<HomePageBackupPage> guard(this);
         if (!confirmAction(this, question, "恢复版本") || !guard)
             return;
@@ -586,6 +596,11 @@ void HomePageBackupPage::showRevisionMenu(const RevisionContext &context, const 
     };
     add(m_preview, &HomePageBackupPage::previewRevision);
     add(m_compare, &HomePageBackupPage::compareRevision);
+    auto *create = menu->addAction("从此版本新建方案…");
+    create->setEnabled(m_service->syncState(context.backupId) == BackupSyncState::Tracking);
+    connect(create, &QAction::triggered, this, [this, context] {
+        if (isCurrentContext(context)) emit createBranchRequested(context.backupId, context.commit);
+    });
     menu->addSeparator();
     add(m_edit, &HomePageBackupPage::editRevision);
     menu->addSeparator();
@@ -611,7 +626,7 @@ void HomePageBackupPage::updateActions()
     m_restore->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
     const auto tags = revisionTags(revisionContext(ui->table->currentIndex()));
     m_edit->setEnabled(enabled && tags.isEmpty() && m_service->syncState(m_id) == BackupSyncState::Tracking);
-    m_edit->setToolTip(tags.isEmpty() ? QString() : "里程碑版本的原有说明已固定，可以修改里程碑名称。");
+    m_edit->setToolTip(tags.isEmpty() ? "只能修改当前方案的最新说明；若版本已上传，修改后可能无法普通上传。" : "里程碑版本的原有说明已固定，可以修改里程碑名称。");
     m_tag->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
     m_tag->setText(tags.isEmpty() ? "标记为里程碑…" : "管理里程碑…");
     ui->tagConflictButton->setVisible(!m_service->tagConflicts(m_id).isEmpty());
@@ -630,19 +645,22 @@ void HomePageBackupPage::refresh()
     rememberState();
     const auto id = m_id;
     const auto generation = m_service->repositoryGeneration(id);
+    const auto working = m_service->branchContext(id);
     const auto request = ++m_refreshGeneration;
     updateActions();
-    m_service->history(id, this, [this, id, generation, request](const BackupResult<QVector<Revision>> &reply)
+    const auto receive = [this, id, generation, request, working](const BackupResult<QVector<Revision>> &reply)
                        {
     if (id != m_id || generation != m_service->repositoryGeneration(id) || request != m_refreshGeneration)
         return;
+    const auto current = m_service->branchContext(id);
+    if (working.ref != current.ref || working.version != current.version) { refresh(); return; }
     if (m_editing)
     {
         m_refreshPending = true;
         return;
     }
     rememberState();
-    auto state = m_states.value(id);
+    auto state = m_states.value(id + '\n' + m_branchRef);
     if (state.generation != generation)
         state = {};
     const bool requestedCommit = !m_requestedCommit.isEmpty();
@@ -692,6 +710,7 @@ void HomePageBackupPage::refresh()
     }
     m_loadedId = m_id;
     m_loadedGeneration = m_service->repositoryGeneration(m_id);
+    m_loadedBranch = working;
     ui->table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     ui->table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
     ui->table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
@@ -712,7 +731,26 @@ void HomePageBackupPage::refresh()
                        {
         if (request == m_refreshGeneration)
             ui->table->verticalScrollBar()->setValue(state.scroll); });
-    updateActions(); });
+    updateActions(); };
+    if (m_milestoneOnly->isChecked()) m_service->history(id, this, receive);
+    else
+    {
+        HistoryQuery query; if (!m_branchRef.isEmpty()) query.tips = {m_branchRef};
+        // Load the ordinary list using bounded Git batches; the graph offers explicit pagination.
+        auto revisions = std::make_shared<QVector<Revision>>();
+        auto next = std::make_shared<std::function<void(HistoryQuery)>>();
+        *next = [this, id, request, receive, revisions, weak = std::weak_ptr<std::function<void(HistoryQuery)>>(next)](HistoryQuery page) {
+            const auto keep = weak.lock(); if (!keep) return;
+            m_service->branchHistory(id, page, this, [this, id, request, page, receive, revisions, keep](const BackupResult<HistoryPage> &result) mutable {
+                if (id != m_id || request != m_refreshGeneration) return;
+                if (!result.result.success) { receive({result.result, {}}); return; }
+                *revisions += result.value.revisions;
+                if (result.value.hasMore) { page.tips = result.value.tips; page.offset = revisions->size(); (*keep)(page); }
+                else receive({result.result, *revisions});
+            });
+        };
+        (*next)(query);
+    }
 }
 QVector<VersionTag> HomePageBackupPage::revisionTags(const RevisionContext &context) const
 {
