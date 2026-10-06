@@ -19,7 +19,7 @@ class BackupService::Private
     {
         BackupTaskId task;
         QString id;
-        quint64 generation;
+        quint64 generation, branchVersion;
         BackupTaskPriority priority{BackupTaskPriority::Foreground};
         QPointer<QObject> context;
         std::shared_ptr<std::atomic_bool> cancelled{std::make_shared<std::atomic_bool>(false)};
@@ -88,6 +88,7 @@ class BackupService::Private
         job->task = ++sequence;
         job->id = id;
         job->generation = owner->repositoryGeneration(id);
+        job->branchVersion = cache.value(id).branchVersion;
         job->priority = priority;
         job->context = context ? context : owner;
         job->start = std::move(start);
@@ -118,7 +119,7 @@ class BackupService::Private
             const auto records = engine->records();
             auto found = std::find_if(records.cbegin(), records.cend(), [&](const BackupRecord &r)
                                       { return r.id == job->id; });
-            if (found == records.cend() || found->generation != job->generation)
+            if (found == records.cend() || found->generation != job->generation || found->branchVersion != job->branchVersion)
                 return OperationResult::cancel("操作已取消", "追踪对象已删除或重建，请重新打开此页面后再试");
         }
         return result;
@@ -126,7 +127,7 @@ class BackupService::Private
     static bool same(const BackupRecord &a, const BackupRecord &b)
     {
         return a.sourcePath == b.sourcePath && a.directory == b.directory && a.repositoryPath == b.repositoryPath &&
-               a.generation == b.generation && a.state == b.state &&
+               a.generation == b.generation && a.branchRef == b.branchRef && a.branchVersion == b.branchVersion && a.state == b.state &&
                a.stateDetail == b.stateDetail && a.lastCommit == b.lastCommit && a.pendingCommit == b.pendingCommit &&
                a.fingerprint == b.fingerprint && a.operation == b.operation && a.recoveryPaths == b.recoveryPaths &&
                a.resolutionSession == b.resolutionSession && a.resolutionHead == b.resolutionHead;
@@ -519,3 +520,27 @@ BackupTaskId BackupService::previewSync(const QString &id, const QString &sessio
 {
     return d->mutate(id, c, std::move(f), [=](BackupEngine &e) { return e.previewSync(id, session, path, side); }, false);
 }
+
+BranchContext BackupService::branchContext(const QString &id) const
+{
+    const auto r = d->cache.value(id);
+    return {id, r.branchRef, r.lastCommit, r.generation, r.branchVersion};
+}
+BackupTaskId BackupService::branches(const QString &id, QObject *c, Reply<BranchSnapshot> f)
+{ return d->submit<BranchSnapshot>(id, c, std::move(f), [id](BackupEngine &e) { return e.branches(id); }); }
+BackupTaskId BackupService::branchHistory(const QString &id, const HistoryQuery &query, QObject *c, Reply<HistoryPage> f)
+{ return d->submit<HistoryPage>(id, c, std::move(f), [id, query](BackupEngine &e) { return e.branchHistory(id, query); }); }
+BackupTaskId BackupService::diffBetween(const QString &id, const QString &oldCommit, const QString &newCommit, QObject *c, Reply<DiffData> f)
+{ return d->submit<DiffData>(id, c, std::move(f), [=](BackupEngine &e) { return e.diffBetween(id, oldCommit, newCommit); }); }
+BackupTaskId BackupService::createBranch(const BranchRequest &r, QObject *c, Completion f)
+{ return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.createBranch(r); }); }
+BackupTaskId BackupService::renameBranch(const BranchRequest &r, QObject *c, Completion f)
+{ return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.renameBranch(r); }); }
+BackupTaskId BackupService::deleteBranch(const BranchRequest &r, QObject *c, Completion f)
+{ return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.deleteBranch(r); }); }
+BackupTaskId BackupService::setBranchUpstream(const BranchRequest &r, QObject *c, Completion f)
+{ return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.setBranchUpstream(r); }); }
+BackupTaskId BackupService::deleteRemoteBranch(const BranchRequest &r, QObject *c, Completion f)
+{ return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.deleteRemoteBranch(r); }); }
+BackupTaskId BackupService::fetchBranches(const BranchContext &r, QObject *c, Completion f)
+{ return d->mutate(r.id, c, std::move(f), [r](BackupEngine &e) { return e.fetchBranches(r); }); }

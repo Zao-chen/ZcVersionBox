@@ -66,6 +66,20 @@ class BackupService : public QObject
     BackupTaskId finishImport(const QString &sessionId, const QString &entry, const QString &target, bool replaceExisting, QObject *context, Completion callback);
     BackupTaskId cancelImport(const QString &sessionId, QObject *context = nullptr, Completion callback = {});
     BackupTaskId recheck(const QString &id, QObject *context, Completion callback);
+    BranchContext branchContext(const QString &id) const;
+    BackupTaskId branches(const QString &id, QObject *context, Reply<BranchSnapshot> callback);
+    BackupTaskId createBranch(const BranchRequest &request, QObject *context, Completion callback);
+    BackupTaskId renameBranch(const BranchRequest &request, QObject *context, Completion callback);
+    BackupTaskId deleteBranch(const BranchRequest &request, QObject *context, Completion callback);
+    BackupTaskId fetchBranches(const BranchContext &request, QObject *context, Completion callback);
+    BackupTaskId setBranchUpstream(const BranchRequest &request, QObject *context, Completion callback);
+    BackupTaskId deleteRemoteBranch(const BranchRequest &request, QObject *context, Completion callback);
+    BackupTaskId branchHistory(const QString &id, const HistoryQuery &query, QObject *context, Reply<HistoryPage> callback);
+    BackupTaskId diffBetween(const QString &id, const QString &oldCommit, const QString &newCommit, QObject *context, Reply<DiffData> callback);
+    BackupTaskId prepareBranchSwitch(const BranchRequest &request, QObject *context, Reply<PreparedBranchSwitch> callback);
+    BackupTaskId switchBranch(const PreparedBranchSwitch &request, QObject *context, Completion callback);
+    BackupTaskId prepareBranchMerge(const BranchRequest &request, QObject *context, Reply<SyncResolutionSession> callback);
+    BackupTaskId cancelResolution(const QString &id, const QString &session, QObject *context, Completion callback);
     void cancel(BackupTaskId task);
 
   signals:

@@ -13,6 +13,12 @@ class GitRepository
     BackupResult<QString> head() const;
     BackupResult<QString> resolve(const QString &revision) const;
     BackupResult<QString> branch() const;
+    BackupResult<QString> branchRef() const;
+    BackupResult<QVector<BranchInfo>> branches() const;
+    OperationResult validateBranchName(const QString &name) const;
+    BackupResult<HistoryPage> branchHistory(const HistoryQuery &query) const;
+    BackupResult<DiffData> diffBetween(const QString &oldCommit, const QString &newCommit) const;
+    BackupResult<QString> branchEndpoint() const;
     OperationResult clean() const;
     BackupResult<QString> stagedState(const QString &managedPath = ".") const;
     BackupResult<QVector<Revision>> history() const;

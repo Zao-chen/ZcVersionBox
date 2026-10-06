@@ -204,6 +204,51 @@ class BackupCoreRegression : public QObject
         qputenv("GIT_CONFIG_GLOBAL", (m_environment.path() + "/gitconfig").toUtf8());
         QVERIFY(runGit({}, {"--version"}).success());
     }
+    void branchReferencesHistoryAndExternalIdentity()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/work.txt";
+        writeFile(source, "original\n"); CHECK_OK(service.addLocal(source));
+        const auto id = service.idForSource(source);
+        BranchRequest request; request.context = service.branchContext(id);
+        request.name = "试验方案"; request.startCommit = request.context.head;
+        auto create = awaitBackup<OperationResult>([&](auto f) { service.createBranch(request, &service, f); });
+        CHECK_OK(create);
+        QCOMPARE(head(service, id), request.startCommit);
+        auto branches = awaitBackup<BackupResult<BranchSnapshot>>([&](auto f) { service.branches(id, &service, f); });
+        CHECK_OK(branches.result); QCOMPARE(branches.value.branches.size(), 2);
+        auto history = GitRepository(service.repoPath(id)).branchHistory({{}, 0, 1, true});
+        CHECK_OK(history.result); QCOMPARE(history.value.revisions.size(), 1);
+        QCOMPARE(history.value.revisions.first().refs.size(), 2);
+        request.context = service.branchContext(id); request.ref = "refs/heads/试验方案";
+        request.expectedHead = request.startCommit; request.name = "改名方案";
+        CHECK_OK(awaitBackup<OperationResult>([&](auto f) { service.renameBranch(request, &service, f); }));
+        QVERIFY(!service.rebuild(id).success);
+        const auto before = readFile(source);
+        git(service.repoPath(id), {"checkout", "改名方案"});
+        QVERIFY(!service.backup(id).success);
+        QCOMPARE(service.syncState(id), BackupSyncState::NeedsAttention);
+        QCOMPARE(readFile(source), before);
+        QVERIFY(!service.recheck(id).success);
+    }
+    void branchComparisonAndNameValidation()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/file.txt";
+        writeFile(source, "before\n"); CHECK_OK(service.addLocal(source));
+        const auto id = service.idForSource(source), before = head(service, id);
+        writeFile(source, "after\n"); CHECK_OK(service.backup(id));
+        const auto gitRepo = GitRepository(service.repoPath(id));
+        auto diff = gitRepo.diffBetween(before, head(service, id));
+        CHECK_OK(diff.result); QCOMPARE(diff.value.files.size(), 1);
+        QVERIFY(gitRepo.validateBranchName("中文/方案").success);
+        for (const auto &name : {"bad name", "--help", "a..b", "HEAD", "a.lock"})
+            QVERIFY(!gitRepo.validateBranchName(name).success);
+        const auto history = gitRepo.branchHistory({{head(service, id)}, 0, 1});
+        CHECK_OK(history.result); QVERIFY(history.value.hasMore);
+        QCOMPARE(history.value.revisions.first().parents, QStringList{before});
+    }
     void isolatedResolutionPreservesBytesAndChoices_data()
     {
         QTest::addColumn<QByteArray>("base");

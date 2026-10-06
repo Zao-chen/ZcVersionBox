@@ -59,6 +59,19 @@ class BackupEngine
     OperationResult finishImport(const QString &session, const QString &entry, const QString &target, bool replaceExisting);
     OperationResult cancelImport(const QString &session);
     OperationResult recheck(const QString &id);
+    BackupResult<BranchSnapshot> branches(const QString &id);
+    OperationResult createBranch(const BranchRequest &request);
+    OperationResult renameBranch(const BranchRequest &request);
+    OperationResult deleteBranch(const BranchRequest &request);
+    OperationResult fetchBranches(const BranchContext &context);
+    OperationResult setBranchUpstream(const BranchRequest &request);
+    OperationResult deleteRemoteBranch(const BranchRequest &request);
+    BackupResult<HistoryPage> branchHistory(const QString &id, const HistoryQuery &query);
+    BackupResult<DiffData> diffBetween(const QString &id, const QString &oldCommit, const QString &newCommit);
+    BackupResult<PreparedBranchSwitch> prepareBranchSwitch(const BranchRequest &request);
+    OperationResult switchBranch(const PreparedBranchSwitch &request);
+    BackupResult<SyncResolutionSession> prepareBranchMerge(const BranchRequest &request);
+    OperationResult cancelResolution(const QString &id, const QString &session);
 
   private:
     struct ImportSession
@@ -87,5 +100,10 @@ class BackupEngine
     OperationResult syncTags(const QString &id, bool push);
     OperationResult recoverTags(BackupRecord record);
     QString resolutionPath(const BackupRecord &record) const;
+    BackupResult<BackupRecord> requireBranch(const BranchContext &context);
+    OperationResult checkBranchTarget(const BranchRequest &request, bool remote = false);
+    OperationResult rebuildBranchesSafe(const QString &id);
+    OperationResult prepareSwitchFiles(const BackupRecord &record, const QString &target, const QString &destination,
+                                       SourceFingerprint &source, QVector<DiffFile> &changes, bool &savesChanges);
     BackupResult<BackupRecord> resolutionRecord(const QString &id, const QString &sessionId = {});
 };

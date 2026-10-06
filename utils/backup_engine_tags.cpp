@@ -243,6 +243,8 @@ OperationResult BackupEngine::resolveTagConflict(const QString &id, const TagCon
 }
 BackupResult<PreparedRebuild> BackupEngine::prepareRebuild(const QString &id)
 {
+    const auto safe = rebuildBranchesSafe(id);
+    if (!safe.success) return {safe};
     const auto checked = require(id, true);
     if (!checked.result.success) return {checked.result};
     if (!checked.value.tagJournal.isEmpty()) return {changedTags()};
@@ -263,7 +265,7 @@ BackupResult<PreparedRebuild> BackupEngine::prepareRebuild(const QString &id)
             // Only previously observed refs are eligible for a later offline deletion.
             const auto known = checked.value.tagRemotes.value(endpoint.value);
             prepared.remoteTags = known.base;
-            prepared.remoteHead = known.lastUploadedHead;
+            prepared.remoteHead = checked.value.branchRemotes.value(git.branchEndpoint().value).lastUploadedHead;
             result.warning = prepared.remoteHead.isEmpty()
                 ? "当前无法确认云端。本次可重建本地；云端版本覆盖需联网后重新确认。已确认的标记删除会保留待同步记录。"
                 : "当前无法连接云端。本次先重建本地，下次上传时仅覆盖上次成功上传的云端版本；云端已有新修改时会停止覆盖。";

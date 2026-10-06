@@ -97,6 +97,8 @@ add_library(zc_services STATIC
     utils/backup_catalog.h utils/backup_catalog.cpp
     utils/backup_files.h utils/backup_files.cpp
     utils/backup_git.h utils/backup_git.cpp
+    utils/backup_git_branches.cpp
+    utils/backup_engine_branches.cpp
     utils/backup_merge.h utils/backup_merge.cpp
     utils/backup_engine_resolution.cpp
     utils/backup_engine_tags.cpp utils/backup_git_tags.cpp

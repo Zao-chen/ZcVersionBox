@@ -136,9 +136,11 @@ BackupResult<BackupRecord> BackupEngine::require(const QString &id, bool writing
         return {OperationResult::ok({}), r};
     if (r.state == BackupSyncState::NeedsAttention || r.state == BackupSyncState::ResolutionPending || (r.state == BackupSyncState::RemotePending && !allowPending))
         return {paused(r)};
-    const auto branch = git.branch();
+    const auto branch = git.branchRef();
     if (!branch.result.success)
         return {attention(r, branch.result.message)};
+    if (!r.branchRef.isEmpty() && r.branchRef != branch.value)
+        return {attention(r, "工作方案在应用外发生变化，请先检查源位置与仓库，不能继续自动保存")};
     checked = git.clean();
     if (!checked.success)
         return {attention(r, checked.message)};
@@ -158,6 +160,31 @@ BackupResult<BackupRecord> BackupEngine::require(const QString &id, bool writing
         }
         else
             return {attention(r, "同步仓库的提交在应用外发生变化，请先检查源位置与仓库内容")};
+    }
+    bool migratedUpload = false;
+    const auto hasLegacyUpload = std::any_of(r.tagRemotes.cbegin(), r.tagRemotes.cend(), [](const TagRemoteState &state) {
+        return !state.rebuildHead.isEmpty() || !state.lastUploadedHead.isEmpty();
+    });
+    if (hasLegacyUpload)
+    {
+        const auto tagsEndpoint = git.tagEndpoint(), uploadEndpoint = git.branchEndpoint();
+        if (!tagsEndpoint.result.success) return {tagsEndpoint.result};
+        if (!uploadEndpoint.result.success) return {uploadEndpoint.result};
+        auto &legacy = r.tagRemotes[tagsEndpoint.value];
+        if (!legacy.rebuildHead.isEmpty() || !legacy.lastUploadedHead.isEmpty())
+        {
+            auto &upload = r.branchRemotes[uploadEndpoint.value];
+            upload.rebuildHead = legacy.rebuildHead; upload.rebuildExpected = legacy.rebuildExpected;
+            upload.lastUploadedHead = legacy.lastUploadedHead;
+            legacy.rebuildHead.clear(); legacy.rebuildExpected.clear(); legacy.lastUploadedHead.clear();
+            migratedUpload = true;
+        }
+    }
+    if (r.branchRef.isEmpty() || migratedUpload)
+    {
+        r.branchRef = branch.value;
+        const auto saved = m_catalog.save(r);
+        if (!saved.success) return {saved};
     }
     return {OperationResult::ok({}), r};
 }
@@ -202,6 +229,7 @@ OperationResult BackupEngine::addLocal(const QString &source)
     if (!initial.result.success)
         return initial.result;
     r.lastCommit = initial.value;
+    r.branchRef = git.branchRef().value;
     if (!QDir().mkpath(m_catalog.itemPath(r.id)))
         return OperationResult::fail("添加失败", "无法创建追踪目录");
     const auto installed = m_dependencies.files->rename(stage.path(), m_catalog.repoPath(r.id));
@@ -257,7 +285,7 @@ BackupResult<std::shared_ptr<PendingBackup>> BackupEngine::prepareBackup(const Q
     }
     auto git = repository(id);
     result = git.clean();
-    if (!result.success || git.head().value != work->head)
+    if (!result.success || git.branchRef().value != work->before.branchRef || git.head().value != work->head)
         return {OperationResult::cancel("操作已取消", "准备副本期间仓库发生变化")};
     r.operation = "backup";
     r.recoveryPaths = {work->replacement->recoveryPath()};
@@ -298,7 +326,7 @@ OperationResult BackupEngine::abortBackup(const std::shared_ptr<PendingBackup> &
     auto git = GitRepository(m_catalog.repoPath(work->before.id), m_dependencies.git);
     const auto head = git.head();
     const auto index = git.stagedState(work->before.repositoryPath);
-    if (!head.result.success || head.value != work->head || !index.result.success || index.value != work->indexState)
+    if (!head.result.success || git.branchRef().value != work->before.branchRef || head.value != work->head || !index.result.success || index.value != work->indexState)
     {
         work->replacement->preserve();
         auto r = work->before;
@@ -336,7 +364,7 @@ OperationResult BackupEngine::finishBackup(std::shared_ptr<PendingBackup> work, 
         return abortBackup(work, OperationResult::cancel("备份已取消", "已保留上一次同步副本"));
     auto git = repository(work->before.id);
     auto index = git.stagedState(work->before.repositoryPath);
-    if (git.head().value != work->head || !index.result.success || index.value != work->indexState || !git.run({"diff", "--quiet"}).success() || !work->replacement->verifyInstalled().success)
+    if (git.branchRef().value != work->before.branchRef || git.head().value != work->head || !index.result.success || index.value != work->indexState || !git.run({"diff", "--quiet"}).success() || !work->replacement->verifyInstalled().success)
     {
         work->replacement->preserve();
         auto r = work->before;
@@ -352,7 +380,7 @@ OperationResult BackupEngine::finishBackup(std::shared_ptr<PendingBackup> work, 
             return abortBackup(work, GitRepository::outcome(committed, "自动备份失败"));
     }
     const auto remaining = git.stagedState();
-    if (!remaining.result.success || !remaining.value.isEmpty() || !git.clean().success || !work->replacement->verifyInstalled().success)
+    if (git.branchRef().value != work->before.branchRef || !remaining.result.success || !remaining.value.isEmpty() || !git.clean().success || !work->replacement->verifyInstalled().success)
     {
         work->replacement->preserve();
         auto r = work->before;
@@ -468,6 +496,8 @@ BackupResult<RestoreRequest> BackupEngine::prepareRestore(const QString &id, con
     if (!mapping.success)
         return {mapping};
     RestoreRequest request{id, resolved.value, r.value.generation, {}, BackupFiles::exists(r.value.sourcePath), pulledVersion};
+    request.branchRef = r.value.branchRef;
+    request.branchVersion = r.value.branchVersion;
     if (request.sourceExists)
     {
         auto scan = m_dependencies.files->fingerprint(r.value.sourcePath, r.value.directory, request.sourceFingerprint, false);
@@ -482,7 +512,7 @@ OperationResult BackupEngine::verifyRequest(const RestoreRequest &request, Backu
     if (!r.result.success)
         return r.result;
     record = r.value;
-    if (record.generation != request.generation || (request.pulledVersion && (record.state != BackupSyncState::RemotePending || request.commit != record.pendingCommit)))
+    if (record.generation != request.generation || (!request.branchRef.isEmpty() && (record.branchRef != request.branchRef || record.branchVersion != request.branchVersion)) || (request.pulledVersion && (record.state != BackupSyncState::RemotePending || request.commit != record.pendingCommit)))
         return OperationResult::warn("操作已取消", "仓库或拉取版本已变化，请重新确认");
     const auto mapping = repository(request.id).validateMapping(request.commit, record.repositoryPath, record.directory);
     if (!mapping.success)
@@ -593,6 +623,8 @@ OperationResult BackupEngine::editMessage(const QString &id, const QString &comm
     if (message.trimmed().isEmpty())
         return OperationResult::fail("无法编辑", "提交说明不能为空");
     auto git = repository(id);
+    if (!r.branchRef.isEmpty() && git.branchRef().value != r.branchRef)
+        return attention(r, "工作方案在应用外发生变化，请先检查后再编辑说明");
     const auto selected = git.resolve(commit), current = git.head();
     if (!selected.result.success)
         return selected.result;
@@ -672,7 +704,7 @@ OperationResult BackupEngine::removeRemote(const QString &id)
 }
 OperationResult BackupEngine::synchronize(const QString &id, bool push)
 {
-    auto checked = require(id, !push);
+    auto checked = require(id, true);
     if (!checked.result.success)
         return checked.result;
     auto git = repository(id);
@@ -680,9 +712,9 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
     {
         if (checked.value.state == BackupSyncState::NeedsAttention || checked.value.state == BackupSyncState::ResolutionPending)
             return paused(checked.value);
-        const auto endpoint = git.tagEndpoint();
+        const auto endpoint = git.branchEndpoint();
         if (!endpoint.result.success) return endpoint.result;
-        auto state = checked.value.tagRemotes.value(endpoint.value);
+        auto state = checked.value.branchRemotes.value(endpoint.value);
         OperationResult pushed;
         if (!state.rebuildHead.isEmpty())
         {
@@ -695,7 +727,7 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
         else pushed = git.push();
         if (!pushed.success) return pushed;
         auto uploadedRecord = *m_catalog.find(id);
-        uploadedRecord.tagRemotes[endpoint.value].lastUploadedHead = git.head().value;
+        uploadedRecord.branchRemotes[endpoint.value].lastUploadedHead = git.head().value;
         ++uploadedRecord.tagRevision;
         const auto recordedUpload = m_catalog.save(uploadedRecord);
         if (!recordedUpload.success) return recordedUpload;
@@ -708,8 +740,8 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
         if (!state.rebuildHead.isEmpty())
         {
             auto record = *m_catalog.find(id);
-            record.tagRemotes[endpoint.value].rebuildHead.clear();
-            record.tagRemotes[endpoint.value].rebuildExpected.clear();
+            record.branchRemotes[endpoint.value].rebuildHead.clear();
+            record.branchRemotes[endpoint.value].rebuildExpected.clear();
             const auto saved = m_catalog.save(record); if (!saved.success) return saved;
         }
         auto result = OperationResult::ok("上传完成", "历史版本和里程碑标记已上传到云端", 2000);
@@ -802,6 +834,8 @@ OperationResult BackupEngine::rebuild(const QString &id)
 OperationResult BackupEngine::rebuild(const PreparedRebuild &request)
 {
     const auto id = request.id;
+    auto branchSafety = rebuildBranchesSafe(id);
+    if (!branchSafety.success) return branchSafety;
     auto checked = require(id, true);
     if (!checked.result.success)
         return checked.result;
@@ -914,8 +948,10 @@ OperationResult BackupEngine::rebuild(const PreparedRebuild &request)
         auto &state = r.tagRemotes[request.endpoint];
         state.base = request.remoteTags; state.pending.clear(); state.conflicts.clear();
         for (auto it = request.remoteTags.cbegin(); it != request.remoteTags.cend(); ++it) state.pending[it.key()] = {};
-        state.rebuildHead = candidateHead.value;
-        state.rebuildExpected = request.remoteHead;
+        const auto uploadEndpoint = git.branchEndpoint();
+        if (!uploadEndpoint.result.success) return uploadEndpoint.result;
+        r.branchRemotes[uploadEndpoint.value].rebuildHead = candidateHead.value;
+        r.branchRemotes[uploadEndpoint.value].rebuildExpected = request.remoteHead;
     }
     ++r.tagRevision;
     r.operation = "rebuild";
@@ -1058,6 +1094,7 @@ OperationResult BackupEngine::finishImport(const QString &session, const QString
     if (!importedHead.result.success)
         return importedHead.result;
     r.lastCommit = importedHead.value;
+    r.branchRef = git.branchRef().value;
     const auto importedEndpoint = git.tagEndpoint(); const auto importedTags = git.tagRefs();
     if (!importedEndpoint.result.success) return importedEndpoint.result;
     if (!importedTags.result.success) return importedTags.result;
@@ -1160,6 +1197,8 @@ OperationResult BackupEngine::recheck(const QString &id)
     auto current = git.head();
     if (!current.result.success)
         return current.result;
+    if (!r.branchRef.isEmpty() && git.branchRef().value != r.branchRef)
+        return OperationResult::warn("工作方案已改变", "请先在备份仓库切回原方案，再重新检查。源文件未修改。");
     r.operation.clear();
     if (current.value != r.lastCommit)
     {
