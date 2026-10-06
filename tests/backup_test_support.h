@@ -89,7 +89,7 @@ class TestBackupService : public BackupService
     {
         BranchRequest r; r.context = branchContext(id); r.ref = ref;
         const auto values = branches(id);
-        for (const auto &b : values.value.branches) if (b.ref == ref) r.expectedHead = b.head;
+        for (const auto &b : values.value.branches) if (b.ref == ref) { r.expectedHead = b.head; r.endpoint = b.endpoint; }
         return r;
     }
     OperationResult createBranch(const QString &id, const QString &name, const QString &start = {})

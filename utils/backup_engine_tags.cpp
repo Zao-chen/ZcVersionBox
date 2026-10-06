@@ -266,9 +266,7 @@ BackupResult<PreparedRebuild> BackupEngine::prepareRebuild(const QString &id)
             const auto known = checked.value.tagRemotes.value(endpoint.value);
             prepared.remoteTags = known.base;
             prepared.remoteHead = checked.value.branchRemotes.value(git.branchEndpoint().value).lastUploadedHead;
-            result.warning = prepared.remoteHead.isEmpty()
-                ? "当前无法确认云端。本次可重建本地；云端版本覆盖需联网后重新确认。已确认的标记删除会保留待同步记录。"
-                : "当前无法连接云端。本次先重建本地，下次上传时仅覆盖上次成功上传的云端版本；云端已有新修改时会停止覆盖。";
+            result.warning = "云端版本或标记读取不完整。执行重建前仍需联网核对全部分支；后续上传只按上次已确认的云端版本进行校验。";
         }
     }
     return {result, prepared};

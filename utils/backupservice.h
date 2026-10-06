@@ -74,6 +74,7 @@ class BackupService : public QObject
     BackupTaskId fetchBranches(const BranchContext &request, QObject *context, Completion callback);
     BackupTaskId setBranchUpstream(const BranchRequest &request, QObject *context, Completion callback);
     BackupTaskId deleteRemoteBranch(const BranchRequest &request, QObject *context, Completion callback);
+    BackupTaskId uploadBranch(const BranchRequest &request, QObject *context, Completion callback);
     BackupTaskId branchHistory(const QString &id, const HistoryQuery &query, QObject *context, Reply<HistoryPage> callback);
     BackupTaskId diffBetween(const QString &id, const QString &oldCommit, const QString &newCommit, QObject *context, Reply<DiffData> callback);
     BackupTaskId prepareBranchSwitch(const BranchRequest &request, QObject *context, Reply<PreparedBranchSwitch> callback);

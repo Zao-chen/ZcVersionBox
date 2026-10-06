@@ -175,7 +175,9 @@ struct RemoteFixture
         writeFile(source, "initial\n");
         if (!service->addLocal(source).success)
             qFatal("Cannot prepare backup");
-        git(service->repoPath(id), {"branch", "-M", branch});
+        if (service->branchContext(id).ref != "refs/heads/" + branch &&
+            !service->renameBranch(id, service->branchContext(id).ref, branch).success)
+            qFatal("Cannot prepare branch");
         git({}, {"init", "--bare", "--initial-branch=" + branch, remote});
         if (!service->setRemote(id, remote).success || !service->synchronize(id, true).success)
             qFatal("Cannot prepare remote");
@@ -264,6 +266,8 @@ class BackupCoreRegression : public QObject
         writeFile(source + "/.git/config", "source metadata");
         const auto request = service.prepareBranchSwitch(id, "refs/heads/试验");
         CHECK_OK(request.result); QVERIFY(request.value.savesChanges);
+        QCOMPARE(request.value.savedChanges.size(), 1);
+        QCOMPARE(request.value.savedChanges.first().path, QString("work/document.txt"));
         QCOMPARE(head(service, id), original);
         CHECK_OK(service.switchBranch(request.value));
         QCOMPARE(readFile(source + "/document.txt"), QByteArray("original\n"));
@@ -298,6 +302,235 @@ class BackupCoreRegression : public QObject
         QVERIFY(!service.switchBranch(prepared.value).success);
         QCOMPARE(service.branchContext(id).ref, QString("refs/heads/main"));
         QCOMPARE(readFile(source + "/file.txt"), QByteArray("changed while confirming"));
+    }
+    void branchMergeKeepsNativeParentsAndCanCancel()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/document.txt";
+        writeFile(source, "first\nbase\nlast\n"); CHECK_OK(service.addLocal(source));
+        const auto id = service.idForSource(source);
+        CHECK_OK(service.createBranch(id, "topic")); CHECK_OK(service.switchBranch(id, "refs/heads/topic"));
+        writeFile(source, "first\ntopic\nlast\n"); CHECK_OK(service.backup(id)); const auto topic = head(service, id);
+        CHECK_OK(service.switchBranch(id, "refs/heads/main"));
+        writeFile(source, "first\nmain\nlast\n"); CHECK_OK(service.backup(id)); const auto main = head(service, id);
+        auto request = service.branchRequest(id, "refs/heads/topic");
+        auto session = awaitBackup<BackupResult<SyncResolutionSession>>([&](auto f) { service.prepareBranchMerge(request, &service, f); });
+        CHECK_OK(session.result); QCOMPARE(session.value.mergeRef, QString("refs/heads/topic"));
+        QCOMPARE(head(service, id), main); QVERIFY(session.value.remaining() > 0);
+        CHECK_OK(awaitBackup<OperationResult>([&](auto f) { service.cancelResolution(id, session.value.id, &service, f); }));
+        QCOMPARE(readFile(source), QByteArray("first\nmain\nlast\n"));
+        session = awaitBackup<BackupResult<SyncResolutionSession>>([&](auto f) { service.prepareBranchMerge(request, &service, f); });
+        CHECK_OK(session.result);
+        auto chosen = service.chooseSyncResolution(session.value, session.value.files[0].path, 0, ConflictChoice::Remote);
+        CHECK_OK(chosen.result);
+        auto ready = service.prepareSyncApply(chosen.value); CHECK_OK(ready.result); CHECK_OK(service.applySync(ready.value));
+        QCOMPARE(readFile(source), QByteArray("first\ntopic\nlast\n"));
+        QCOMPARE(git(service.repoPath(id), {"show", "-s", "--format=%P", "HEAD"}).output.trimmed(), main + ' ' + topic);
+        QCOMPARE(git(service.repoPath(id), {"rev-parse", "topic"}).output.trimmed(), topic);
+        CHECK_OK(service.deleteBranch(id, "refs/heads/topic"));
+    }
+    void branchRemoteLifecycleAndUpstream()
+    {
+        RemoteFixture f;
+        CHECK_OK(f.service->createBranch(f.id, "试验")); CHECK_OK(f.service->switchBranch(f.id, "refs/heads/试验"));
+        writeFile(f.source, "remote topic\n"); CHECK_OK(f.service->backup(f.id));
+        CHECK_OK(f.service->synchronize(f.id, true));
+        auto info = GitRepository(f.service->repoPath(f.id)).branches(); CHECK_OK(info.result);
+        bool tracked = false;
+        for (const auto &b : info.value) if (b.name == "试验") tracked = b.upstream == "refs/remotes/origin/试验";
+        QVERIFY(tracked);
+        CHECK_OK(f.service->renameBranch(f.id, "refs/heads/试验", "新名称"));
+        QCOMPARE(GitRepository(f.service->repoPath(f.id)).targetRef().value, QString("refs/heads/试验"));
+        CHECK_OK(awaitBackup<OperationResult>([&](auto done) { f.service->fetchBranches(f.service->branchContext(f.id), f.service.get(), done); }));
+        const auto r = f.service->branchRequest(f.id, "refs/remotes/origin/试验");
+        CHECK_OK(awaitBackup<OperationResult>([&](auto done) { f.service->deleteRemoteBranch(r, f.service.get(), done); }));
+        QVERIFY(GitRepository(f.service->repoPath(f.id)).resolve("refs/heads/新名称").result.success);
+        QVERIFY(!runGit(f.remote, {"rev-parse", "--verify", "refs/heads/试验"}).success());
+    }
+    void branchFastForwardResumeAndNativeDelete()
+    {
+        TestDirectory dir; const auto paths = pathsIn(dir);
+        auto service = std::make_unique<TestBackupService>(paths);
+        const auto source = dir.path() + "/file.txt";
+        writeFile(source, "base"); CHECK_OK(service->addLocal(source)); const auto id = service->idForSource(source);
+        CHECK_OK(service->createBranch(id, "topic")); CHECK_OK(service->switchBranch(id, "refs/heads/topic"));
+        writeFile(source, "topic"); CHECK_OK(service->backup(id)); const auto tip = head(*service, id);
+        CHECK_OK(service->switchBranch(id, "refs/heads/main"));
+        QVERIFY(!runGit(service->repoPath(id), {"branch", "-d", "topic"}).success());
+        QVERIFY(!service->deleteBranch(id, "refs/heads/topic").success);
+        const auto request = service->branchRequest(id, "refs/heads/topic");
+        auto session = awaitBackup<BackupResult<SyncResolutionSession>>([&](auto f) { service->prepareBranchMerge(request, service.get(), f); });
+        CHECK_OK(session.result); QCOMPARE(session.value.remaining(), 0);
+        const auto sessionId = session.value.id;
+        service.reset(); service = std::make_unique<TestBackupService>(paths);
+        CHECK_OK(service->reload());
+        session = service->syncResolution(id); CHECK_OK(session.result); QCOMPARE(session.value.id, sessionId);
+        auto ready = service->prepareSyncApply(session.value); CHECK_OK(ready.result); CHECK_OK(service->applySync(ready.value));
+        QCOMPARE(head(*service, id), tip); QCOMPARE(readFile(source), QByteArray("topic"));
+        const auto again = service->branchRequest(id, "refs/heads/topic");
+        session = awaitBackup<BackupResult<SyncResolutionSession>>([&](auto f) { service->prepareBranchMerge(again, service.get(), f); });
+        CHECK_OK(session.result); QVERIFY(session.value.id.isEmpty());
+        QCOMPARE(head(*service, id), tip);
+        CHECK_OK(service->deleteBranch(id, "refs/heads/topic"));
+        QVERIFY(!service->deleteBranch(id, "refs/heads/main", true).success);
+    }
+    void branchRenameMergeMatchesNativeGit_data()
+    {
+        QTest::addColumn<bool>("conflict");
+        QTest::newRow("automatic-rename") << false;
+        QTest::newRow("rename-conflict") << true;
+    }
+    void branchRenameMergeMatchesNativeGit()
+    {
+        QFETCH(bool, conflict);
+        TestDirectory dir; TestBackupService service(pathsIn(dir)); const auto source = dir.path() + "/work";
+        writeFile(source + "/old.txt", "first\nbase\nlast\n"); CHECK_OK(service.addLocal(source)); const auto id = service.idForSource(source);
+        CHECK_OK(service.createBranch(id, "topic")); CHECK_OK(service.switchBranch(id, "refs/heads/topic"));
+        QVERIFY(QFile::rename(source + "/old.txt", source + "/new.txt"));
+        if (conflict) writeFile(source + "/new.txt", "first\ntopic\nlast\n");
+        CHECK_OK(service.backup(id)); const auto topic = head(service, id);
+        CHECK_OK(service.switchBranch(id, "refs/heads/main"));
+        writeFile(source + "/old.txt", "first\nmain\nlast\n"); CHECK_OK(service.backup(id)); const auto main = head(service, id);
+        const auto native = dir.path() + "/native";
+        git({}, {"clone", "--no-hardlinks", service.repoPath(id), native});
+        const auto merged = runGit(native, {"merge", "--no-edit", "origin/topic"});
+        if (conflict)
+        {
+            QVERIFY(!merged.success());
+            git(native, {"checkout", "--theirs", "--", "work/new.txt"});
+            git(native, {"add", "--all"}); git(native, {"commit", "-m", "resolved"});
+        }
+        else CHECK_OK(GitRepository::outcome(merged));
+        const auto request = service.branchRequest(id, "refs/heads/topic");
+        auto session = awaitBackup<BackupResult<SyncResolutionSession>>([&](auto f) { service.prepareBranchMerge(request, &service, f); });
+        CHECK_OK(session.result);
+        while (session.value.remaining())
+        {
+            bool chosen = false;
+            for (const auto &file : session.value.files)
+            {
+                for (int i = 0; i < file.hunks.size(); ++i) if (file.hunks[i].choice == ConflictChoice::Unresolved)
+                { session = service.chooseSyncResolution(session.value, file.path, i, ConflictChoice::Remote); CHECK_OK(session.result); chosen = true; break; }
+                if (chosen) break;
+            }
+        }
+        const auto ready = service.prepareSyncApply(session.value); CHECK_OK(ready.result); CHECK_OK(service.applySync(ready.value));
+        QCOMPARE(git(service.repoPath(id), {"rev-parse", "HEAD^{tree}"}).output, git(native, {"rev-parse", "HEAD^{tree}"}).output);
+        QCOMPARE(git(service.repoPath(id), {"show", "-s", "--format=%P", "HEAD"}).output.trimmed(), main + ' ' + topic);
+        QVERIFY(!QFileInfo::exists(source + "/old.txt"));
+        QCOMPARE(readFile(source + "/new.txt"), conflict ? QByteArray("first\ntopic\nlast\n") : QByteArray("first\nmain\nlast\n"));
+    }
+    void branchRemoteTrackingAndPushOnlyRebuildGuard()
+    {
+        RemoteFixture f;
+        git(f.writer, {"checkout", "-b", "远程方案"}); git(f.writer, {"push", "-u", "origin", "远程方案"});
+        const auto tip = f.commitRemote("cloud topic");
+        CHECK_OK(awaitBackup<OperationResult>([&](auto done) { f.service->fetchBranches(f.service->branchContext(f.id), f.service.get(), done); }));
+        auto request = f.service->branchRequest(f.id, "refs/remotes/origin/远程方案");
+        request.name = "本地方案"; request.startCommit = request.expectedHead; request.upstream = request.ref;
+        CHECK_OK(awaitBackup<OperationResult>([&](auto done) { f.service->createBranch(request, f.service.get(), done); }));
+        QCOMPARE(readFile(f.source), QByteArray("initial\n"));
+        CHECK_OK(f.service->switchBranch(f.id, "refs/heads/本地方案"));
+        QCOMPARE(head(*f.service, f.id), tip); QCOMPARE(readFile(f.source), QByteArray("cloud topic"));
+        QCOMPARE(GitRepository(f.service->repoPath(f.id)).targetRef().value, QString("refs/heads/远程方案"));
+        writeFile(f.source, "local fork"); CHECK_OK(f.service->backup(f.id));
+        const auto newer = f.commitRemote("remote fork");
+        request = f.service->branchRequest(f.id, "refs/heads/本地方案");
+        QVERIFY(!awaitBackup<OperationResult>([&](auto done) { f.service->uploadBranch(request, f.service.get(), done); }).success);
+        QCOMPARE(git(f.remote, {"rev-parse", "远程方案"}).output.trimmed(), newer);
+
+        RemoteFixture rebuild;
+        const auto pushOnly = rebuild.dir.path() + "/push-only.git";
+        git({}, {"clone", "--bare", rebuild.remote, pushOnly});
+        git(pushOnly, {"branch", "extra", "main"});
+        git(rebuild.service->repoPath(rebuild.id), {"remote", "set-url", "--add", "--push", "origin", pushOnly});
+        const auto before = head(*rebuild.service, rebuild.id);
+        QVERIFY(!rebuild.service->rebuild(rebuild.id).success);
+        QCOMPARE(head(*rebuild.service, rebuild.id), before);
+        QVERIFY(runGit(pushOnly, {"rev-parse", "--verify", "extra"}).success());
+    }
+    void branchDeletionRejectsConcurrentCommit()
+    {
+        TestDirectory dir; bool race = false; QString repo, replacement;
+        BackupDependencies deps;
+        deps.git = [&](const QString &path, const QStringList &args, const GitOptions &options) {
+            if (race && path == repo && args.contains("update-ref") && args.contains("-d"))
+            { race = false; git(repo, {"update-ref", "refs/heads/topic", replacement}); }
+            return runGit(path, args, options);
+        };
+        TestBackupService service(pathsIn(dir), nullptr, nullptr, deps);
+        const auto source = dir.path() + "/file.txt";
+        writeFile(source, "base"); CHECK_OK(service.addLocal(source)); const auto id = service.idForSource(source); repo = service.repoPath(id);
+        CHECK_OK(service.createBranch(id, "topic")); writeFile(source, "new"); CHECK_OK(service.backup(id)); replacement = head(service, id);
+        race = true; QVERIFY(!service.deleteBranch(id, "refs/heads/topic", true).success);
+        QCOMPARE(git(repo, {"rev-parse", "topic"}).output.trimmed(), replacement);
+        CHECK_OK(service.deleteBranch(id, "refs/heads/topic", true));
+    }
+    void branchSwitchInjectedFailures_data()
+    {
+        QTest::addColumn<QString>("fault");
+        for (const auto *fault : {"before-marker", "install", "final-save", "external-source", "external-branch"}) QTest::newRow(fault) << QString::fromLatin1(fault);
+    }
+    void branchSwitchInjectedFailures()
+    {
+        QFETCH(QString, fault);
+        TestDirectory dir; const auto source = dir.path() + "/document.txt";
+        QString repo; bool active = false, switched = false, installFailed = false;
+        auto files = std::make_shared<FaultFiles>(); BackupDependencies deps; deps.files = files;
+        deps.allowSave = [&](const BackupRecord &r) {
+            return !(active && fault == "before-marker" && r.operation == "switch-branch") &&
+                   !(active && fault == "final-save" && r.operation.isEmpty() && r.branchRef == "refs/heads/topic");
+        };
+        files->failRename = [&](const QString &, const QString &to) {
+            if (active && switched && fault == "install" && to == source && !installFailed) { installFailed = true; return true; }
+            return false;
+        };
+        deps.git = [&](const QString &path, const QStringList &args, const GitOptions &options) {
+            const auto result = runGit(path, args, options);
+            if (active && path == repo && args.contains("switch") && args.last() == "topic" && result.success())
+            {
+                switched = true;
+                if (fault == "external-source") writeFile(source, "concurrent edit");
+                if (fault == "external-branch") git(repo, {"checkout", "main"});
+            }
+            return result;
+        };
+        TestBackupService service(pathsIn(dir), nullptr, nullptr, deps);
+        writeFile(source, "base"); CHECK_OK(service.addLocal(source)); const auto id = service.idForSource(source); repo = service.repoPath(id);
+        CHECK_OK(service.createBranch(id, "topic")); writeFile(source, "main version"); CHECK_OK(service.backup(id));
+        const auto saved = head(service, id); const auto request = service.prepareBranchSwitch(id, "refs/heads/topic"); CHECK_OK(request.result);
+        active = true; QVERIFY(!service.switchBranch(request.value).success); active = false;
+        if (fault == "external-source") QCOMPARE(readFile(source), QByteArray("concurrent edit"));
+        else if (fault == "final-save") QCOMPARE(readFile(source), QByteArray("base"));
+        else QCOMPARE(readFile(source), QByteArray("main version"));
+        if (fault == "before-marker" || fault == "install")
+        { QCOMPARE(head(service, id), saved); QCOMPARE(service.branchContext(id).ref, QString("refs/heads/main")); }
+        else
+        { QCOMPARE(service.syncState(id), BackupSyncState::NeedsAttention); QVERIFY(!record(service, id).recoveryPaths.isEmpty()); }
+        QCOMPARE(git(repo, {"show", "main:document.txt"}).bytes, QByteArray("main version"));
+    }
+    void branchPublishingSelectedRefAndRemoteLease()
+    {
+        RemoteFixture f;
+        CHECK_OK(f.service->createBranch(f.id, "topic"));
+        auto request = f.service->branchRequest(f.id, "refs/heads/topic");
+        CHECK_OK(awaitBackup<OperationResult>([&](auto done) { f.service->uploadBranch(request, f.service.get(), done); }));
+        QCOMPARE(f.service->branchContext(f.id).ref, QString("refs/heads/main"));
+        QCOMPARE(git(f.remote, {"rev-parse", "topic"}).output.trimmed(), request.expectedHead);
+        CHECK_OK(f.service->renameBranch(f.id, "refs/heads/topic", "new-name"));
+        request = f.service->branchRequest(f.id, "refs/heads/new-name"); request.name = "new-name";
+        CHECK_OK(awaitBackup<OperationResult>([&](auto done) { f.service->uploadBranch(request, f.service.get(), done); }));
+        QVERIFY(runGit(f.remote, {"rev-parse", "--verify", "topic"}).success());
+        CHECK_OK(awaitBackup<OperationResult>([&](auto done) { f.service->fetchBranches(f.service->branchContext(f.id), f.service.get(), done); }));
+        auto removed = f.service->branchRequest(f.id, "refs/remotes/origin/topic");
+        git(f.writer, {"fetch"}); git(f.writer, {"checkout", "-b", "topic", "origin/topic"});
+        f.commitRemote("concurrent remote");
+        QVERIFY(!awaitBackup<OperationResult>([&](auto done) { f.service->deleteRemoteBranch(removed, f.service.get(), done); }).success);
+        QVERIFY(runGit(f.remote, {"rev-parse", "--verify", "topic"}).success());
+        auto linked = f.service->branchRequest(f.id, "refs/heads/new-name");
+        const auto otherRemote = f.dir.path() + "/other.git";
+        git({}, {"init", "--bare", otherRemote}); git(f.service->repoPath(f.id), {"remote", "set-url", "origin", otherRemote});
+        QVERIFY(!awaitBackup<OperationResult>([&](auto done) { f.service->uploadBranch(linked, f.service.get(), done); }).success);
     }
     void isolatedResolutionPreservesBytesAndChoices_data()
     {
@@ -1796,7 +2029,7 @@ class BackupCoreRegression : public QObject
         RemoteFixture f({}, "release/example");
         const auto repo = f.service->repoPath(f.id);
         git(repo, {"remote", "rename", "origin", "team"});
-        git(repo, {"branch", "-m", "working"});
+        CHECK_OK(f.service->renameBranch(f.id, f.service->branchContext(f.id).ref, "working"));
         git(repo, {"remote", "add", "origin", f.dir.path() + "/does-not-exist.git"});
         auto remoteCommit = f.commitRemote("upstream\n");
         CHECK_OK(f.service->synchronize(f.id, false));
@@ -2405,7 +2638,7 @@ class BackupCoreRegression : public QObject
         QVERIFY(tags.contains("旧名称")); QVERIFY(tags.value("旧名称") != first); QVERIFY(!tags.contains("新名称"));
         QCOMPARE(readFile(f.source), QByteArray("initial\n"));
     }
-    void importantVersionsOfflineRebuildRetriesAfterRestart()
+    void importantVersionsOfflineRebuildIsBlocked()
     {
         bool offline = false;
         BackupDependencies deps;
@@ -2417,20 +2650,18 @@ class BackupCoreRegression : public QObject
         RemoteFixture f(deps);
         const auto first = head(*f.service, f.id);
         CHECK_OK(f.service->createTag(f.service->tagRequest(f.id, first, "交稿版")));
-        writeFile(f.source, "latest\n"); CHECK_OK(f.service->backup(f.id));
-        CHECK_OK(f.service->synchronize(f.id, true));
+        writeFile(f.source, "latest\n"); CHECK_OK(f.service->backup(f.id)); CHECK_OK(f.service->synchronize(f.id, true));
         const auto uploaded = head(*f.service, f.id);
+        const auto confirmed = f.service->prepareRebuild(f.id); CHECK_OK(confirmed.result);
         offline = true;
-        auto prepared = f.service->prepareRebuild(f.id); CHECK_OK(prepared.result); QVERIFY(!prepared.result.warning.isEmpty());
-        QCOMPARE(prepared.value.remoteHead, uploaded);
-        auto rebuilt = f.service->rebuild(prepared.value); CHECK_OK(rebuilt); QVERIFY(!rebuilt.warning.isEmpty());
-        QVERIFY(GitRepository(f.service->repoPath(f.id)).tagRefs().value.isEmpty());
-        QVERIFY(GitRepository(f.remote).tagRefs().value.contains("交稿版"));
-        const auto rebuiltHead = head(*f.service, f.id);
+        QVERIFY(!f.service->prepareRebuild(f.id).result.success);
+        QVERIFY(!f.service->rebuild(confirmed.value).success);
+        QCOMPARE(head(*f.service, f.id), uploaded);
+        QVERIFY(GitRepository(f.service->repoPath(f.id)).tagRefs().value.contains("交稿版"));
         f.service.reset(); offline = false;
         f.service = std::make_unique<TestBackupService>(f.paths, nullptr, nullptr, deps);
-        CHECK_OK(f.service->synchronize(f.id, true));
-        QCOMPARE(git(f.remote, {"rev-parse", "HEAD"}).output.trimmed(), rebuiltHead);
+        const auto ready = f.service->prepareRebuild(f.id); CHECK_OK(ready.result); CHECK_OK(f.service->rebuild(ready.value));
+        QCOMPARE(git(f.remote, {"rev-parse", "HEAD"}).output.trimmed(), head(*f.service, f.id));
         QVERIFY(GitRepository(f.remote).tagRefs().value.isEmpty());
         QCOMPARE(readFile(f.source), QByteArray("latest\n"));
     }

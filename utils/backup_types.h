@@ -101,6 +101,7 @@ struct BackupRecord
     quint64 branchVersion{1};
     // Upload/rebuild baselines belong to a remote branch, not to repository tags.
     QMap<QString, TagRemoteState> branchRemotes;
+    QDateTime branchesFetchedAt;
     TrackedItem item() const;
 };
 
@@ -136,18 +137,19 @@ struct BranchContext
 };
 struct BranchInfo
 {
-    QString ref, name, head, upstream, remote, remoteRef, message;
+    QString ref, name, head, upstream, remote, remoteRef, message, endpoint;
     bool current{false}, remoteBranch{false};
 };
 struct BranchSnapshot
 {
     BranchContext context;
     QVector<BranchInfo> branches;
+    QDateTime fetchedAt;
 };
 struct BranchRequest
 {
     BranchContext context;
-    QString ref, expectedHead, name, startCommit, upstream;
+    QString ref, expectedHead, name, startCommit, upstream, endpoint;
     bool force{false};
 };
 struct PreparedBranchSwitch
@@ -157,6 +159,7 @@ struct PreparedBranchSwitch
     SourceFingerprint sourceFingerprint;
     QVector<DiffFile> changes;
     bool savesChanges{false};
+    QVector<DiffFile> savedChanges;
 };
 struct HistoryQuery
 {

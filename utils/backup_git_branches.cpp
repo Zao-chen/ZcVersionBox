@@ -30,6 +30,13 @@ BackupResult<QVector<BranchInfo>> GitRepository::branches() const
     if (!remotes.success()) return {outcome(remotes)};
     auto remoteNames = remotes.output.split('\n', Qt::SkipEmptyParts);
     std::sort(remoteNames.begin(), remoteNames.end(), [](const QString &a, const QString &b) { return a.size() > b.size(); });
+    QMap<QString, QString> endpoints;
+    for (const auto &remote : remoteNames)
+    {
+        const auto endpoint = remoteEndpoint(remote); if (!endpoint.result.success) return {endpoint.result};
+        endpoints.insert(remote, endpoint.value);
+    }
+    const auto defaultRemote = remoteName();
     QVector<BranchInfo> values;
     for (auto line : result.output.split('\n', Qt::SkipEmptyParts))
     {
@@ -46,6 +53,7 @@ BackupResult<QVector<BranchInfo>> GitRepository::branches() const
             for (const auto &remote : remoteNames)
                 if (value.name.startsWith(remote + '/'))
                 { value.remote = remote; value.remoteRef = "refs/heads/" + value.name.mid(remote.size() + 1); break; }
+        value.endpoint = endpoints.value(value.remote.isEmpty() ? defaultRemote.value : value.remote);
         values.append(value);
     }
     return {OperationResult::ok({}), values};
@@ -103,4 +111,13 @@ BackupResult<QString> GitRepository::branchEndpoint() const
     if (endpoint.value.isEmpty()) return {OperationResult::ok({}), {}};
     return {OperationResult::ok({}), QString::fromLatin1(QCryptographicHash::hash(
         endpoint.value.toUtf8() + '\0' + ref.value.toUtf8(), QCryptographicHash::Sha256).toHex())};
+}
+
+BackupResult<QString> GitRepository::remoteEndpoint(const QString &remote) const
+{
+    if (remote.isEmpty() || remote.startsWith('-') || remote == ".") return {OperationResult::fail("云端配置无效", "请选择已配置的远程仓库。")};
+    const auto fetch = run({"remote", "get-url", "--all", remote}), push = run({"remote", "get-url", "--push", "--all", remote});
+    if (!fetch.success()) return {outcome(fetch)};
+    if (!push.success()) return {outcome(push)};
+    return {OperationResult::ok({}), QString::fromLatin1(QCryptographicHash::hash(remote.toUtf8() + '\0' + fetch.bytes.trimmed() + '\0' + push.bytes.trimmed(), QCryptographicHash::Sha256).toHex())};
 }

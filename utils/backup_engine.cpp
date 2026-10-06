@@ -655,12 +655,18 @@ OperationResult BackupEngine::editMessage(const QString &id, const QString &comm
         return GitRepository::outcome(amended, "保存失败");
     }
     const auto amendedHead = git.head();
+    if (!r.branchRef.isEmpty() && git.branchRef().value != r.branchRef)
+        return attention(r, "修改说明期间工作方案发生变化，请检查仓库");
     if (!amendedHead.result.success)
         return attention(r, "修改说明后无法确认提交，请检查仓库");
     r.lastCommit = amendedHead.value;
     r.operation.clear();
     auto recorded = m_catalog.save(r);
-    return recorded.success ? OperationResult::ok("已保存", "提交说明已更新") : recorded;
+    auto result = recorded.success ? OperationResult::ok("已保存", "提交说明已更新") : recorded;
+    const auto published = git.run({"for-each-ref", "--contains=" + current.value, "--format=%(refname)", "refs/remotes/"});
+    if (result.success && published.success() && !published.output.trimmed().isEmpty())
+        result.warning = "原版本已存在于云端。修改说明只更新当前方案，下一次上传可能因非快进而被拒绝。";
+    return result;
 }
 OperationResult BackupEngine::setRemote(const QString &id, const QString &url)
 {
@@ -704,7 +710,7 @@ OperationResult BackupEngine::removeRemote(const QString &id)
 }
 OperationResult BackupEngine::synchronize(const QString &id, bool push)
 {
-    auto checked = require(id, true);
+    auto checked = require(id, true, push);
     if (!checked.result.success)
         return checked.result;
     auto git = repository(id);
@@ -724,7 +730,27 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
             if (!remoteHead.result.success) return remoteHead.result;
             pushed = remoteHead.value == git.head().value ? OperationResult::ok({}) : git.push(true, state.rebuildExpected);
         }
-        else pushed = git.push();
+        else
+        {
+            const auto configured = git.run({"config", "--get", "branch." + checked.value.branchRef.mid(11) + ".merge"});
+            if (!configured.success() && configured.exitCode == 1)
+            {
+                const auto remote = git.remoteName(), target = git.targetRef();
+                if (!remote.result.success) return remote.result;
+                if (!target.result.success) return target.result;
+                const auto urls = git.run({"remote", "get-url", "--push", "--all", remote.value});
+                if (!urls.success()) return GitRepository::outcome(urls);
+                for (const auto &url : urls.output.split('\n', Qt::SkipEmptyParts))
+                {
+                    const auto existing = git.run({"ls-remote", "--heads", "--", url, target.value}, {}, true, 300000);
+                    if (!existing.success()) return GitRepository::outcome(existing);
+                    if (!existing.output.trimmed().isEmpty()) return OperationResult::warn("同名云端方案已存在", "请先获取云端方案并设置对应关系，再上传。");
+                }
+                pushed = git.push(true, {}); // compare against absence, never overwrite an existing ref
+            }
+            else if (!configured.success()) return GitRepository::outcome(configured);
+            else pushed = git.push();
+        }
         if (!pushed.success) return pushed;
         auto uploadedRecord = *m_catalog.find(id);
         uploadedRecord.branchRemotes[endpoint.value].lastUploadedHead = git.head().value;
@@ -939,6 +965,8 @@ OperationResult BackupEngine::rebuild(const PreparedRebuild &request)
     if (!currentEndpoint.result.success) return currentEndpoint.result;
     if (currentEndpoint.value != request.endpoint)
         return OperationResult::warn("请重新确认重建", "准备重建期间云端地址发生变化，原仓库已保留。");
+    branchSafety = rebuildBranchesSafe(id);
+    if (!branchSafety.success) return branchSafety;
     if (!currentHead.result.success || !currentBranch.result.success || currentHead.value != before.lastCommit || currentBranch.value != branch.value || !git.clean().success)
         return attention(before, "准备重建期间发现外部仓库修改，已停止替换原仓库");
     // The deletion intent survives replacement of .git and an offline restart.

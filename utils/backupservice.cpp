@@ -120,7 +120,7 @@ class BackupService::Private
             auto found = std::find_if(records.cbegin(), records.cend(), [&](const BackupRecord &r)
                                       { return r.id == job->id; });
             if (found == records.cend() || found->generation != job->generation || found->branchVersion != job->branchVersion)
-                return OperationResult::cancel("操作已取消", "追踪对象已删除或重建，请重新打开此页面后再试");
+                return OperationResult::cancel("操作已取消", "追踪对象或工作方案已变化，请刷新后再试");
         }
         return result;
     }
@@ -548,3 +548,11 @@ BackupTaskId BackupService::prepareBranchSwitch(const BranchRequest &r, QObject 
 { return d->submit<PreparedBranchSwitch>(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.prepareBranchSwitch(r); }); }
 BackupTaskId BackupService::switchBranch(const PreparedBranchSwitch &r, QObject *c, Completion f)
 { return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.switchBranch(r); }); }
+
+BackupTaskId BackupService::prepareBranchMerge(const BranchRequest &r, QObject *c, Reply<SyncResolutionSession> f)
+{ return d->submit<SyncResolutionSession>(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.prepareBranchMerge(r); }); }
+BackupTaskId BackupService::cancelResolution(const QString &id, const QString &session, QObject *c, Completion f)
+{ return d->mutate(id, c, std::move(f), [=](BackupEngine &e) { return e.cancelResolution(id, session); }); }
+
+BackupTaskId BackupService::uploadBranch(const BranchRequest &r, QObject *c, Completion f)
+{ return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.uploadBranch(r); }); }

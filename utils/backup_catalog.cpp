@@ -181,6 +181,7 @@ OperationResult BackupCatalog::load()
         BackupRecord branchState;
         if (!readTagState(obj["branchUploads"], branchState)) { invalid.append(entry.filePath()); continue; }
         r.branchRemotes = branchState.tagRemotes;
+        r.branchesFetchedAt = QDateTime::fromString(obj["branchesFetchedAt"].toString(), Qt::ISODateWithMs);
         r.resolutionSession = obj["resolutionSession"].toString();
         r.resolutionHead = obj["resolutionHead"].toString();
         if (!r.resolutionSession.isEmpty() && !validId(r.resolutionSession))
@@ -219,6 +220,7 @@ OperationResult BackupCatalog::save(const BackupRecord &r)
     BackupRecord branchState;
     branchState.tagRemotes = r.branchRemotes;
     obj.insert("branchUploads", tagStateJson(branchState));
+    obj.insert("branchesFetchedAt", r.branchesFetchedAt.toUTC().toString(Qt::ISODateWithMs));
     if (!QDir().mkpath(itemPath(r.id)))
         return OperationResult::fail("保存失败", "无法创建追踪记录目录");
     QSaveFile file(itemPath(r.id) + "/record.json");

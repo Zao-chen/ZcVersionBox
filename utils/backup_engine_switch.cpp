@@ -17,7 +17,7 @@ OperationResult changedSwitch()
 }
 
 OperationResult BackupEngine::prepareSwitchFiles(const BackupRecord &record, const QString &target,
-    const QString &destination, SourceFingerprint &source, QVector<DiffFile> &changes, bool &savesChanges)
+    const QString &destination, SourceFingerprint &source, QVector<DiffFile> &changes, bool &savesChanges, QVector<DiffFile> *savedChanges)
 {
     auto result = validateSource(record.sourcePath, true); if (!result.success) return result;
     const auto live = repository(record.id);
@@ -64,6 +64,12 @@ OperationResult BackupEngine::prepareSwitchFiles(const BackupRecord &record, con
         result = GitRepository::outcome(candidate.run({"commit", "--only", "-m", "切换前保存", "--", record.repositoryPath}));
         if (!result.success) return result;
     }
+    if (savedChanges)
+    {
+        const auto saved = candidate.diffBetween(record.lastCommit, candidate.head().value);
+        if (!saved.result.success) return saved.result;
+        *savedChanges = saved.value.files;
+    }
     // Ask Git to perform the exact transition, preserving untracked files and refusing ignored-file loss.
     result = GitRepository::outcome(candidate.run({"switch", "--no-overwrite-ignore", "--detach", target}), "无法安全切换方案");
     if (!result.success) return result;
@@ -93,7 +99,7 @@ BackupResult<PreparedBranchSwitch> BackupEngine::prepareBranchSwitch(const Branc
     QTemporaryDir temp(m_catalog.stagingRoot() + "/switch-preview-XXXXXX");
     if (!temp.isValid()) return {OperationResult::fail("准备失败", "无法创建预览目录")};
     PreparedBranchSwitch prepared{request.context, request.ref, request.expectedHead, {}, {}, false};
-    result = prepareSwitchFiles(checked.value, prepared.targetHead, temp.path() + "/source", prepared.sourceFingerprint, prepared.changes, prepared.savesChanges);
+    result = prepareSwitchFiles(checked.value, prepared.targetHead, temp.path() + "/source", prepared.sourceFingerprint, prepared.changes, prepared.savesChanges, &prepared.savedChanges);
     if (!result.success) return {result};
     result = checkBranchTarget(request); if (!result.success) return {result};
     const auto verified = requireBranch(request.context); if (!verified.result.success) return {verified.result};

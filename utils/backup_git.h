@@ -19,6 +19,7 @@ class GitRepository
     BackupResult<HistoryPage> branchHistory(const HistoryQuery &query) const;
     BackupResult<DiffData> diffBetween(const QString &oldCommit, const QString &newCommit) const;
     BackupResult<QString> branchEndpoint() const;
+    BackupResult<QString> remoteEndpoint(const QString &remote) const;
     OperationResult clean() const;
     BackupResult<QString> stagedState(const QString &managedPath = ".") const;
     BackupResult<QVector<Revision>> history() const;

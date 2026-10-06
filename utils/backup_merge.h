@@ -9,7 +9,7 @@ class BackupMerge
 {
   public:
     BackupMerge(QString root, BackupDependencies dependencies, std::shared_ptr<std::atomic_bool> cancel = {});
-    OperationResult create(const BackupRecord &record, const QString &liveRepository, const QString &pinnedRemote = {});
+    OperationResult create(const BackupRecord &record, const QString &liveRepository, const QString &pinnedRemote = {}, const QString &mergeRef = {});
     OperationResult load();
     OperationResult save();
     SyncResolutionSession session() const;
