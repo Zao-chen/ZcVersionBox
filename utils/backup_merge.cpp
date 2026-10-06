@@ -193,6 +193,21 @@ OperationResult BackupMerge::create(const BackupRecord &record, const QString &l
     MERGE_TRY(GitRepository::outcome(cloned));
     MERGE_TRY(GitRepository::outcome(git().run({"config", "user.name", "ZcVersionBox"})));
     MERGE_TRY(GitRepository::outcome(git().run({"config", "user.email", "backup@zcversionbox.local"})));
+    // Source capture must obey the same normalization and ignore rules as the
+    // live backup; clone does not copy repository-local configuration/info.
+    for (const auto *key : {"core.autocrlf", "core.eol", "core.filemode", "core.ignorecase", "core.attributesfile", "core.excludesfile"})
+    {
+        const auto value = live.run({"config", "--get", key});
+        if (value.success()) MERGE_TRY(GitRepository::outcome(git().run({"config", key, value.output.trimmed()})));
+        else if (value.exitCode != 1) return GitRepository::outcome(value);
+    }
+    for (const auto *name : {"exclude", "attributes"})
+    {
+        const auto from = liveRepository + "/.git/info/" + name, to = repositoryPath() + "/.git/info/" + name;
+        if (!BackupFiles::exists(from)) continue;
+        MERGE_TRY(m_dependencies.files->remove(to));
+        MERGE_TRY(m_dependencies.files->copy(from, to));
+    }
     auto remoteCommit = pinnedRemote;
     if (remoteCommit.isEmpty())
     {

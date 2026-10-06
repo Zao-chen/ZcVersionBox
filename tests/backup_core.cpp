@@ -391,6 +391,8 @@ class BackupCoreRegression : public QObject
         CHECK_OK(service.backup(id)); const auto topic = head(service, id);
         CHECK_OK(service.switchBranch(id, "refs/heads/main"));
         writeFile(source + "/old.txt", "first\nmain\nlast\n"); CHECK_OK(service.backup(id)); const auto main = head(service, id);
+        writeFile(service.repoPath(id) + "/.git/info/exclude", "work/private.txt\n");
+        writeFile(source + "/private.txt", "keep local only");
         const auto native = dir.path() + "/native";
         git({}, {"clone", "--no-hardlinks", service.repoPath(id), native});
         const auto merged = runGit(native, {"merge", "--no-edit", "origin/topic"});
@@ -418,6 +420,8 @@ class BackupCoreRegression : public QObject
         QCOMPARE(git(service.repoPath(id), {"rev-parse", "HEAD^{tree}"}).output, git(native, {"rev-parse", "HEAD^{tree}"}).output);
         QCOMPARE(git(service.repoPath(id), {"show", "-s", "--format=%P", "HEAD"}).output.trimmed(), main + ' ' + topic);
         QVERIFY(!QFileInfo::exists(source + "/old.txt"));
+        QCOMPARE(readFile(source + "/private.txt"), QByteArray("keep local only"));
+        QVERIFY(!runGit(service.repoPath(id), {"cat-file", "-e", "HEAD:work/private.txt"}).success());
         QCOMPARE(readFile(source + "/new.txt"), conflict ? QByteArray("first\ntopic\nlast\n") : QByteArray("first\nmain\nlast\n"));
     }
     void branchRemoteTrackingAndPushOnlyRebuildGuard()

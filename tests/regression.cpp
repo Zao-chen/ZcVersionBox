@@ -2283,6 +2283,7 @@ class Regression : public QObject
         QCOMPARE(selector->currentData().toString(), QString("refs/heads/main"));
         table->setCurrentIndex(table->model()->index(1, 0));
         page->findChild<QPushButton *>("viewHistory")->click(); settle(service);
+        QVERIFY(window.findChild<QLabel *>("viewingBranchLabel")->text().contains("试验方案"));
         QCOMPARE(head(service, id), main); QCOMPARE(readFile(source), QByteArray("main\n"));
         window.navigate({PageId::Branches, id}); settle(service);
         auto *views = page->findChild<QTabWidget *>("views"); views->setCurrentIndex(1); settle(service);

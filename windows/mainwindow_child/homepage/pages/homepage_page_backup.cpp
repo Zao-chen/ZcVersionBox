@@ -332,6 +332,7 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     m_milestoneOnly->setAccessibleName("只看里程碑版本");
     ui->milestoneFilterLabel->setBuddy(m_milestoneOnly);
     UiStyle::text(ui->milestoneFilterLabel, UiStyle::FontRole::Body);
+    UiStyle::text(ui->viewingBranchLabel, UiStyle::FontRole::Caption, true);
     ui->filterLayout->insertWidget(1, m_milestoneOnly);
     ui->tagConflictButton->hide();
     connect(m_milestoneOnly, &QAbstractButton::toggled, this, [this] { applyFilter(); rememberState(); refresh(); });
@@ -646,6 +647,9 @@ void HomePageBackupPage::refresh()
     const auto id = m_id;
     const auto generation = m_service->repositoryGeneration(id);
     const auto working = m_service->branchContext(id);
+    const auto browsing = m_branchRef.isEmpty() ? working.ref : m_branchRef;
+    const auto browsingName = browsing.startsWith("refs/heads/") ? browsing.mid(11) : browsing.startsWith("refs/remotes/") ? browsing.mid(13) : browsing;
+    ui->viewingBranchLabel->setText(m_milestoneOnly->isChecked() ? "正在查看：仓库共享的里程碑" : "正在查看历史：" + browsingName);
     const auto request = ++m_refreshGeneration;
     updateActions();
     const auto receive = [this, id, generation, request, working](const BackupResult<QVector<Revision>> &reply)
