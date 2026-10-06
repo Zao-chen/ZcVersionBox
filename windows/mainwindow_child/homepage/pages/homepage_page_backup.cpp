@@ -1,8 +1,10 @@
 #include "homepage_page_backup.h"
+#include "homepage_history_graph.h"
 #include "ui_homepage_page_backup.h"
 #include "windows/mainwindow_presentation.h"
 #include <QAction>
 #include <QContextMenuEvent>
+#include <QComboBox>
 #include <QDialog>
 #include <QSignalBlocker>
 #include <oclero/qlementine/widgets/Switch.hpp>
@@ -133,6 +135,28 @@ class HistoryDelegate : public QStyledItemDelegate
         else
         {
             auto textRect = opt.rect.adjusted(12, 0, -12, 0);
+            if (index.column() == 0 && !m_view->property("milestonesOnly").toBool())
+            {
+                const int graphWidth = index.data(HistoryGraph::Width).toInt();
+                HistoryGraph::paint(painter, opt.rect, index);
+                textRect.setLeft(opt.rect.left() + graphWidth);
+                const auto refs = index.data(HistoryGraph::Refs).toStringList();
+                if (!refs.isEmpty())
+                {
+                    const auto badgeFont = UiStyle::font(UiStyle::FontRole::Caption);
+                    const QFontMetrics metrics(badgeFont, painter->device());
+                    const auto label = refs.first() + (refs.size() > 1 ? QString(" +%1").arg(refs.size() - 1) : QString());
+                    const int badgeWidth = qMin(qMin(156, textRect.width() / 2), metrics.horizontalAdvance(label) + 16);
+                    const QRect badge(textRect.left(), textRect.center().y() - 10, qMax(0, badgeWidth), 20);
+                    auto accent = HistoryGraph::color(index.data(HistoryGraph::Color).toInt());
+                    auto background = accent; background.setAlpha(28);
+                    painter->setPen(Qt::NoPen); painter->setBrush(background); painter->drawRoundedRect(badge, 4, 4);
+                    painter->setFont(badgeFont); painter->setPen(accent);
+                    painter->drawText(badge.adjusted(7, 0, -7, 0), Qt::AlignVCenter,
+                        metrics.elidedText(label, Qt::ElideRight, qMax(0, badgeWidth - 14)));
+                    textRect.setLeft(badge.right() + 8);
+                }
+            }
             const auto tags = index.data(TagsRole).value<QVector<VersionTag>>();
             if (index.column() == 0 && !tags.isEmpty())
             {
@@ -327,13 +351,20 @@ class HistoryDelegate : public QStyledItemDelegate
 HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) : QWidget(parent), ui(new Ui::HomePageBackupPage), m_service(service)
 {
     ui->setupUi(this);
+    ui->historyScope->setMinimumContentsLength(10);
+    ui->historyScope->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    ui->historyScope->setAccessibleName("历史浏览范围");
+    ui->historyScope->setToolTip("只筛选历史记录，不切换正在使用的方案。");
+    connect(ui->historyScope, &QComboBox::activated, this, [this](int index) {
+        Route route{PageId::History, m_id}; route.branchRef = ui->historyScope->itemData(index).toString(); emit navigate(route);
+    });
     m_milestoneOnly = new oclero::qlementine::Switch(this);
     m_milestoneOnly->setObjectName("milestoneOnlySwitch");
     m_milestoneOnly->setAccessibleName("只看里程碑版本");
     ui->milestoneFilterLabel->setBuddy(m_milestoneOnly);
     UiStyle::text(ui->milestoneFilterLabel, UiStyle::FontRole::Body);
     UiStyle::text(ui->viewingBranchLabel, UiStyle::FontRole::Caption, true);
-    ui->filterLayout->insertWidget(1, m_milestoneOnly);
+    ui->filterLayout->insertWidget(3, m_milestoneOnly);
     ui->tagConflictButton->hide();
     connect(m_milestoneOnly, &QAbstractButton::toggled, this, [this] { applyFilter(); rememberState(); refresh(); });
     connect(ui->tagConflictButton, &QPushButton::clicked, this, &HomePageBackupPage::resolveTagConflicts);
@@ -366,7 +397,8 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
         } });
     ui->table->verticalHeader()->hide();
     ui->table->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-    ui->table->verticalHeader()->setDefaultSectionSize(UiStyle::rowHeight(40, UiStyle::font(UiStyle::FontRole::Body)));
+    ui->table->verticalHeader()->setDefaultSectionSize(UiStyle::rowHeight(36, UiStyle::font(UiStyle::FontRole::Body)));
+    ui->table->horizontalHeader()->hide();
     ui->table->horizontalHeader()->setHighlightSections(false);
     ui->table->horizontalHeader()->setSectionsClickable(false);
     ui->table->horizontalHeader()->setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
@@ -647,10 +679,17 @@ void HomePageBackupPage::refresh()
     const auto id = m_id;
     const auto generation = m_service->repositoryGeneration(id);
     const auto working = m_service->branchContext(id);
-    const auto browsing = m_branchRef.isEmpty() ? working.ref : m_branchRef;
+    const auto browsing = m_branchRef == "HEAD" ? working.ref : m_branchRef;
     const auto browsingName = browsing.startsWith("refs/heads/") ? browsing.mid(11) : browsing.startsWith("refs/remotes/") ? browsing.mid(13) : browsing;
-    ui->viewingBranchLabel->setText(m_milestoneOnly->isChecked() ? "正在查看：仓库共享的里程碑" : "正在查看历史：" + browsingName);
+    ui->viewingBranchLabel->setText(m_milestoneOnly->isChecked() ? "仓库共享的里程碑" : m_branchRef.isEmpty() ? "全部方案的历史" : "正在查看：" + browsingName);
     const auto request = ++m_refreshGeneration;
+    m_service->branches(id, this, [this, id, request](const BackupResult<BranchSnapshot> &reply) {
+        if (id != m_id || request != m_refreshGeneration || !reply.result.success) return;
+        const QSignalBlocker blocker(ui->historyScope);
+        ui->historyScope->clear(); ui->historyScope->addItem("全部方案", QString()); ui->historyScope->addItem("当前方案", "HEAD");
+        for (const auto &branch : reply.value.branches) ui->historyScope->addItem(branch.name, branch.ref);
+        ui->historyScope->setCurrentIndex(qMax(0, ui->historyScope->findData(m_branchRef)));
+    });
     updateActions();
     const auto receive = [this, id, generation, request, working](const BackupResult<QVector<Revision>> &reply)
                        {
@@ -702,7 +741,7 @@ void HomePageBackupPage::refresh()
         for (auto *item : {message, date, hash, actions})
         {
             item->setData(revision.hash, CommitRole);
-            item->setToolTip(milestone + revision.message + "\n" + time + " · " + revision.hash);
+            item->setToolTip((revision.refs.isEmpty() ? QString() : "方案：" + revision.refs.join("、") + '\n') + milestone + revision.message + "\n" + time + " · " + revision.hash);
             item->setData("Enter 对比，Alt+P 预览，Alt+M 里程碑，Shift+F10 更多操作，F2 编辑说明。", Qt::AccessibleDescriptionRole);
         }
         m_model.appendRow({message, date, hash, actions});
@@ -715,6 +754,7 @@ void HomePageBackupPage::refresh()
     m_loadedId = m_id;
     m_loadedGeneration = m_service->repositoryGeneration(m_id);
     m_loadedBranch = working;
+    HistoryGraph::populate(m_model, revisions, working.head);
     ui->table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     ui->table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
     ui->table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
@@ -723,7 +763,8 @@ void HomePageBackupPage::refresh()
     ui->table->setColumnWidth(1, qCeil(QFontMetricsF(UiStyle::font(UiStyle::FontRole::Caption), ui->table->viewport()).horizontalAdvance("2000-00-00 00:00")) + 24);
     ui->table->setColumnWidth(2, qCeil(QFontMetricsF(UiStyle::font(UiStyle::FontRole::Code), ui->table->viewport()).horizontalAdvance("00000000")) + 24);
     ui->table->setColumnWidth(ActionsColumn, ActionsWidth);
-    ui->table->setColumnHidden(2, width() < 640);
+    ui->table->setColumnHidden(1, width() < 760);
+    ui->table->setColumnHidden(2, width() < 1050);
     {
         const QSignalBlocker blocker(m_milestoneOnly);
         m_milestoneOnly->setChecked(state.milestoneOnly);
@@ -739,8 +780,8 @@ void HomePageBackupPage::refresh()
     if (m_milestoneOnly->isChecked()) m_service->history(id, this, receive);
     else
     {
-        HistoryQuery query; if (!m_branchRef.isEmpty()) query.tips = {m_branchRef};
-        // Load the ordinary list using bounded Git batches; the graph offers explicit pagination.
+        HistoryQuery query; query.allBranches = m_branchRef.isEmpty(); if (!m_branchRef.isEmpty()) query.tips = {m_branchRef};
+        // The timeline and relationship graph share the same bounded Git batches.
         auto revisions = std::make_shared<QVector<Revision>>();
         auto next = std::make_shared<std::function<void(HistoryQuery)>>();
         *next = [this, id, request, receive, revisions, weak = std::weak_ptr<std::function<void(HistoryQuery)>>(next)](HistoryQuery page) {
@@ -763,6 +804,8 @@ QVector<VersionTag> HomePageBackupPage::revisionTags(const RevisionContext &cont
 void HomePageBackupPage::applyFilter()
 {
     const bool only = m_milestoneOnly->isChecked();
+    // Skipping intermediate commits would draw false parent connections.
+    ui->table->setProperty("milestonesOnly", only);
     int visible = 0, first = -1;
     for (int row = 0; row < m_model.rowCount(); ++row)
     {
@@ -782,7 +825,8 @@ void HomePageBackupPage::resizeEvent(QResizeEvent *event)
     QWidget::resizeEvent(event);
     const int margin = width() < 640 ? 16 : 24;
     ui->pageLayout->setContentsMargins(margin, 12, margin, 16);
-    ui->table->setColumnHidden(2, width() < 640);
+    ui->table->setColumnHidden(1, width() < 760);
+    ui->table->setColumnHidden(2, width() < 1050);
 }
 void HomePageBackupPage::hideEvent(QHideEvent *event)
 {

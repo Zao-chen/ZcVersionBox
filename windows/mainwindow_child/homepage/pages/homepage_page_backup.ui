@@ -2,7 +2,7 @@
 <ui version="4.0">
  <class>HomePageBackupPage</class>
  <widget class="QWidget" name="HomePageBackupPage">
-  <layout class="QVBoxLayout" name="pageLayout" stretch="0,0,0,1">
+  <layout class="QVBoxLayout" name="pageLayout" stretch="0,0,1,0">
    <property name="leftMargin">
     <number>24</number>
    </property>
@@ -19,15 +19,10 @@
     <number>12</number>
    </property>
    <item>
-    <widget class="QLabel" name="viewingBranchLabel">
-     <property name="text"><string>正在查看历史</string></property>
-     <property name="textFormat"><enum>Qt::PlainText</enum></property>
-     <property name="wordWrap"><bool>true</bool></property>
-    </widget>
-   </item>
-   <item>
     <layout class="QHBoxLayout" name="filterLayout">
      <property name="spacing"><number>8</number></property>
+     <item><widget class="QComboBox" name="historyScope"><property name="maximumSize"><size><width>220</width><height>16777215</height></size></property></widget></item>
+     <item><spacer name="scopeSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>8</width><height>0</height></size></property></spacer></item>
      <item><widget class="QLabel" name="milestoneFilterLabel"><property name="text"><string>只看里程碑版本</string></property></widget></item>
      <item><spacer name="filterSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
      <item><widget class="QPushButton" name="tagConflictButton"><property name="text"><string>处理标记…</string></property></widget></item>
@@ -63,6 +58,13 @@
      <property name="horizontalScrollBarPolicy">
       <enum>Qt::ScrollBarAlwaysOff</enum>
      </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="viewingBranchLabel">
+     <property name="text"><string>正在查看历史</string></property>
+     <property name="textFormat"><enum>Qt::PlainText</enum></property>
+     <property name="wordWrap"><bool>true</bool></property>
     </widget>
    </item>
   </layout>

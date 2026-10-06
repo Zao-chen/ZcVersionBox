@@ -128,6 +128,7 @@ add_library(zc_ui STATIC
     windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h windows/mainwindow_child/homepage/pages/homepage_page_dashboard.cpp windows/mainwindow_child/homepage/pages/homepage_page_dashboard.ui
     windows/mainwindow_child/homepage/pages/homepage_page_branches.h windows/mainwindow_child/homepage/pages/homepage_page_branches.cpp windows/mainwindow_child/homepage/pages/homepage_page_branches.ui
     windows/mainwindow_child/homepage/pages/homepage_page_backup_tags.cpp
+    windows/mainwindow_child/homepage/pages/homepage_history_graph.h windows/mainwindow_child/homepage/pages/homepage_history_graph.cpp
     windows/mainwindow_child/homepage/pages/homepage_page_backup.h windows/mainwindow_child/homepage/pages/homepage_page_backup.cpp windows/mainwindow_child/homepage/pages/homepage_page_backup.ui
     windows/mainwindow_child/homepage/pages/homepage_diff_delegate.h
     windows/mainwindow_child/homepage/pages/homepage_diff_view.h windows/mainwindow_child/homepage/pages/homepage_diff_view.cpp

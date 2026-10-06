@@ -6,6 +6,7 @@
 #include "windows/mainwindow_child/homepage/homepage.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_backup.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_branches.h"
+#include "windows/mainwindow_child/homepage/pages/homepage_history_graph.h"
 #include <QTabWidget>
 #include <QTimer>
 #include "windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h"
@@ -2282,22 +2283,35 @@ class Regression : public QObject
         auto *selector = window.findChild<QComboBox *>("branchSelector"); QVERIFY(selector);
         QCOMPARE(selector->currentData().toString(), QString("refs/heads/main"));
         table->setCurrentIndex(table->model()->index(1, 0));
+        page->openManager();
+        auto *managerDialog = window.findChild<QDialog *>("branchManagerDialog");
+        QVERIFY(managerDialog && managerDialog->isVisible());
+        auto *managerPage = managerDialog->findChild<HomePageBranchesPage *>();
+        QVERIFY(managerPage && managerPage != page);
+        managerDialog->close();
+        QTRY_VERIFY(!managerDialog->isVisible());
+        window.navigate({PageId::Branches, id}); settle(service);
+        QVERIFY(page->isVisible());
+        table = page->findChild<QTableView *>("branches"); QVERIFY(table);
+        table->setCurrentIndex(table->model()->index(1, 0));
         page->findChild<QPushButton *>("viewHistory")->click(); settle(service);
         QVERIFY(window.findChild<QLabel *>("viewingBranchLabel")->text().contains("试验方案"));
         QCOMPARE(head(service, id), main); QCOMPARE(readFile(source), QByteArray("main\n"));
-        window.navigate({PageId::Branches, id}); settle(service);
-        auto *views = page->findChild<QTabWidget *>("views"); views->setCurrentIndex(1); settle(service);
-        auto *graph = page->findChild<QTableView *>("graph"); QCOMPARE(graph->model()->rowCount(), 3);
+        auto *historyPage = window.findChild<HomePageBackupPage *>(); QVERIFY(historyPage);
+        auto *historyTable = historyPage->findChild<QTableView *>("table"); QVERIFY(historyTable);
+        QCOMPARE(historyTable->model()->rowCount(), 2);
+        QCOMPARE(historyPage->findChild<QComboBox *>("historyScope")->currentData().toString(), QString("refs/heads/试验方案"));
+        QVERIFY(historyTable->model()->index(0, 0).data(HistoryGraph::Width).toInt() > 24);
         const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS"); if (!output.isEmpty()) QDir().mkpath(output);
         for (int theme = 0; theme < 2; ++theme)
         {
             for (const auto size : {QSize(1080, 740), QSize(760, 520)})
             {
                 window.resize(size); QTest::qWait(160); QCOMPARE(window.size(), size);
-                if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/branches-graph-%1-%2.png").arg(theme).arg(size.width())));
-                views->setCurrentIndex(0); QTest::qWait(30);
+                if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/history-graph-%1-%2.png").arg(theme).arg(size.width())));
+                window.navigate({PageId::Branches, id}); settle(service); QTest::qWait(30);
                 if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/branches-list-%1-%2.png").arg(theme).arg(size.width())));
-                views->setCurrentIndex(1); settle(service);
+                window.navigate({PageId::History, id}); settle(service);
             }
             m_theme->toggle();
         }
