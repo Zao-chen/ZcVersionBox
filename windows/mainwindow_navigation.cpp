@@ -21,6 +21,13 @@ void Navigation::go(const Route &route)
     ++m_index;
     emit changed(current());
 }
+void Navigation::replaceCurrent(const Route &route)
+{
+    if (current() == route)
+        return;
+    m_routes[m_index] = route;
+    emit changed(current());
+}
 void Navigation::back()
 {
     if (canBack())

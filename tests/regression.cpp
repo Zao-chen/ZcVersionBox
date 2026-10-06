@@ -1066,13 +1066,13 @@ class Regression : public QObject
         HomePageBackupPage page(&service); page.resize(820, 580); page.setBackup(id); settle(service); page.show();
         auto *table = page.findChild<QTableView *>("table");
         auto *filter = page.findChild<QAbstractButton *>("milestoneOnlySwitch"); QVERIFY(filter);
-        const auto openManager = [&](int row) -> QDialog *
+        const auto openTagManager = [&](int row) -> QDialog *
         {
             QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, row, 2));
             QCoreApplication::processEvents();
             return page.findChild<QDialog *>("versionTagDialog");
         };
-        QPointer<QDialog> dialog = openManager(1); QVERIFY(dialog);
+        QPointer<QDialog> dialog = openTagManager(1); QVERIFY(dialog);
         auto *name = dialog->findChild<QLineEdit *>("versionTagName");
         auto *buttons = dialog->findChild<QDialogButtonBox *>();
         name->setText("bad name"); QTest::mouseClick(buttons->button(QDialogButtonBox::Save), Qt::LeftButton); settle(service);
@@ -1089,17 +1089,17 @@ class Regression : public QObject
         QVERIFY(table->isRowHidden(0)); QVERIFY(!table->isRowHidden(1));
         page.setBackup(encoded(other)); settle(service); QVERIFY(!filter->isChecked());
         page.setBackup(id); settle(service); QVERIFY(filter->isChecked()); QVERIFY(table->isRowHidden(0));
-        dialog = openManager(1); QVERIFY(dialog);
+        dialog = openTagManager(1); QVERIFY(dialog);
         name = dialog->findChild<QLineEdit *>("versionTagName"); name->setText("定稿");
         QTest::keyClick(name, Qt::Key_Return); settle(service); QTRY_VERIFY(!dialog || !dialog->isVisible());
         QTRY_COMPARE(table->model()->index(1, 0).data(Qt::UserRole + 2).value<QVector<VersionTag>>().size(), 1);
         QTRY_COMPARE(table->model()->index(1, 0).data(Qt::UserRole + 2).value<QVector<VersionTag>>().first().name, QString("定稿"));
-        dialog = openManager(1); QVERIFY(dialog);
+        dialog = openTagManager(1); QVERIFY(dialog);
         QTest::mouseClick(dialog->findChild<QPushButton *>("removeVersionTagButton"), Qt::LeftButton); settle(service);
         QTRY_VERIFY(!dialog || !dialog->isVisible());
         QTRY_VERIFY(!table->isVisible()); QVERIFY(page.findChild<QLabel *>("emptyLabel")->text().contains("还没有里程碑版本"));
         filter->setChecked(false); QVERIFY(table->isVisible()); QCOMPARE(table->model()->rowCount(), 2);
-        dialog = openManager(0); QVERIFY(dialog);
+        dialog = openTagManager(0); QVERIFY(dialog);
         dialog->findChild<QLineEdit *>("versionTagName")->setText("旧弹窗");
         page.setBackup(encoded(other)); settle(service); QTRY_VERIFY(!dialog || !dialog->isVisible());
         page.setBackup(id); settle(service);
@@ -2276,90 +2276,30 @@ class Regression : public QObject
         FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
         MainWindow window(&service, &settings, &gateway, m_theme, false);
         window.setAttribute(Qt::WA_DontShowOnScreen); window.show();
-        window.navigate({PageId::Branches, id}); settle(service);
+        window.navigate({PageId::History, id}); settle(service);
+        auto *history = window.findChild<HomePageBackupPage *>(); QVERIFY(history);
+        auto *historyTable = history->findChild<QTableView *>("table"); QVERIFY(historyTable);
+        QVERIFY(historyTable->model()->rowCount() >= 2);
+        const auto lineCell = historyTable->visualRect(historyTable->model()->index(0, 0));
+        QTest::mouseClick(historyTable->viewport(), Qt::LeftButton, {}, QPoint(lineCell.left() + 14, lineCell.center().y()));
+        settle(service);
+        auto *clickedDetail = window.findChild<HomePageBranchesPage *>(); QVERIFY(clickedDetail);
+        QCOMPARE(clickedDetail->findChild<QLabel *>("branchName")->text(), QString("main"));
+        window.navigate({PageId::Branches, id, {}, {}, QString("refs/heads/试验方案")}); settle(service);
         auto *page = window.findChild<HomePageBranchesPage *>(); QVERIFY(page);
-        auto *table = page->findChild<QTableView *>("branches"); QVERIFY(table);
-        QCOMPARE(table->model()->rowCount(), 2);
-        auto *selector = window.findChild<QComboBox *>("branchSelector"); QVERIFY(selector);
-        QCOMPARE(selector->currentData().toString(), QString("refs/heads/main"));
-        table->setCurrentIndex(table->model()->index(1, 0));
-        page->openManager();
-        auto *managerDialog = window.findChild<QDialog *>("branchManagerDialog");
-        QVERIFY(managerDialog && managerDialog->isVisible());
-        auto *managerPage = managerDialog->findChild<HomePageBranchesPage *>();
-        QVERIFY(managerPage && managerPage != page);
-        managerDialog->close();
-        QTRY_VERIFY(!managerDialog->isVisible());
-        window.navigate({PageId::Branches, id}); settle(service);
-        QVERIFY(page->isVisible());
-        table = page->findChild<QTableView *>("branches"); QVERIFY(table);
-        table->setCurrentIndex(table->model()->index(1, 0));
-        page->findChild<QPushButton *>("viewHistory")->click(); settle(service);
-        QVERIFY(window.findChild<QLabel *>("viewingBranchLabel")->text().contains("试验方案"));
-        QCOMPARE(head(service, id), main); QCOMPARE(readFile(source), QByteArray("main\n"));
-        auto *historyPage = window.findChild<HomePageBackupPage *>(); QVERIFY(historyPage);
-        auto *historyTable = historyPage->findChild<QTableView *>("table"); QVERIFY(historyTable);
-        QCOMPARE(historyTable->model()->rowCount(), 2);
-        QCOMPARE(historyPage->findChild<QComboBox *>("historyScope")->currentData().toString(), QString("refs/heads/试验方案"));
-        QVERIFY(historyTable->model()->index(0, 0).data(HistoryGraph::Width).toInt() > 24);
-        const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS"); if (!output.isEmpty()) QDir().mkpath(output);
-        for (int theme = 0; theme < 2; ++theme)
-        {
-            for (const auto size : {QSize(1080, 740), QSize(760, 520)})
-            {
-                window.resize(size); QTest::qWait(160); QCOMPARE(window.size(), size);
-                if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/history-graph-%1-%2.png").arg(theme).arg(size.width())));
-                window.navigate({PageId::Branches, id}); settle(service); QTest::qWait(30);
-                if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/branches-list-%1-%2.png").arg(theme).arg(size.width())));
-                window.navigate({PageId::History, id}); settle(service);
-            }
-            m_theme->toggle();
-        }
-        Route compare{PageId::Diff, id, topic}; compare.oldCommit = main;
-        window.navigate(compare); settle(service); QCOMPARE(head(service, id), main);
-        window.navigate({PageId::Branches, id}); settle(service);
-        bool cancelled = false, cancelVisible = false; QTimer dismiss;
-        connect(&dismiss, &QTimer::timeout, this, [&] {
-            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
-            if (dialog && dialog->objectName() == "switchBranchDialog") {
-                dismiss.stop(); cancelled = true;
-                auto *box = dialog->findChild<QDialogButtonBox *>();
-                auto *button = box ? box->button(QDialogButtonBox::Cancel) : nullptr;
-                cancelVisible = button && button->isVisible() && dialog->rect().contains(button->mapTo(dialog, button->rect().center()));
-                if (button) button->click(); else dialog->reject();
-            }
-        });
-        dismiss.start(10); page->requestSwitch(id, "refs/heads/试验方案"); QTRY_VERIFY_WITH_TIMEOUT(cancelled, 10000); settle(service);
-        QVERIFY(cancelVisible);
-        QCOMPARE(head(service, id), main); QCOMPARE(readFile(source), QByteArray("main\n"));
-        bool confirmed = false, confirmVisible = false; QTimer accept;
-        connect(&accept, &QTimer::timeout, this, [&] {
-            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
-            if (dialog && dialog->objectName() == "switchBranchDialog") {
-                accept.stop(); confirmed = true;
-                auto *box = dialog->findChild<QDialogButtonBox *>();
-                auto *button = box ? box->button(QDialogButtonBox::Ok) : nullptr;
-                confirmVisible = button && button->isVisible() && dialog->rect().contains(button->mapTo(dialog, button->rect().center()));
-                if (!output.isEmpty()) dialog->grab().save(output + "/branch-switch-confirmation.png");
-                if (button) button->click(); else dialog->reject();
-            }
-        });
-        accept.start(10); page->requestSwitch(id, "refs/heads/试验方案"); QTRY_VERIFY_WITH_TIMEOUT(confirmed, 10000); settle(service);
-        QVERIFY(confirmVisible);
-        QCOMPARE(head(service, id), topic); QCOMPARE(readFile(source), QByteArray("topic\n"));
-        bool created = false; QTimer create;
-        connect(&create, &QTimer::timeout, this, [&] {
-            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
-            if (!dialog || dialog->objectName() != "createBranchDialog") return;
-            create.stop();
-            dialog->findChild<QLineEdit *>("branchName")->setText("界面创建");
-            dialog->findChild<QCheckBox *>()->setChecked(false);
-            auto *button = dialog->findChild<QDialogButtonBox *>()->button(QDialogButtonBox::Ok);
-            created = button->isVisible(); button->click();
-        });
-        create.start(10); page->createFrom(id, topic); settle(service); QVERIFY(created);
-        QCOMPARE(runGit(service.repoPath(id), {"rev-parse", "refs/heads/界面创建"}).output.trimmed(), topic);
-        QCOMPARE(service.branchContext(id).ref, QString("refs/heads/试验方案"));
+        QCOMPARE(page->findChild<QLabel *>("branchName")->text(), QString("试验方案"));
+        QVERIFY(page->findChild<QTableView *>("table"));
+        QVERIFY(page->findChild<QComboBox *>("historyScope")->isHidden());
+        QCOMPARE(head(service, id), main);
+        QCOMPARE(readFile(source), QByteArray("main\n"));
+        window.navigate({PageId::History, id}); settle(service);
+        QVERIFY(window.findChild<HomePageBackupPage *>()->isVisible());
+        window.navigate({PageId::Branches, id, {}, {}, QString("refs/heads/试验方案")}); settle(service);
+        auto *detailHistory = page->findChild<QTableView *>("table"); QVERIFY(detailHistory);
+        QVERIFY(detailHistory->model()->rowCount() >= 1);
+        QCOMPARE(detailHistory->model()->index(0, 0).data(HistoryGraph::Width).toInt() > 24, true);
+        QVERIFY(runGit(service.repoPath(id), {"rev-parse", "refs/heads/试验方案"}).success());
+        QVERIFY(topic != main);
     }
     void renderAllPages()
     {

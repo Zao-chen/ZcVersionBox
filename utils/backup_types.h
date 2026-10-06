@@ -119,7 +119,7 @@ struct Revision
     QDateTime committedAt;
     QString shortHash;
     QVector<VersionTag> tags;
-    QStringList parents, refs;
+    QStringList parents, refs, branchRefs;
 };
 struct DiffFile
 {
@@ -165,13 +165,15 @@ struct HistoryQuery
 {
     QStringList tips;
     int offset{0}, limit{200};
-    bool allBranches{false};
+    bool allBranches{false}, uniqueOnly{false};
+    QStringList excludeTips;
 };
 struct HistoryPage
 {
     QVector<Revision> revisions;
     QStringList tips;
     bool hasMore{false};
+    int hiddenAncestorCount{0};
 };
 struct ImportEntry
 {

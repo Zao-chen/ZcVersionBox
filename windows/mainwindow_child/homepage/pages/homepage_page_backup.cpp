@@ -48,8 +48,9 @@ class HistoryDelegate : public QStyledItemDelegate
 {
   public:
     using ActionHandler = std::function<void(const QModelIndex &, RevisionAction, const QPoint &)>;
-    HistoryDelegate(QTableView *view, std::function<void()> editing, ActionHandler action)
-        : QStyledItemDelegate(view), m_view(view), m_editing(std::move(editing)), m_action(std::move(action))
+    using BranchHandler = std::function<void(const QString &)>;
+    HistoryDelegate(QTableView *view, std::function<void()> editing, ActionHandler action, BranchHandler branch = {})
+        : QStyledItemDelegate(view), m_view(view), m_editing(std::move(editing)), m_action(std::move(action)), m_branch(std::move(branch))
     {
         updateIcons();
         view->viewport()->installEventFilter(this);
@@ -242,6 +243,23 @@ class HistoryDelegate : public QStyledItemDelegate
                 }
                 if (mouse->button() == Qt::RightButton)
                     return true;
+                if (mouse->button() == Qt::LeftButton && m_branch)
+                {
+                    const auto index = m_view->indexAt(mouse->position().toPoint());
+                    if (index.isValid() && index.column() == 0)
+                    {
+                        auto refs = HistoryGraph::hit(m_view->visualRect(index), index, mouse->position().toPoint());
+                        if (refs.isEmpty())
+                        {
+                            const auto cell = m_view->visualRect(index);
+                            const int left = cell.left() + index.data(HistoryGraph::Width).toInt();
+                            const QRect badge(left, cell.center().y() - 12, 156, 24);
+                            if (badge.contains(mouse->position().toPoint()))
+                                refs = index.data(HistoryGraph::NodeRefs).toStringList();
+                        }
+                        if (!refs.isEmpty()) { m_branch(refs.first()); return true; }
+                    }
+                }
             }
             else if (event->type() == QEvent::ToolTip)
             {
@@ -290,6 +308,7 @@ class HistoryDelegate : public QStyledItemDelegate
     QTableView *m_view;
     std::function<void()> m_editing;
     ActionHandler m_action;
+    BranchHandler m_branch;
     std::array<QIcon, ActionCount> m_icons;
     QPersistentModelIndex m_hovered;
     QPersistentModelIndex m_pressed;
@@ -340,7 +359,10 @@ class HistoryDelegate : public QStyledItemDelegate
         if (previous != m_hovered)
             updateRow(previous);
         updateRow(m_hovered);
-        if (hitAction(index, position) >= 0)
+        const auto cell = index.isValid() ? m_view->visualRect(index) : QRect{};
+        const int badgeLeft = cell.left() + index.data(HistoryGraph::Width).toInt();
+        const bool badgeHit = index.isValid() && QRect(badgeLeft, cell.center().y() - 12, 156, 24).contains(position);
+        if (hitAction(index, position) >= 0 || (m_branch && (!HistoryGraph::hit(cell, index, position).isEmpty() || (badgeHit && !index.data(HistoryGraph::NodeRefs).toStringList().isEmpty()))))
             m_view->viewport()->setCursor(Qt::PointingHandCursor);
         else
             m_view->viewport()->unsetCursor();
@@ -385,7 +407,9 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
         case RevisionAction::Compare: compareRevision(context); break;
         case RevisionAction::Milestone: manageTags(context); break;
         case RevisionAction::More: showRevisionMenu(context, position); break;
-        } });
+        } }, [this](const QString &ref) {
+        if (!ref.isEmpty()) emit branchRequested(ref == "HEAD" ? m_service->branchContext(m_id).ref : ref);
+    });
     ui->table->setItemDelegate(delegate);
     connect(delegate, &QAbstractItemDelegate::closeEditor, this, [this]
             {
@@ -522,8 +546,33 @@ void HomePageBackupPage::setBackup(const QString &id, const QString &commit, con
     if (m_tagDialog) m_tagDialog->reject();
     closeRevisionMenu();
     m_id = id;
+    m_branchDetail = false;
+    m_includeCommonAncestors = false;
+    ui->historyScope->setVisible(true);
+    ui->milestoneFilterLabel->setVisible(true);
+    m_milestoneOnly->setVisible(true);
     m_requestedCommit = commit;
     m_branchRef = branchRef;
+    refresh();
+}
+void HomePageBackupPage::setBranchDetail(const QString &id, const QString &branchRef, bool includeCommonAncestors)
+{
+    rememberState();
+    ++m_contextGeneration;
+    if (m_tagDialog) m_tagDialog->reject();
+    closeRevisionMenu();
+    m_id = id;
+    m_requestedCommit.clear();
+    m_branchRef = branchRef;
+    m_branchDetail = true;
+    m_includeCommonAncestors = includeCommonAncestors;
+    ui->historyScope->setVisible(false);
+    ui->milestoneFilterLabel->setVisible(false);
+    m_milestoneOnly->setVisible(false);
+    {
+        const QSignalBlocker blocker(m_milestoneOnly);
+        m_milestoneOnly->setChecked(false);
+    }
     refresh();
 }
 HomePageBackupPage::RevisionContext HomePageBackupPage::revisionContext(const QModelIndex &index) const
@@ -683,6 +732,8 @@ void HomePageBackupPage::refresh()
     const auto browsingName = browsing.startsWith("refs/heads/") ? browsing.mid(11) : browsing.startsWith("refs/remotes/") ? browsing.mid(13) : browsing;
     ui->viewingBranchLabel->setText(m_milestoneOnly->isChecked() ? "仓库共享的里程碑" : m_branchRef.isEmpty() ? "全部方案的历史" : "正在查看：" + browsingName);
     const auto request = ++m_refreshGeneration;
+    m_hiddenAncestorCount = 0;
+    emit commonAncestorsChanged(0);
     m_service->branches(id, this, [this, id, request](const BackupResult<BranchSnapshot> &reply) {
         if (id != m_id || request != m_refreshGeneration || !reply.result.success) return;
         const QSignalBlocker blocker(ui->historyScope);
@@ -780,7 +831,12 @@ void HomePageBackupPage::refresh()
     if (m_milestoneOnly->isChecked()) m_service->history(id, this, receive);
     else
     {
-        HistoryQuery query; query.allBranches = m_branchRef.isEmpty(); if (!m_branchRef.isEmpty()) query.tips = {m_branchRef};
+        HistoryQuery query; query.allBranches = m_branchRef.isEmpty();
+        if (!m_branchRef.isEmpty()) query.tips = {m_branchRef};
+        if (m_branchDetail && !m_includeCommonAncestors)
+        {
+            query.uniqueOnly = true;
+        }
         // The timeline and relationship graph share the same bounded Git batches.
         auto revisions = std::make_shared<QVector<Revision>>();
         auto next = std::make_shared<std::function<void(HistoryQuery)>>();
@@ -790,6 +846,8 @@ void HomePageBackupPage::refresh()
                 if (id != m_id || request != m_refreshGeneration) return;
                 if (!result.result.success) { receive({result.result, {}}); return; }
                 *revisions += result.value.revisions;
+                m_hiddenAncestorCount = result.value.hiddenAncestorCount;
+                emit commonAncestorsChanged(m_hiddenAncestorCount);
                 if (result.value.hasMore) { page.tips = result.value.tips; page.offset = revisions->size(); (*keep)(page); }
                 else receive({result.result, *revisions});
             });

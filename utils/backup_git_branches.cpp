@@ -78,10 +78,38 @@ BackupResult<HistoryPage> GitRepository::branchHistory(const HistoryQuery &query
         if (!resolved.result.success) return {resolved.result};
         if (!page.tips.contains(resolved.value)) page.tips.append(resolved.value);
     }
+    QStringList excluded;
+    for (const auto &tip : query.excludeTips)
+    {
+        const auto resolved = resolve(tip);
+        if (!resolved.result.success) return {resolved.result};
+        if (!excluded.contains(resolved.value) && !page.tips.contains(resolved.value)) excluded.append(resolved.value);
+    }
+    if (query.uniqueOnly && page.tips.size() == 1 && excluded.isEmpty())
+        for (const auto &branch : refs.value)
+            if (branch.head != page.tips.first() && !excluded.contains(branch.head)) excluded.append(branch.head);
     if (page.tips.isEmpty()) return {OperationResult::ok({}), page};
+    if (query.uniqueOnly && page.tips.size() == 1 && !excluded.isEmpty())
+    {
+        auto total = run({"rev-list", "--count", page.tips.first(), "--"});
+        auto uniqueArgs = QStringList{"rev-list", "--count", page.tips.first(), "--not"};
+        uniqueArgs += excluded; uniqueArgs << "--";
+        auto unique = run(uniqueArgs);
+        if (!total.success() || !unique.success()) return {OperationResult::fail("读取历史失败", "无法计算共同祖先")};
+        bool totalValid = false, uniqueValid = false;
+        const auto totalCount = total.output.trimmed().toInt(&totalValid);
+        const auto uniqueCount = unique.output.trimmed().toInt(&uniqueValid);
+        if (!totalValid || !uniqueValid) return {OperationResult::fail("读取历史失败", "共同祖先数量无效")};
+        page.hiddenAncestorCount = qMax(0, totalCount - uniqueCount);
+    }
     QStringList args{"log", "--topo-order", "-z", "--format=%H%x00%h%x00%ct%x00%s%x00%P",
                      "--skip=" + QString::number(query.offset), "--max-count=" + QString::number(query.limit + 1)};
     args += page.tips; args << "--";
+    if (!excluded.isEmpty())
+    {
+        args.removeLast();
+        args << "--not"; args += excluded; args << "--";
+    }
     const auto log = run(args);
     if (!log.success()) return {outcome(log)};
     const auto tagsResult = tags();
@@ -94,7 +122,11 @@ BackupResult<HistoryPage> GitRepository::branchHistory(const HistoryQuery &query
         if (!valid) return {OperationResult::fail("读取历史失败", "提交时间无效")};
         Revision revision{fields[i], fields[i + 3], QDateTime::fromSecsSinceEpoch(time, QTimeZone::UTC), fields[i + 1], {}};
         revision.parents = fields[i + 4].split(' ', Qt::SkipEmptyParts);
-        for (const auto &ref : refs.value) if (ref.head == revision.hash) revision.refs.append(ref.name);
+        for (const auto &ref : refs.value) if (ref.head == revision.hash)
+        {
+            revision.refs.append(ref.name);
+            revision.branchRefs.append(ref.ref);
+        }
         for (const auto &tag : tagsResult.value) if (tag.commitOid == revision.hash) revision.tags.append(tag);
         page.revisions.append(revision);
     }

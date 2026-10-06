@@ -49,6 +49,7 @@ class Navigation : public QObject
     bool canBack() const { return m_index > 0; }
     bool canForward() const { return m_index + 1 < m_routes.size(); }
     void go(const Route &route);
+    void replaceCurrent(const Route &route);
     void back();
     void forward();
     void removeBackup(const QString &id);

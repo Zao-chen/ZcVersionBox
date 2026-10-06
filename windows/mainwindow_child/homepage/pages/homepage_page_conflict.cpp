@@ -82,7 +82,7 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
         populateFiles();
         showQuestion();
     });
-    connect(ui->laterButton, &QPushButton::clicked, this, [this] { emit navigate({PageId::Dashboard, m_id}); });
+    connect(ui->laterButton, &QPushButton::clicked, this, [this] { emit navigate(returnRoute()); });
     auto *cancel = new QPushButton("取消本次处理", this);
     cancel->setObjectName("cancelResolutionButton");
     ui->laterButton->parentWidget()->layout()->addWidget(cancel);
@@ -94,7 +94,7 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
         m_service->cancelResolution(ctx.id, session, this, [this, ctx](const OperationResult &r) {
             if (!current(ctx)) return;
             m_busy = false; emit notification(r);
-            if (r.success) emit navigate({PageId::History, ctx.id}); else updateActions();
+            if (r.success) emit navigate(returnRoute()); else updateActions();
         });
     });
     connect(ui->reanalyzeButton, &QPushButton::clicked, this, [this]
@@ -151,12 +151,13 @@ void HomePageConflictPage::deactivate()
     ui->previewDiffView->clear();
     updateActions();
 }
-void HomePageConflictPage::setBackup(const QString &id)
+void HomePageConflictPage::setBackup(const QString &id, const QString &returnBranchRef)
 {
     rememberPosition();
     ++m_context;
     ++m_contentRequest;
     m_id = id;
+    m_returnBranchRef = returnBranchRef;
     m_repository = m_service->repositoryGeneration(id);
     m_active = true;
     m_session = {};
@@ -171,13 +172,19 @@ void HomePageConflictPage::setBackup(const QString &id)
     ui->previewDiffView->clear();
     load();
 }
+Route HomePageConflictPage::returnRoute() const
+{
+    Route route{m_returnBranchRef.isEmpty() ? PageId::History : PageId::Branches, m_id};
+    route.branchRef = m_returnBranchRef;
+    return route;
+}
 void HomePageConflictPage::load(bool restart, bool resumePreview)
 {
     if (!m_active || m_busy) return;
     if (!restart && m_service->syncState(m_id) == BackupSyncState::Tracking)
     {
         const auto ctx = context();
-        QTimer::singleShot(0, this, [this, ctx] { if (current(ctx)) emit navigate({PageId::History, ctx.id}); });
+        QTimer::singleShot(0, this, [this, ctx] { if (current(ctx)) emit navigate(returnRoute()); });
         return;
     }
     rememberPosition();
@@ -201,7 +208,7 @@ void HomePageConflictPage::load(bool restart, bool resumePreview)
         if (result.value.id.isEmpty())
         {
             emit notification(result.result);
-            emit navigate({PageId::History, m_id});
+            emit navigate(returnRoute());
             return;
         }
         acceptSession(result.value, true, resumePreview);
@@ -593,7 +600,9 @@ void HomePageConflictPage::apply()
             m_positions.remove(m_id);
             m_session = {};
             m_prepared = {};
-            emit navigate({PageId::History, ctx.id, prepared.commit});
+            auto route = returnRoute();
+            route.commit = prepared.commit;
+            emit navigate(route);
         }
         else load();
     });

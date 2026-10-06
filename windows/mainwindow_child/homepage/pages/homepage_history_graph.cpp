@@ -14,7 +14,7 @@ QColor color(int index)
 }
 void populate(QStandardItemModel &model, const QVector<Revision> &revisions, const QString &currentCommit)
 {
-    struct Lane { QString oid; int color; };
+    struct Lane { QString oid; int color; QStringList refs; };
     QVector<Lane> lanes;
     int nextColor = 0, maxLanes = 1;
     const auto find = [&lanes](const QString &oid) {
@@ -25,13 +25,14 @@ void populate(QStandardItemModel &model, const QVector<Revision> &revisions, con
     {
         const auto &revision = revisions[row];
         const bool incoming = find(revision.hash) >= 0;
-        if (!incoming) lanes.append({revision.hash, nextColor++});
+        if (!incoming) lanes.append({revision.hash, nextColor++, revision.branchRefs});
         const auto before = lanes;
         const int node = find(revision.hash), nodeColor = lanes[node].color;
+        for (const auto &ref : revision.branchRefs) if (!lanes[node].refs.contains(ref)) lanes[node].refs.append(ref);
         lanes.removeAt(node);
         int insertion = qMin(node, int(lanes.size()));
         for (int p = 0; p < revision.parents.size(); ++p)
-            if (find(revision.parents[p]) < 0) lanes.insert(insertion++, {revision.parents[p], p == 0 ? nodeColor : nextColor++});
+            if (find(revision.parents[p]) < 0) lanes.insert(insertion++, {revision.parents[p], p == 0 ? nodeColor : nextColor++, p == 0 ? before[node].refs : QStringList{}});
         QVariantList edges;
         for (int i = 0; i < before.size(); ++i)
         {
@@ -39,17 +40,46 @@ void populate(QStandardItemModel &model, const QVector<Revision> &revisions, con
                 for (int p = 0; p < revision.parents.size(); ++p)
                 {
                     const int target = find(revision.parents[p]);
-                    edges.append(QVariant(QVariantList{i, target, p == 0 ? nodeColor : lanes[target].color}));
+                    edges.append(QVariant(QVariantList{i, target, p == 0 ? nodeColor : lanes[target].color, before[node].refs}));
                 }
-            else edges.append(QVariant(QVariantList{i, find(before[i].oid), before[i].color}));
+            else edges.append(QVariant(QVariantList{i, find(before[i].oid), before[i].color, before[i].refs}));
         }
         auto *item = model.item(row, 0);
         item->setData(node, Node); item->setData(edges, Edges); item->setData(incoming, Incoming);
         item->setData(nodeColor, Color); item->setData(revision.parents.size() > 1, Merge);
         item->setData(revision.hash == currentCommit, Current); item->setData(revision.refs, Refs);
+        item->setData(before.value(node).refs, NodeRefs);
+        QVariantList laneRefs; for (const auto &lane : before) laneRefs.append(lane.refs);
+        item->setData(laneRefs, LaneRefs);
         maxLanes = qMax(maxLanes, int(qMax(before.size(), lanes.size())));
     }
     for (int row = 0; row < model.rowCount(); ++row) model.item(row, 0)->setData(24 + maxLanes * 18, Width);
+}
+QStringList hit(const QRect &rect, const QModelIndex &index, const QPoint &position)
+{
+    if (!index.isValid() || index.column() != 0 || !rect.contains(position)) return {};
+    const int lane = qRound((position.x() - (rect.left() + 14)) / 18.0);
+    if (lane < 0) return {};
+    const auto lanes = index.data(LaneRefs).toList();
+    if (lane < lanes.size()) {
+        const auto refs = lanes[lane].toStringList();
+        if (qAbs(position.x() - (rect.left() + 14 + lane * 18)) <= 8) return refs.isEmpty() ? QStringList{"HEAD"} : refs;
+    }
+    for (const auto &value : index.data(Edges).toList()) {
+        const auto edge = value.toList(); if (edge.size() < 4) continue;
+        const int from = edge[0].toInt(), to = edge[1].toInt();
+        const int y0 = from == index.data(Node).toInt() ? rect.center().y() : rect.top();
+        const int y1 = rect.bottom() + 1;
+        const double t = qBound(0.0, (position.y() - y0) / double(qMax(1, y1 - y0)), 1.0);
+        const double x0 = rect.left() + 14 + from * 18, x1 = rect.left() + 14 + to * 18;
+        const double x = x0 + (x1 - x0) * t;
+        if (qAbs(position.x() - x) <= 7)
+        {
+            const auto refs = edge[3].toStringList();
+            return refs.isEmpty() ? QStringList{"HEAD"} : refs;
+        }
+    }
+    return {};
 }
 void paint(QPainter *p, const QRect &rect, const QModelIndex &index)
 {

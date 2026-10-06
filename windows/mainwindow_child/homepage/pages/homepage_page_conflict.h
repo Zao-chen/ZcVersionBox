@@ -13,7 +13,7 @@ class HomePageConflictPage : public QWidget
   public:
     explicit HomePageConflictPage(BackupService *service, QWidget *parent = nullptr);
     ~HomePageConflictPage() override;
-    void setBackup(const QString &id);
+    void setBackup(const QString &id, const QString &returnBranchRef = {});
     void deactivate();
     void refreshTheme();
   signals:
@@ -32,6 +32,7 @@ class HomePageConflictPage : public QWidget
     QVector<DiffFile> m_previewFiles;
     QHash<QString, Position> m_positions;
     QString m_id;
+    QString m_returnBranchRef;
     quint64 m_repository{0}, m_context{0}, m_contentRequest{0};
     int m_file{0}, m_hunk{0};
     bool m_active{false}, m_busy{false}, m_preview{false};
@@ -53,4 +54,5 @@ class HomePageConflictPage : public QWidget
     void loadContent(QPlainTextEdit *editor, const QString &path, ConflictSide side, quint64 request);
     void updateActions();
     void updateLayout();
+    Route returnRoute() const;
 };
