@@ -544,3 +544,7 @@ BackupTaskId BackupService::deleteRemoteBranch(const BranchRequest &r, QObject *
 { return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.deleteRemoteBranch(r); }); }
 BackupTaskId BackupService::fetchBranches(const BranchContext &r, QObject *c, Completion f)
 { return d->mutate(r.id, c, std::move(f), [r](BackupEngine &e) { return e.fetchBranches(r); }); }
+BackupTaskId BackupService::prepareBranchSwitch(const BranchRequest &r, QObject *c, Reply<PreparedBranchSwitch> f)
+{ return d->submit<PreparedBranchSwitch>(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.prepareBranchSwitch(r); }); }
+BackupTaskId BackupService::switchBranch(const PreparedBranchSwitch &r, QObject *c, Completion f)
+{ return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.switchBranch(r); }); }

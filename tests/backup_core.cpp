@@ -249,6 +249,56 @@ class BackupCoreRegression : public QObject
         CHECK_OK(history.result); QVERIFY(history.value.hasMore);
         QCOMPARE(history.value.revisions.first().parents, QStringList{before});
     }
+    void branchSwitchSavesWorkAndKeepsIgnoredFiles()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/work";
+        writeFile(source + "/.gitignore", "cache/\n");
+        writeFile(source + "/document.txt", "original\n");
+        writeFile(source + "/cache/local.txt", "first cache\n");
+        CHECK_OK(service.addLocal(source)); const auto id = service.idForSource(source);
+        const auto original = head(service, id);
+        CHECK_OK(service.createBranch(id, "试验"));
+        writeFile(source + "/document.txt", "unsaved main\n");
+        writeFile(source + "/cache/local.txt", "shared cache\n");
+        writeFile(source + "/.git/config", "source metadata");
+        const auto request = service.prepareBranchSwitch(id, "refs/heads/试验");
+        CHECK_OK(request.result); QVERIFY(request.value.savesChanges);
+        QCOMPARE(head(service, id), original);
+        CHECK_OK(service.switchBranch(request.value));
+        QCOMPARE(readFile(source + "/document.txt"), QByteArray("original\n"));
+        QCOMPARE(readFile(source + "/cache/local.txt"), QByteArray("shared cache\n"));
+        QCOMPARE(readFile(source + "/.git/config"), QByteArray("source metadata"));
+        QCOMPARE(service.branchContext(id).ref, QString("refs/heads/试验"));
+        const auto savedMain = git(service.repoPath(id), {"show", "main:work/document.txt"});
+        QCOMPARE(savedMain.bytes, QByteArray("unsaved main\n"));
+        const auto topicHead = head(service, id);
+        CHECK_OK(service.switchBranch(id, "refs/heads/main"));
+        QCOMPARE(readFile(source + "/document.txt"), QByteArray("unsaved main\n"));
+        QCOMPARE(git(service.repoPath(id), {"rev-parse", "试验"}).output.trimmed(), topicHead);
+        QVERIFY(!service.switchBranch(request.value).success);
+    }
+    void branchSwitchRejectsStaleConfirmationAndIgnoredCollision()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/work";
+        writeFile(source + "/file.txt", "one"); writeFile(source + "/local.txt", "tracked");
+        CHECK_OK(service.addLocal(source)); const auto id = service.idForSource(source);
+        CHECK_OK(service.createBranch(id, "old"));
+        QVERIFY(QFile::remove(source + "/local.txt")); CHECK_OK(service.backup(id));
+        writeFile(source + "/.gitignore", "local.txt\n"); CHECK_OK(service.backup(id));
+        writeFile(source + "/local.txt", "private");
+        const auto current = head(service, id);
+        QVERIFY(!service.prepareBranchSwitch(id, "refs/heads/old").result.success);
+        QCOMPARE(readFile(source + "/local.txt"), QByteArray("private"));
+        QCOMPARE(head(service, id), current);
+        QVERIFY(QFile::remove(source + "/local.txt"));
+        const auto prepared = service.prepareBranchSwitch(id, "refs/heads/old"); CHECK_OK(prepared.result);
+        writeFile(source + "/file.txt", "changed while confirming");
+        QVERIFY(!service.switchBranch(prepared.value).success);
+        QCOMPARE(service.branchContext(id).ref, QString("refs/heads/main"));
+        QCOMPARE(readFile(source + "/file.txt"), QByteArray("changed while confirming"));
+    }
     void isolatedResolutionPreservesBytesAndChoices_data()
     {
         QTest::addColumn<QByteArray>("base");
