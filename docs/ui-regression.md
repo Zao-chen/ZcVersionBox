@@ -6,6 +6,11 @@
 
 | 场景 | 回归证据 |
 | --- | --- |
+| 方案引用与身份 | 中文名称、创建/改名、同 OID 分支、外部切换、普通/强制删除、删除前并发提交的 OID 校验 |
+| 保存后切换 | 修改只提交到原方案、无变化不新增、忽略文件与源 `.git` 保留、覆盖碰撞、确认过期、源/外部分支变化及写入故障恢复 |
+| 原生合并与云端方案 | 快进、已包含、双亲提交、重启继续、取消、重命名自动合并/冲突与 Git 树对照；fetch、upstream、非当前分支上传、新名发布、远程删除 lease、端点变化与非快进拒绝 |
+| 方案界面 | 浏览与切换分离、真实提交关系图、浅深色和 760/1080 像素宽度、实际点击新建/切换确认及取消按钮 |
+| 多方案重建保护 | 本地多分支、云端分支、独立推送地址含其他分支、离线及确认后断网时保留原仓库 |
 | 默认文件范围 | 重构前先运行行为基线：build 单独变化不触发；其他变化触发时复制 build；隐藏文件处理、Git ignore 与副本/提交区别保持 |
 | 监控调度 | 注入时钟验证 500 ms 静默、5 s 最大合并、30 s 完整校验；执行中再次变化、失效快照、轮转、单扫描/单自动备份上限、退避和取消 |
 | 原生文件事件 | 临时目录中的嵌套写入、原子保存、新目录、源目录改名及重建、共享监听、无关/build 事件过滤；登记失败和静默遗漏均由完整校验补偿 |
@@ -195,3 +200,29 @@ Cocoa 测试发现 Return 在原生历史表格中被当作编辑键，现通过
 PR #22 首轮 CI 中，macOS 完整构建与回归通过，Linux 构建和 `backup_core` 通过；Linux `regression` 在历史页键盘测试的焦点断言失败。`revisionTimeAndSelection` 的窗口此前设置 `WA_DontShowOnScreen`，无法可靠获得 `WidgetShortcut` 所需的活动窗口焦点。现让该用例正常显示隔离窗口，保留焦点与 Return 键行为断言；本地 Cocoa 定向复验 3 passed、0 failed（`build/conflict-pr-focus-cocoa.txt`），跨平台结果以 PR 最新检查为准。
 
 首轮 Windows 日志还显示相同的焦点失败，以及确认弹窗路径断言未适配本机分隔符：界面使用反斜杠，测试却匹配正斜杠。现按 `QDir::toNativeSeparators` 比较完整源路径，继续校验删除数量，生产弹窗内容不变。
+
+## 2026-10-06 Git 原生方案管理
+
+在 `feature/branch-management` 中完成真实分支管理、保存后切换、分支历史/关系图、本地合并和云端分支操作。使用 macOS 26.6 / Qt 6.8.3 arm64 现有 `build` 增量构建，`ZcVersionBox`、`zc_tests`、`zc_backup_tests` 均构建成功。没有启动正常应用读取真实备份。
+
+最终执行：
+
+```sh
+ctest --test-dir build -R '^(backup_core|regression)$' --parallel 2 --output-on-failure
+```
+
+| 验证 | 实际结果 | 本地日志 |
+| --- | --- | --- |
+| `backup_core` | 144 passed、0 failed、5 skipped | `build/tests/backup_core.txt` |
+| `regression` | 40 passed、0 failed、4 skipped | `build/tests/regression.txt` |
+| Cocoa 历史行操作与快捷键 | 4 passed、0 failed、0 skipped | `build/branch-keyboard-cocoa.txt` |
+| 原生合并树/父提交对照 | 6 passed、0 failed | `build/branch-native-merge.txt` |
+| 合并本地忽略规则、执行位与既有合并行为 | 5 passed、0 failed | `build/branch-merge-rules.txt` |
+
+通过数包含初始化和清理。核心跳过项为 Linux 专用文件系统/执行位用例；界面跳过项为 Linux 设置适配器和 macOS offscreen 的三项焦点场景。历史菜单及版本键盘操作已额外使用原生 Cocoa 验证。未在本机验证 Windows/Linux 构建、真实托管平台认证或发布打包。
+
+方案界面定向测试实际点击新建、切换与取消按钮，检查按钮位于可见布局中，并核对浏览不会改变 HEAD 或源内容。检查了 `build/branch-screenshots/` 中方案列表、关系图的浅深色 1080×740 / 760×520 截图及切换确认框。历史页另以“正在查看历史”标明浏览分支，顶部“正在使用”保留工作分支含义。
+
+新增核心用例对照普通 Git 的引用、upstream、树与父提交，覆盖重命名自动合并/冲突、快进、已包含、重启续办、取消、忽略文件碰撞、过期确认、写入失败、外部修改、远端并发和非快进拒绝。旧测试中的外部改名改为服务改名，保留单独的外部切换拒绝测试；旧离线重建测试按本轮确定的“无法确认云端范围时停止”规则更新。
+
+验收主线与命令见 [方案使用说明](branch-management.md#验收步骤)。验收前保留本地功能分支，不推送或合并。
