@@ -424,6 +424,45 @@ class BackupCoreRegression : public QObject
         QVERIFY(!runGit(service.repoPath(id), {"cat-file", "-e", "HEAD:work/private.txt"}).success());
         QCOMPARE(readFile(source + "/new.txt"), conflict ? QByteArray("first\ntopic\nlast\n") : QByteArray("first\nmain\nlast\n"));
     }
+    void branchMergeRejectsBranchChangeDuringPreparation()
+    {
+        TestDirectory dir;
+        QString repo;
+        bool race = false;
+        BackupDependencies deps;
+        deps.git = [&](const QString &path, const QStringList &args, const GitOptions &options) {
+            const auto result = runGit(path, args, options);
+            if (race && path == repo && args.contains("clone") && result.success())
+            {
+                race = false;
+                git(repo, {"switch", "other"});
+            }
+            return result;
+        };
+        TestBackupService service(pathsIn(dir), nullptr, nullptr, deps);
+        const auto source = dir.path() + "/file.txt";
+        writeFile(source, "base\n"); CHECK_OK(service.addLocal(source));
+        const auto id = service.idForSource(source);
+        repo = service.repoPath(id);
+        CHECK_OK(service.createBranch(id, "other"));
+        CHECK_OK(service.createBranch(id, "topic"));
+        CHECK_OK(service.switchBranch(id, "refs/heads/topic"));
+        writeFile(source, "topic\n"); CHECK_OK(service.backup(id));
+        CHECK_OK(service.switchBranch(id, "refs/heads/main"));
+        const auto original = head(service, id);
+        const auto request = service.branchRequest(id, "refs/heads/topic");
+        race = true;
+        const auto prepared = awaitBackup<BackupResult<SyncResolutionSession>>([&](auto done) {
+            service.prepareBranchMerge(request, &service, done);
+        });
+        QVERIFY(!race);
+        QVERIFY(!prepared.result.success);
+        QCOMPARE(GitRepository(repo).branchRef().value, QString("refs/heads/other"));
+        QCOMPARE(head(service, id), original);
+        QCOMPARE(git(repo, {"rev-parse", "main"}).output.trimmed(), original);
+        QCOMPARE(readFile(source), QByteArray("base\n"));
+        QVERIFY(record(service, id).resolutionSession.isEmpty());
+    }
     void branchRemoteTrackingAndPushOnlyRebuildGuard()
     {
         RemoteFixture f;

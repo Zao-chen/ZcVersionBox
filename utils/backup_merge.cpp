@@ -259,7 +259,9 @@ OperationResult BackupMerge::create(const BackupRecord &record, const QString &l
               {"localCommit", local.value}, {"remoteCommit", remoteCommit}, {"expectedHead", head.value}, {"remoteName", remote.value},
               {"remoteUrl", url.output.trimmed()}, {"remoteRef", ref.value}, {"localTree", encodeTree(sourceTree.value)}, {"remoteTree", encodeTree(remoteTree.value)},
               {"extras", encodeTree(extras)}, {"localTime", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
-    m_data["expectedBranch"] = live.branchRef().value;
+    // Keep the branch identity from the request, even if another Git client
+    // switches to an alias of the same commit while the candidate is built.
+    m_data["expectedBranch"] = record.branchRef;
     m_data["branchVersion"] = QString::number(record.branchVersion);
     m_data["mergeRef"] = mergeRef;
     m_data["localLabel"] = mergeRef.isEmpty() ? QStringLiteral("此电脑上的内容 (本地)") : record.branchRef.mid(11);
@@ -471,7 +473,8 @@ OperationResult BackupMerge::verify(const BackupRecord &record, const QString &l
     const auto head = live.head(), remote = live.remoteName(), ref = live.targetRef();
     if (!head.result.success || head.value != expectedHead()) return failure("备份版本在处理期间发生变化，请检查后重新分析。");
     const auto expectedBranch = m_data["expectedBranch"].toString(record.branchRef);
-    if (live.branchRef().value != expectedBranch || (!m_data["branchVersion"].isUndefined() && record.branchVersion != m_data["branchVersion"].toString().toULongLong()))
+    if (expectedBranch != record.branchRef || live.branchRef().value != record.branchRef ||
+        (!m_data["branchVersion"].isUndefined() && record.branchVersion != m_data["branchVersion"].toString().toULongLong()))
         return failure("当前方案在处理期间发生变化，请重新分析。");
     const auto mergeRef = m_data["mergeRef"].toString();
     if (!mergeRef.isEmpty())
