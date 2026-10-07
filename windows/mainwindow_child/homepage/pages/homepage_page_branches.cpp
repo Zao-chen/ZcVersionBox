@@ -67,6 +67,7 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     });
     connect(ui->cancelTask, &QPushButton::clicked, this, [this] { if (m_task) m_service->cancel(m_task); });
     connect(m_history, &HomePageBackupPage::navigate, this, &HomePageBranchesPage::navigate);
+    connect(m_history, &HomePageBackupPage::notification, this, &HomePageBranchesPage::notification);
     connect(m_history, &HomePageBackupPage::createBranchRequested, this, &HomePageBranchesPage::createFrom);
     connect(m_history, &HomePageBackupPage::branchRequested, this, [this](const QString &ref)
     {
@@ -206,7 +207,9 @@ void HomePageBranchesPage::requestSwitch(const QString &id, const QString &ref)
             list->setReadOnly(true); list->setObjectName("branchChanges"); dialog.contentLayout()->addWidget(list);
             auto *buttons = dialogButtons(dialog);
             buttons->button(QDialogButtonBox::Ok)->setText(prepared.savesChanges ? "保存并切换" : "切换方案");
-            if (dialog.exec() != QDialog::Accepted || !guard) { m_busy = false; m_task = 0; updateActions(); return; }
+            const auto accepted = dialog.exec() == QDialog::Accepted;
+            if (!guard) return;
+            if (!accepted) { m_busy = false; m_task = 0; updateActions(); return; }
             m_task = m_service->switchBranch(prepared, this, [this](const OperationResult &result) { complete(result); });
         });
     });

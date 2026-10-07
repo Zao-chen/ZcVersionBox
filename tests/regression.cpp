@@ -2261,6 +2261,69 @@ class Regression : public QObject
         QTRY_VERIFY(!popover);
         QTRY_VERIFY(!notification.isVisible());
     }
+    void historyBranchBadgesKeepExactTargets()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        QVERIFY(service.renameBranch(id, service.branchContext(id).ref, "main").success);
+        QVERIFY(service.createBranch(id, "earlier").success);
+        writeFile(source, "latest\n"); QVERIFY(service.backup(id).success);
+        QVERIFY(service.createBranch(id, "alias").success);
+        HomePageBackupPage page(&service);
+        page.resize(1080, 700); page.setAttribute(Qt::WA_DontShowOnScreen); page.show();
+        page.setBackup(id); settle(service);
+        auto *table = page.findChild<QTableView *>("table"); QVERIFY(table);
+        QCOMPARE(table->model()->rowCount(), 2);
+        QSignalSpy requested(&page, &HomePageBackupPage::branchRequested);
+        const auto badgePoint = [table](int row, int offset = 4) {
+            const auto index = table->model()->index(row, 0);
+            const auto cell = table->visualRect(index);
+            return QPoint(cell.left() + index.data(HistoryGraph::Width).toInt() + offset, cell.center().y());
+        };
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, badgePoint(0));
+        auto *menu = page.findChild<QMenu *>("historyBranchMenu"); QVERIFY(menu);
+        QAction *alias = nullptr;
+        for (auto *action : menu->actions()) if (action->data().toString() == "refs/heads/alias") alias = action;
+        QVERIFY(alias); alias->trigger(); menu->close();
+        QCOMPARE(requested.count(), 1);
+        QCOMPARE(requested.takeFirst().first().toString(), QString("refs/heads/alias"));
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, badgePoint(1));
+        QCOMPARE(requested.count(), 1);
+        QCOMPARE(requested.takeFirst().first().toString(), QString("refs/heads/earlier"));
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, badgePoint(1, 145));
+        QCOMPARE(requested.count(), 0);
+        QVERIFY(table->model()->index(1, 0).data(HistoryGraph::NodeRefs).toStringList().contains("refs/heads/earlier"));
+
+        QVERIFY(runGit(service.repoPath(id), {"tag", "milestone", "HEAD"}).success());
+        page.refresh(); settle(service);
+        auto *filter = page.findChild<oclero::qlementine::Switch *>(); QVERIFY(filter);
+        filter->setChecked(true); settle(service);
+        const auto cell = table->visualRect(table->model()->index(0, 0));
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, QPoint(cell.left() + 14, cell.center().y()));
+        QCOMPARE(requested.count(), 0);
+        QCOMPARE(readFile(source), QByteArray("latest\n"));
+    }
+    void branchDetailReportsHistoryErrors()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        HomePageBranchesPage page(&service);
+        page.setAttribute(Qt::WA_DontShowOnScreen); page.show();
+        page.setBackup(id, service.branchContext(id).ref); settle(service);
+        auto *table = page.findChild<QTableView *>("table"); QVERIFY(table);
+        QCOMPARE(table->model()->rowCount(), 1);
+        const auto original = head(service, id);
+        QSignalSpy notifications(&page, &HomePageBranchesPage::notification);
+        QVERIFY(table->model()->setData(table->model()->index(0, 0), QString()));
+        settle(service);
+        QCOMPARE(notifications.count(), 1);
+        QVERIFY(!qvariant_cast<OperationResult>(notifications.first().first()).success);
+        QCOMPARE(head(service, id), original);
+    }
     void branchUiBrowsingGraphAndConfirmation()
     {
         TestDirectory dir; TestBackupService service(pathsIn(dir));

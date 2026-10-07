@@ -251,6 +251,54 @@ class BackupCoreRegression : public QObject
         CHECK_OK(history.result); QVERIFY(history.value.hasMore);
         QCOMPARE(history.value.revisions.first().parents, QStringList{before});
     }
+    void branchHistoryPinsSharedAncestors_data()
+    {
+        QTest::addColumn<bool>("otherBranch");
+        QTest::newRow("existing-shared-history") << true;
+        QTest::newRow("initially-no-shared-history") << false;
+    }
+    void branchHistoryPinsSharedAncestors()
+    {
+        QFETCH(bool, otherBranch);
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/file.txt";
+        writeFile(source, "base\n"); CHECK_OK(service.addLocal(source));
+        const auto id = service.idForSource(source), repo = service.repoPath(id);
+        QStringList commits{head(service, id)};
+        const auto tree = git(repo, {"rev-parse", "HEAD^{tree}"}).output.trimmed();
+        for (int i = 0; i < 5; ++i)
+            commits.append(git(repo, {"commit-tree", tree, "-p", commits.last(), "-m", QString::number(i)}).output.trimmed());
+        git(repo, {"update-ref", "refs/heads/main", commits.last()});
+        if (otherBranch) git(repo, {"branch", "shared", commits.first()});
+        GitRepository repository(repo);
+        HistoryQuery query; query.tips = {"refs/heads/main"}; query.uniqueOnly = true;
+        const auto expected = repository.branchHistory(query); CHECK_OK(expected.result);
+        query.limit = 2;
+        auto page = repository.branchHistory(query); CHECK_OK(page.result); QVERIFY(page.value.hasMore);
+        QVector<Revision> revisions = page.value.revisions;
+        const auto hidden = page.value.hiddenAncestorCount;
+        // A newly created/moved branch must not change the remaining pages.
+        git(repo, {"update-ref", "refs/heads/shared", commits[3]});
+        while (page.value.hasMore)
+        {
+            query.tips = page.value.tips;
+            query.excludeTips = page.value.excludeTips;
+            query.refsPinned = true;
+            query.offset = revisions.size();
+            page = repository.branchHistory(query); CHECK_OK(page.result);
+            QCOMPARE(page.value.hiddenAncestorCount, hidden);
+            revisions += page.value.revisions;
+        }
+        QCOMPARE(revisions.size(), expected.value.revisions.size());
+        for (int i = 0; i < revisions.size(); ++i) QCOMPARE(revisions[i].hash, expected.value.revisions[i].hash);
+
+        // Distinct names at the same commit still share all of their history.
+        git(repo, {"update-ref", "refs/heads/shared", commits.last()});
+        HistoryQuery shared; shared.tips = {"refs/heads/main"}; shared.uniqueOnly = true;
+        const auto aliases = repository.branchHistory(shared); CHECK_OK(aliases.result);
+        QVERIFY(aliases.value.revisions.isEmpty());
+        QCOMPARE(aliases.value.hiddenAncestorCount, commits.size());
+    }
     void branchSwitchSavesWorkAndKeepsIgnoredFiles()
     {
         TestDirectory dir; TestBackupService service(pathsIn(dir));

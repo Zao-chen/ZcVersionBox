@@ -26,13 +26,18 @@ void populate(QStandardItemModel &model, const QVector<Revision> &revisions, con
         const auto &revision = revisions[row];
         const bool incoming = find(revision.hash) >= 0;
         if (!incoming) lanes.append({revision.hash, nextColor++, revision.branchRefs});
-        const auto before = lanes;
         const int node = find(revision.hash), nodeColor = lanes[node].color;
         for (const auto &ref : revision.branchRefs) if (!lanes[node].refs.contains(ref)) lanes[node].refs.append(ref);
+        const auto before = lanes;
         lanes.removeAt(node);
         int insertion = qMin(node, int(lanes.size()));
         for (int p = 0; p < revision.parents.size(); ++p)
-            if (find(revision.parents[p]) < 0) lanes.insert(insertion++, {revision.parents[p], p == 0 ? nodeColor : nextColor++, p == 0 ? before[node].refs : QStringList{}});
+        {
+            const int parent = find(revision.parents[p]);
+            if (parent < 0) lanes.insert(insertion++, {revision.parents[p], p == 0 ? nodeColor : nextColor++, before[node].refs});
+            else for (const auto &ref : before[node].refs)
+                if (!lanes[parent].refs.contains(ref)) lanes[parent].refs.append(ref);
+        }
         QVariantList edges;
         for (int i = 0; i < before.size(); ++i)
         {
@@ -48,6 +53,7 @@ void populate(QStandardItemModel &model, const QVector<Revision> &revisions, con
         item->setData(node, Node); item->setData(edges, Edges); item->setData(incoming, Incoming);
         item->setData(nodeColor, Color); item->setData(revision.parents.size() > 1, Merge);
         item->setData(revision.hash == currentCommit, Current); item->setData(revision.refs, Refs);
+        item->setData(revision.branchRefs, TipRefs);
         item->setData(before.value(node).refs, NodeRefs);
         QVariantList laneRefs; for (const auto &lane : before) laneRefs.append(lane.refs);
         item->setData(laneRefs, LaneRefs);

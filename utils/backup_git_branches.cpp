@@ -83,11 +83,16 @@ BackupResult<HistoryPage> GitRepository::branchHistory(const HistoryQuery &query
     {
         const auto resolved = resolve(tip);
         if (!resolved.result.success) return {resolved.result};
-        if (!excluded.contains(resolved.value) && !page.tips.contains(resolved.value)) excluded.append(resolved.value);
+        if (!excluded.contains(resolved.value)) excluded.append(resolved.value);
     }
-    if (query.uniqueOnly && page.tips.size() == 1 && excluded.isEmpty())
+    if (query.uniqueOnly && page.tips.size() == 1 && excluded.isEmpty() && !query.refsPinned)
+    {
+        auto selectedRefs = query.tips;
+        if (selectedRefs.isEmpty() || selectedRefs.contains("HEAD")) selectedRefs.append(branchRef().value);
         for (const auto &branch : refs.value)
-            if (branch.head != page.tips.first() && !excluded.contains(branch.head)) excluded.append(branch.head);
+            if (!selectedRefs.contains(branch.ref) && !excluded.contains(branch.head)) excluded.append(branch.head);
+    }
+    page.excludeTips = excluded;
     if (page.tips.isEmpty()) return {OperationResult::ok({}), page};
     if (query.uniqueOnly && page.tips.size() == 1 && !excluded.isEmpty())
     {

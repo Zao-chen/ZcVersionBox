@@ -167,6 +167,7 @@ struct HistoryQuery
     int offset{0}, limit{200};
     bool allBranches{false}, uniqueOnly{false};
     QStringList excludeTips;
+    bool refsPinned{false};
 };
 struct HistoryPage
 {
@@ -174,6 +175,7 @@ struct HistoryPage
     QStringList tips;
     bool hasMore{false};
     int hiddenAncestorCount{0};
+    QStringList excludeTips;
 };
 struct ImportEntry
 {

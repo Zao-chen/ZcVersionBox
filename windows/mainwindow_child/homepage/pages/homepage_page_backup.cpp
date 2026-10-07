@@ -48,7 +48,7 @@ class HistoryDelegate : public QStyledItemDelegate
 {
   public:
     using ActionHandler = std::function<void(const QModelIndex &, RevisionAction, const QPoint &)>;
-    using BranchHandler = std::function<void(const QString &)>;
+    using BranchHandler = std::function<void(const QModelIndex &, const QStringList &, const QPoint &)>;
     HistoryDelegate(QTableView *view, std::function<void()> editing, ActionHandler action, BranchHandler branch = {})
         : QStyledItemDelegate(view), m_view(view), m_editing(std::move(editing)), m_action(std::move(action)), m_branch(std::move(branch))
     {
@@ -145,16 +145,15 @@ class HistoryDelegate : public QStyledItemDelegate
                 if (!refs.isEmpty())
                 {
                     const auto badgeFont = UiStyle::font(UiStyle::FontRole::Caption);
-                    const QFontMetrics metrics(badgeFont, painter->device());
+                    const QFontMetrics metrics(badgeFont, m_view->viewport());
                     const auto label = refs.first() + (refs.size() > 1 ? QString(" +%1").arg(refs.size() - 1) : QString());
-                    const int badgeWidth = qMin(qMin(156, textRect.width() / 2), metrics.horizontalAdvance(label) + 16);
-                    const QRect badge(textRect.left(), textRect.center().y() - 10, qMax(0, badgeWidth), 20);
+                    const auto badge = branchBadgeRect(opt.rect, index);
                     auto accent = HistoryGraph::color(index.data(HistoryGraph::Color).toInt());
                     auto background = accent; background.setAlpha(28);
                     painter->setPen(Qt::NoPen); painter->setBrush(background); painter->drawRoundedRect(badge, 4, 4);
                     painter->setFont(badgeFont); painter->setPen(accent);
                     painter->drawText(badge.adjusted(7, 0, -7, 0), Qt::AlignVCenter,
-                        metrics.elidedText(label, Qt::ElideRight, qMax(0, badgeWidth - 14)));
+                        metrics.elidedText(label, Qt::ElideRight, qMax(0, badge.width() - 14)));
                     textRect.setLeft(badge.right() + 8);
                 }
             }
@@ -246,18 +245,11 @@ class HistoryDelegate : public QStyledItemDelegate
                 if (mouse->button() == Qt::LeftButton && m_branch)
                 {
                     const auto index = m_view->indexAt(mouse->position().toPoint());
-                    if (index.isValid() && index.column() == 0)
+                    const auto refs = branchRefsAt(index, mouse->position().toPoint());
+                    if (!refs.isEmpty())
                     {
-                        auto refs = HistoryGraph::hit(m_view->visualRect(index), index, mouse->position().toPoint());
-                        if (refs.isEmpty())
-                        {
-                            const auto cell = m_view->visualRect(index);
-                            const int left = cell.left() + index.data(HistoryGraph::Width).toInt();
-                            const QRect badge(left, cell.center().y() - 12, 156, 24);
-                            if (badge.contains(mouse->position().toPoint()))
-                                refs = index.data(HistoryGraph::NodeRefs).toStringList();
-                        }
-                        if (!refs.isEmpty()) { m_branch(refs.first()); return true; }
+                        m_branch(index, refs, m_view->viewport()->mapToGlobal(mouse->position().toPoint()));
+                        return true;
                     }
                 }
             }
@@ -317,6 +309,23 @@ class HistoryDelegate : public QStyledItemDelegate
     bool m_actionPress{false};
     bool m_pointerInside{false};
     mutable bool m_editorOpen{false};
+    QRect branchBadgeRect(const QRect &cell, const QModelIndex &index) const
+    {
+        const auto refs = index.data(HistoryGraph::Refs).toStringList();
+        if (refs.isEmpty() || index.column() != 0 || m_view->property("milestonesOnly").toBool()) return {};
+        const int graphWidth = index.data(HistoryGraph::Width).toInt();
+        const auto label = refs.first() + (refs.size() > 1 ? QString(" +%1").arg(refs.size() - 1) : QString());
+        const QFontMetrics metrics(UiStyle::font(UiStyle::FontRole::Caption), m_view->viewport());
+        const int width = qMax(0, qMin(qMin(156, (cell.width() - graphWidth - 12) / 2), metrics.horizontalAdvance(label) + 16));
+        return {cell.left() + graphWidth, cell.center().y() - 10, width, 20};
+    }
+    QStringList branchRefsAt(const QModelIndex &index, const QPoint &position) const
+    {
+        if (!index.isValid() || index.column() != 0 || m_editorOpen || m_view->property("milestonesOnly").toBool()) return {};
+        const auto cell = m_view->visualRect(index);
+        if (branchBadgeRect(cell, index).contains(position)) return index.data(HistoryGraph::TipRefs).toStringList();
+        return HistoryGraph::hit(cell, index, position);
+    }
     void updateIcons()
     {
         m_icons = {UiStyle::icon("preview"), UiStyle::icon("compare"), UiStyle::icon("milestone"), UiStyle::icon("more")};
@@ -359,10 +368,7 @@ class HistoryDelegate : public QStyledItemDelegate
         if (previous != m_hovered)
             updateRow(previous);
         updateRow(m_hovered);
-        const auto cell = index.isValid() ? m_view->visualRect(index) : QRect{};
-        const int badgeLeft = cell.left() + index.data(HistoryGraph::Width).toInt();
-        const bool badgeHit = index.isValid() && QRect(badgeLeft, cell.center().y() - 12, 156, 24).contains(position);
-        if (hitAction(index, position) >= 0 || (m_branch && (!HistoryGraph::hit(cell, index, position).isEmpty() || (badgeHit && !index.data(HistoryGraph::NodeRefs).toStringList().isEmpty()))))
+        if (hitAction(index, position) >= 0 || (m_branch && !branchRefsAt(index, position).isEmpty()))
             m_view->viewport()->setCursor(Qt::PointingHandCursor);
         else
             m_view->viewport()->unsetCursor();
@@ -407,8 +413,8 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
         case RevisionAction::Compare: compareRevision(context); break;
         case RevisionAction::Milestone: manageTags(context); break;
         case RevisionAction::More: showRevisionMenu(context, position); break;
-        } }, [this](const QString &ref) {
-        if (!ref.isEmpty()) emit branchRequested(ref == "HEAD" ? m_service->branchContext(m_id).ref : ref);
+        } }, [this](const QModelIndex &index, const QStringList &refs, const QPoint &position) {
+        showBranchMenu(revisionContext(index), refs, position);
     });
     ui->table->setItemDelegate(delegate);
     connect(delegate, &QAbstractItemDelegate::closeEditor, this, [this]
@@ -689,6 +695,29 @@ void HomePageBackupPage::showRevisionMenu(const RevisionContext &context, const 
     add(m_restore, &HomePageBackupPage::restoreRevision);
     menu->popup(position);
 }
+void HomePageBackupPage::showBranchMenu(const RevisionContext &context, const QStringList &refs, const QPoint &position)
+{
+    if (!isCurrentContext(context) || refs.isEmpty()) return;
+    closeRevisionMenu();
+    const auto open = [this, context](const QString &ref) {
+        if (isCurrentContext(context))
+            emit branchRequested(ref == "HEAD" ? context.workingBranch.ref : ref);
+    };
+    if (refs.size() == 1) { open(refs.first()); return; }
+    auto *menu = new QMenu(this);
+    menu->setObjectName("historyBranchMenu");
+    m_revisionMenu = menu;
+    connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+    menu->addSection("查看方案");
+    for (const auto &ref : refs)
+    {
+        const auto name = ref.startsWith("refs/heads/") ? ref.mid(11) : ref.startsWith("refs/remotes/") ? ref.mid(13) : ref;
+        auto *action = menu->addAction(name);
+        action->setData(ref);
+        connect(action, &QAction::triggered, this, [open, ref] { open(ref); });
+    }
+    menu->popup(position);
+}
 void HomePageBackupPage::closeRevisionMenu()
 {
     if (m_revisionMenu)
@@ -848,7 +877,14 @@ void HomePageBackupPage::refresh()
                 *revisions += result.value.revisions;
                 m_hiddenAncestorCount = result.value.hiddenAncestorCount;
                 emit commonAncestorsChanged(m_hiddenAncestorCount);
-                if (result.value.hasMore) { page.tips = result.value.tips; page.offset = revisions->size(); (*keep)(page); }
+                if (result.value.hasMore)
+                {
+                    page.tips = result.value.tips;
+                    page.excludeTips = result.value.excludeTips;
+                    page.refsPinned = true;
+                    page.offset = revisions->size();
+                    (*keep)(page);
+                }
                 else receive({result.result, *revisions});
             });
         };
