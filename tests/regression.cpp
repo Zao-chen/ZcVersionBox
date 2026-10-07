@@ -2305,6 +2305,74 @@ class Regression : public QObject
         QCOMPARE(requested.count(), 0);
         QCOMPARE(readFile(source), QByteArray("latest\n"));
     }
+    void branchDeletionKeepsConfirmedVersion_data()
+    {
+        QTest::addColumn<bool>("changedDuringConfirmation");
+        QTest::newRow("unchanged-version") << false;
+        QTest::newRow("refreshed-version") << true;
+    }
+    void branchDeletionKeepsConfirmedVersion()
+    {
+        QFETCH(bool, changedDuringConfirmation);
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        QVERIFY(service.createBranch(id, "topic").success);
+        writeFile(source, "latest\n"); QVERIFY(service.backup(id).success);
+        const auto latest = head(service, id);
+        HomePageBranchesPage page(&service);
+        page.resize(1080, 700); page.setAttribute(Qt::WA_DontShowOnScreen); page.show();
+        page.setBackup(id, "refs/heads/topic"); settle(service);
+        auto *operations = page.findChild<QPushButton *>("operations"); QVERIFY(operations && operations->isEnabled());
+        QSignalSpy notifications(&page, &HomePageBranchesPage::notification);
+        QSignalSpy routes(&page, &HomePageBranchesPage::replaceRoute);
+        bool confirmed = false, updated = false;
+        QTimer responder;
+        responder.setInterval(10);
+        connect(&responder, &QTimer::timeout, &page, [&] {
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+            {
+                responder.stop();
+                confirmed = true;
+                updated = !changedDuringConfirmation || runGit(service.repoPath(id), {"update-ref", "refs/heads/topic", latest}).success();
+                page.refresh(); settle(service);
+                dialog->accept();
+            }
+        });
+        QTimer choose;
+        choose.setInterval(10);
+        connect(&choose, &QTimer::timeout, &page, [&] {
+            if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()))
+            {
+                choose.stop();
+                for (auto *action : menu->actions()) if (action->text() == "删除本地方案…")
+                {
+                    menu->setActiveAction(action);
+                    QTest::keyPress(menu, Qt::Key_Return);
+                    return;
+                }
+                menu->close();
+            }
+        });
+        QTimer watchdog;
+        watchdog.setSingleShot(true);
+        connect(&watchdog, &QTimer::timeout, &page, [] {
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget())) dialog->reject();
+            if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget())) menu->close();
+        });
+        responder.start(); choose.start(); watchdog.start(10000);
+        operations->click();
+        watchdog.stop(); responder.stop(); choose.stop();
+        settle(service);
+        QVERIFY(confirmed && updated);
+        const auto branch = runGit(service.repoPath(id), {"rev-parse", "--verify", "refs/heads/topic"});
+        QCOMPARE(branch.success(), changedDuringConfirmation);
+        if (changedDuringConfirmation) QCOMPARE(branch.output.trimmed(), latest);
+        QCOMPARE(notifications.count(), 1);
+        QCOMPARE(qvariant_cast<OperationResult>(notifications.first().first()).success, !changedDuringConfirmation);
+        QCOMPARE(routes.count(), changedDuringConfirmation ? 0 : 1);
+    }
     void branchDetailReportsHistoryErrors()
     {
         TestDirectory dir; TestBackupService service(pathsIn(dir));

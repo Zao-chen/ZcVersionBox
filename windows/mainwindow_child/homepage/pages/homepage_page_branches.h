@@ -40,8 +40,8 @@ class HomePageBranchesPage : public QWidget
     BranchRequest request() const;
     QWidget *dialogOwner() const;
     void updateActions();
-    void complete(const OperationResult &result);
+    void complete(const OperationResult &result, bool reload = true);
     void showOperations();
-    void compare();
-    void merge();
+    void compare(const BranchInfo &selected, const BranchRequest &request, const QVector<BranchInfo> &branches);
+    void merge(const BranchRequest &request);
 };
