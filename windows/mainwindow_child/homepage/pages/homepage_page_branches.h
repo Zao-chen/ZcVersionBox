@@ -32,7 +32,7 @@ class HomePageBranchesPage : public QWidget
     QString m_id, m_branchRef;
     BranchSnapshot m_snapshot;
     BranchInfo m_branch;
-    QAction *m_create{nullptr}, *m_refresh{nullptr}, *m_fetch{nullptr};
+    QAction *m_create{nullptr}, *m_refresh{nullptr};
     quint64 m_generation{0};
     bool m_busy{false};
     BackupTaskId m_task{0};

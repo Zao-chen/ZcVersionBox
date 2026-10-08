@@ -45,15 +45,8 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     ui->historyLayout->addWidget(m_history);
     m_create = UiStyle::action(this, "createBranchAction", "新建方案…", "add");
     m_refresh = UiStyle::action(this, "refreshBranchesAction", "刷新", "refresh");
-    m_fetch = UiStyle::action(this, "fetchBranchesAction", "获取云端方案", "cloud");
     connect(m_create, &QAction::triggered, this, [this] { createFrom(m_id); });
     connect(m_refresh, &QAction::triggered, this, &HomePageBranchesPage::refresh);
-    connect(m_fetch, &QAction::triggered, this, [this]
-    {
-        if (m_busy || m_id.isEmpty()) return;
-        m_busy = true; updateActions();
-        m_task = m_service->fetchBranches(m_service->branchContext(m_id), this, [this](const OperationResult &r) { complete(r); });
-    });
     connect(ui->useBranch, &QPushButton::clicked, this, [this]
     {
         if (m_branch.remoteBranch) createFrom(m_id, m_branch.head);
@@ -76,7 +69,7 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     updateActions();
 }
 HomePageBranchesPage::~HomePageBranchesPage() = default;
-QList<QAction *> HomePageBranchesPage::toolbarActions() const { return {m_create, m_fetch, m_refresh}; }
+QList<QAction *> HomePageBranchesPage::toolbarActions() const { return {m_create, m_refresh}; }
 QWidget *HomePageBranchesPage::dialogOwner() const { return const_cast<HomePageBranchesPage *>(this); }
 BranchRequest HomePageBranchesPage::request() const
 {
@@ -143,7 +136,6 @@ void HomePageBranchesPage::updateActions()
     const bool available = !m_id.isEmpty() && !m_branch.ref.isEmpty() && m_service->contains(m_id);
     const bool editable = available && !m_busy && m_service->syncState(m_id) == BackupSyncState::Tracking;
     m_create->setEnabled(editable);
-    m_fetch->setEnabled(editable);
     m_refresh->setEnabled(available && !m_busy);
     ui->useBranch->setEnabled(editable && !m_branch.current);
     ui->useBranch->setText(m_branch.remoteBranch ? "加入并使用…" : "使用此方案…");
@@ -215,19 +207,19 @@ void HomePageBranchesPage::showOperations()
     const QPointer<HomePageBranchesPage> guard(this);
     QMenu menu(this);
     auto *compareAction = menu.addAction("与其他方案比较…");
-    QAction *mergeAction = nullptr, *renameAction = nullptr, *upstreamAction = nullptr, *pushAction = nullptr, *publishAction = nullptr;
+    QAction *mergeAction = nullptr, *renameAction = nullptr;
     if (!selected.remoteBranch)
     {
         mergeAction = menu.addAction("合并到正在使用的方案…"); mergeAction->setEnabled(!selected.current);
         renameAction = menu.addAction("重命名…");
-        upstreamAction = menu.addAction("设置对应云端…");
-        pushAction = menu.addAction("上传此方案的已保存版本");
-        publishAction = menu.addAction("发布为同名云端方案…");
     }
-    menu.addSeparator();
-    auto *removeAction = menu.addAction(selected.remoteBranch ? "删除云端方案…" : "删除本地方案…"); removeAction->setEnabled(!selected.current);
-    auto *forceAction = selected.remoteBranch ? nullptr : menu.addAction("仍然删除未合并方案…");
-    if (forceAction) forceAction->setEnabled(!selected.current);
+    QAction *removeAction = nullptr, *forceAction = nullptr;
+    if (!selected.remoteBranch)
+    {
+        menu.addSeparator();
+        removeAction = menu.addAction("删除本地方案…"); removeAction->setEnabled(!selected.current);
+        forceAction = menu.addAction("仍然删除未合并方案…"); forceAction->setEnabled(!selected.current);
+    }
     const auto chosen = menu.exec(ui->operations->mapToGlobal(QPoint(0, ui->operations->height())));
     if (!guard || !chosen) return;
     if (chosen == compareAction) { compare(selected, selectedRequest, branches); return; }
@@ -249,33 +241,9 @@ void HomePageBranchesPage::showOperations()
         });
         return;
     }
-    if (chosen == upstreamAction)
-    {
-        UiDialog::Dialog dialog(dialogOwner(), "branchUpstreamDialog", "设置对应云端");
-        auto *combo = new QComboBox(&dialog); combo->addItem("不关联云端", QString());
-        for (const auto &branch : branches) if (branch.remoteBranch) combo->addItem(branch.name, branch.ref);
-        combo->setCurrentIndex(qMax(0, combo->findData(selected.upstream)));
-        dialog.contentLayout()->addWidget(combo); dialogButtons(dialog);
-        if (dialog.exec() != QDialog::Accepted || !guard) return;
-        auto linked = selectedRequest; linked.upstream = combo->currentData().toString(); m_busy = true; updateActions();
-        m_task = m_service->setBranchUpstream(linked, this, [this](const OperationResult &result) { complete(result); });
-        return;
-    }
-    if (chosen == pushAction || chosen == publishAction)
-    {
-        auto upload = selectedRequest;
-        if (chosen == publishAction)
-        {
-            if (!UiDialog::confirm(dialogOwner(), "将已保存版本发布为云端方案“" + selected.name + "”？旧的云端方案会保留。", "发布方案") || !guard) return;
-            upload.name = selected.name;
-        }
-        m_busy = true; updateActions();
-        m_task = m_service->uploadBranch(upload, this, [this](const OperationResult &result) { complete(result); });
-        return;
-    }
     const bool force = chosen == forceAction;
-    const auto text = selected.remoteBranch ? QString("删除云端方案“%1”？本地方案仍会保留。").arg(selected.name)
-        : force ? QString("仍然删除“%1”？尚未合并的独有版本可能不再可恢复。").arg(selected.name)
+    if (chosen != removeAction && chosen != forceAction) return;
+    const auto text = force ? QString("仍然删除“%1”？尚未合并的独有版本可能不再可恢复。").arg(selected.name)
                 : QString("删除本地方案“%1”？Git 会检查是否已合并；尚未合并时会停止。").arg(selected.name);
     if (!UiDialog::confirm(dialogOwner(), text, "删除方案") || !guard) return;
     auto removed = selectedRequest; removed.force = force; m_busy = true; updateActions();
@@ -289,8 +257,7 @@ void HomePageBranchesPage::showOperations()
         complete(result, !leaving);
         if (leaving) emit replaceRoute({PageId::History, id});
     };
-    m_task = selected.remoteBranch ? m_service->deleteRemoteBranch(removed, this, deleted)
-                                  : m_service->deleteBranch(removed, this, deleted);
+    m_task = m_service->deleteBranch(removed, this, deleted);
 }
 void HomePageBranchesPage::compare(const BranchInfo &selected, const BranchRequest &request, const QVector<BranchInfo> &branches)
 {

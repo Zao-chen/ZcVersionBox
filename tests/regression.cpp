@@ -2508,6 +2508,77 @@ class Regression : public QObject
         QVERIFY(!qvariant_cast<OperationResult>(notifications.first().first()).success);
         QCOMPARE(head(service, id), original);
     }
+    void overviewProvidesTheOnlyCloudSyncEntry()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        QVERIFY(service.renameBranch(id, service.branchContext(id).ref, "main").success);
+        QVERIFY(service.createBranch(id, "topic").success);
+        const auto remote = dir.path() + "/remote.git";
+        QVERIFY(runGit({}, {"init", "--bare", "--initial-branch=main", remote}).success());
+        QVERIFY(service.setRemote(id, remote).success);
+        FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen); window.resize(1080, 740); window.show();
+        window.navigate({PageId::Dashboard, id}); settle(service);
+        auto *overview = window.findChild<HomePageDashboardPage *>(); QVERIFY(overview && overview->isVisible());
+        auto *upload = overview->findChild<QPushButton *>("pushButton"); QVERIFY(upload && upload->isEnabled());
+        QCOMPARE(upload->text(), QString("全量上传"));
+        QSignalSpy notifications(overview, &HomePageDashboardPage::notification);
+        upload->click(); settle(service);
+        QVERIFY(!notifications.isEmpty());
+        QVERIFY(qvariant_cast<OperationResult>(notifications.last().first()).success);
+        const auto topic = runGit(service.repoPath(id), {"rev-parse", "topic"}); QVERIFY(topic.success());
+        QCOMPARE(runGit(remote, {"rev-parse", "topic"}).output.trimmed(), topic.output.trimmed());
+        QVERIFY(runGit(remote, {"branch", "cloud-only", "main"}).success());
+        notifications.clear();
+        auto *download = overview->findChild<QPushButton *>("pullButton"); QVERIFY(download && download->isEnabled());
+        QCOMPARE(download->text(), QString("全量获取"));
+        download->click(); settle(service);
+        QVERIFY(!notifications.isEmpty());
+        QVERIFY(qvariant_cast<OperationResult>(notifications.last().first()).success);
+        QVERIFY(runGit(service.repoPath(id), {"rev-parse", "refs/remotes/origin/cloud-only"}).success());
+        QCOMPARE(readFile(source), QByteArray("base\n"));
+        const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS");
+        if (!output.isEmpty())
+        {
+            QDir().mkpath(output);
+            if (auto *notification = window.findChild<NotificationBar *>()) notification->dismiss();
+            for (const auto theme : {ThemeMode::Light, ThemeMode::Dark})
+            {
+                m_theme->setMode(theme);
+                for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+                {
+                    window.resize(size); QTest::qWait(80);
+                    auto *scroll = overview->findChild<QScrollArea *>("scroll"); QVERIFY(scroll);
+                    scroll->ensureWidgetVisible(upload);
+                    QTest::qWait(30);
+                    QVERIFY(window.grab().save(output + QString("/cloud-overview-%1-%2.png").arg(theme == ThemeMode::Light ? "light" : "dark").arg(size.width())));
+                }
+            }
+        }
+        window.navigate({PageId::Branches, id, {}, {}, QString("refs/heads/topic")}); settle(service);
+        auto *branches = window.findChild<HomePageBranchesPage *>(); QVERIFY(branches && branches->isVisible());
+        QVERIFY(!branches->findChild<QAction *>("fetchBranchesAction"));
+        auto *operations = branches->findChild<QPushButton *>("operations"); QVERIFY(operations && operations->isEnabled());
+        QStringList menuItems;
+        QTimer closer;
+        closer.setInterval(10);
+        connect(&closer, &QTimer::timeout, &window, [&] {
+            if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()))
+            {
+                for (auto *action : menu->actions()) if (!action->isSeparator()) menuItems.append(action->text());
+                menu->close();
+                closer.stop();
+            }
+        });
+        // Bound a failed popup detection so this test cannot leave a modal menu open.
+        QTimer::singleShot(5000, &window, [&] { if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget())) menu->close(); });
+        closer.start(); operations->click(); closer.stop();
+        QCOMPARE(menuItems, QStringList({"与其他方案比较…", "合并到正在使用的方案…", "重命名…", "删除本地方案…", "仍然删除未合并方案…"}));
+    }
     void branchUiBrowsingGraphAndConfirmation()
     {
         TestDirectory dir; TestBackupService service(pathsIn(dir));
