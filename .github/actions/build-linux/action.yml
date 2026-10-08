@@ -5,6 +5,10 @@ inputs:
     description: Build and validate the Linux package
     required: false
     default: 'false'
+  test-profile:
+    description: Test scope (smoke, standard or full)
+    required: false
+    default: full
   tag:
     description: Release tag used for package filenames
     required: false
@@ -36,10 +40,15 @@ runs:
         arch: linux_gcc_64
         archives: qtbase qtsvg qtwayland icu
         cache: true
+    - name: Set up compiler cache
+      if: ${{ inputs.package != 'true' }}
+      uses: mozilla-actions/sccache-action@v0.0.11
     - name: Configure a clean Release build
       shell: bash
       env:
         PROJECT_VERSION: ${{ inputs.version }}
+        TEST_PROFILE: ${{ inputs.test-profile }}
+        CACHE_COMPILATION: ${{ inputs.package != 'true' }}
       run: |
         set -euo pipefail
         test ! -e build/release || { echo 'Use a clean build/release directory'; exit 1; }
@@ -49,21 +58,37 @@ runs:
           -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_TESTING=ON
+          "-DZCVERSIONBOX_TEST_PROFILE=$TEST_PROFILE"
           -DZCVERSIONBOX_DEPLOY_LINUX=ON
           -DCMAKE_INSTALL_LIBDIR=lib
           "-DCMAKE_PREFIX_PATH=$QT_ROOT_DIR"
         )
+        if [[ "$CACHE_COMPILATION" == true ]]; then
+          cmake_args+=(-DCMAKE_CXX_COMPILER_LAUNCHER=sccache)
+        fi
         if [[ -n "$PROJECT_VERSION" ]]; then
           cmake_args+=("-DZCVERSIONBOX_VERSION_OVERRIDE=$PROJECT_VERSION")
         fi
         cmake "${cmake_args[@]}"
-    - name: Build, test and run desktop smoke checks
+    - name: Build
       shell: bash
+      env:
+        SCCACHE_GHA_ENABLED: 'true'
       run: |
         set -euo pipefail
         cmake --build build/release --parallel 4
-        ctest --test-dir build/release --output-on-failure
-        bash tests/linux/run-desktop-smoke.sh build/release/tests/zc_tests build/native-smoke
+    - name: Test
+      shell: bash
+      run: |
+        set -euo pipefail
+        ctest --test-dir build/release --parallel 2 --output-on-failure
+    - name: Check X11 and Wayland runtime
+      shell: bash
+      run: bash tests/linux/run-desktop-smoke.sh build/release/tests/zc_tests build/native-smoke
+    - name: Summarize test timings
+      if: always()
+      shell: bash
+      run: python3 scripts/ci_report.py build/release/tests
     - name: Package Linux DEB
       if: ${{ inputs.package == 'true' }}
       shell: bash
@@ -100,11 +125,12 @@ runs:
     - uses: actions/upload-artifact@v4
       if: always()
       with:
+        retention-days: 7
         name: tests-linux
         if-no-files-found: warn
         path: |
           build/release/Testing/Temporary/LastTest.log
-          build/release/tests/regression.txt
-          build/release/tests/backup_core.txt
+          build/release/tests/*.txt
+          build/release/tests/*.xml
           build/native-smoke/
           build/runtime-*/

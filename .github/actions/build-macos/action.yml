@@ -5,6 +5,10 @@ inputs:
     description: Build and validate the macOS DMG
     required: false
     default: 'false'
+  test-profile:
+    description: Test scope (smoke, standard or full)
+    required: false
+    default: full
   tag:
     description: Release tag used for package filenames
     required: false
@@ -28,11 +32,16 @@ runs:
         arch: clang_64
         archives: qtbase qtsvg
         cache: true
+    - name: Set up compiler cache
+      if: ${{ inputs.package != 'true' }}
+      uses: mozilla-actions/sccache-action@v0.0.11
     - name: Configure a clean Release build
       shell: bash
       env:
         TARGET_ARCHS: ${{ inputs.architectures }}
         PROJECT_VERSION: ${{ inputs.version }}
+        TEST_PROFILE: ${{ inputs.test-profile }}
+        CACHE_COMPILATION: ${{ inputs.package != 'true' }}
       run: |
         set -euo pipefail
         test ! -e build/release || { echo 'Use a clean build/release directory'; exit 1; }
@@ -42,20 +51,34 @@ runs:
           -G Ninja
           -DCMAKE_BUILD_TYPE=Release
           -DBUILD_TESTING=ON
+          "-DZCVERSIONBOX_TEST_PROFILE=$TEST_PROFILE"
           "-DCMAKE_PREFIX_PATH=$QT_ROOT_DIR"
           -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
           "-DCMAKE_OSX_ARCHITECTURES=$TARGET_ARCHS"
         )
+        if [[ "$CACHE_COMPILATION" == true ]]; then
+          cmake_args+=(-DCMAKE_CXX_COMPILER_LAUNCHER=sccache)
+        fi
         if [[ -n "$PROJECT_VERSION" ]]; then
           cmake_args+=("-DZCVERSIONBOX_VERSION_OVERRIDE=$PROJECT_VERSION")
         fi
         cmake "${cmake_args[@]}"
-    - name: Build and test
+    - name: Build
       shell: bash
+      env:
+        SCCACHE_GHA_ENABLED: 'true'
       run: |
         set -euo pipefail
         cmake --build build/release --parallel 4
-        ctest --test-dir build/release --output-on-failure
+    - name: Test
+      shell: bash
+      run: |
+        set -euo pipefail
+        ctest --test-dir build/release --parallel 2 --output-on-failure
+    - name: Summarize test timings
+      if: always()
+      shell: bash
+      run: python3 scripts/ci_report.py build/release/tests
     - name: Package macOS DMG
       if: ${{ inputs.package == 'true' }}
       shell: bash
@@ -72,9 +95,10 @@ runs:
     - uses: actions/upload-artifact@v4
       if: always()
       with:
+        retention-days: 7
         name: tests-macos
         if-no-files-found: warn
         path: |
           build/release/Testing/Temporary/LastTest.log
-          build/release/tests/regression.txt
-          build/release/tests/backup_core.txt
+          build/release/tests/*.txt
+          build/release/tests/*.xml

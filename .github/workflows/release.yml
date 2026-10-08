@@ -65,6 +65,7 @@ jobs:
       - uses: ./.github/actions/build-windows
         with:
           package: 'true'
+          test-profile: full
           tag: ${{ needs.prepare.outputs.tag }}
           version: ${{ needs.prepare.outputs.version }}
 
@@ -78,6 +79,7 @@ jobs:
       - uses: ./.github/actions/build-macos
         with:
           package: 'true'
+          test-profile: full
           tag: ${{ needs.prepare.outputs.tag }}
           version: ${{ needs.prepare.outputs.version }}
           architectures: arm64;x86_64
@@ -92,6 +94,7 @@ jobs:
       - uses: ./.github/actions/build-linux
         with:
           package: 'true'
+          test-profile: full
           tag: ${{ needs.prepare.outputs.tag }}
           version: ${{ needs.prepare.outputs.version }}
 

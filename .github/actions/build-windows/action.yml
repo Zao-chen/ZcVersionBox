@@ -5,6 +5,10 @@ inputs:
     description: Build and validate the Windows installer
     required: false
     default: 'false'
+  test-profile:
+    description: Test scope (smoke, standard or full)
+    required: false
+    default: full
   tag:
     description: Release tag used for package filenames
     required: false
@@ -27,10 +31,15 @@ runs:
         arch: win64_msvc2022_64
         archives: qtbase qtsvg
         cache: true
+    - name: Set up compiler cache
+      if: ${{ inputs.package != 'true' }}
+      uses: mozilla-actions/sccache-action@v0.0.11
     - name: Configure a clean Release build
       shell: pwsh
       env:
         PROJECT_VERSION: ${{ inputs.version }}
+        TEST_PROFILE: ${{ inputs.test-profile }}
+        CACHE_COMPILATION: ${{ inputs.package != 'true' }}
       run: |
         if (Test-Path -LiteralPath build/release) { throw 'Use a clean build/release directory' }
         $cmakeArgs = @(
@@ -39,20 +48,33 @@ runs:
           '-G', 'Ninja',
           '-DCMAKE_BUILD_TYPE=Release',
           '-DBUILD_TESTING=ON',
+          "-DZCVERSIONBOX_TEST_PROFILE=$env:TEST_PROFILE",
           "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR"
         )
+        if ($env:CACHE_COMPILATION -eq 'true') {
+          $cmakeArgs += '-DCMAKE_CXX_COMPILER_LAUNCHER=sccache'
+        }
         if ($env:PROJECT_VERSION) {
           $cmakeArgs += "-DZCVERSIONBOX_VERSION_OVERRIDE=$env:PROJECT_VERSION"
         }
         & cmake @cmakeArgs
         if ($LASTEXITCODE) { throw 'CMake configure failed' }
-    - name: Build and test
+    - name: Build
       shell: pwsh
+      env:
+        SCCACHE_GHA_ENABLED: 'true'
       run: |
         cmake --build build/release --parallel 4
         if ($LASTEXITCODE) { throw 'Build failed' }
-        ctest --test-dir build/release --output-on-failure
+    - name: Test
+      shell: pwsh
+      run: |
+        ctest --test-dir build/release --parallel 2 --output-on-failure
         if ($LASTEXITCODE) { throw 'Regression tests failed' }
+    - name: Summarize test timings
+      if: always()
+      shell: pwsh
+      run: python scripts/ci_report.py build/release/tests
     - name: Install Inno Setup
       if: ${{ inputs.package == 'true' }}
       shell: pwsh
@@ -76,9 +98,10 @@ runs:
     - uses: actions/upload-artifact@v4
       if: always()
       with:
+        retention-days: 7
         name: tests-windows
         if-no-files-found: warn
         path: |
           build/release/Testing/Temporary/LastTest.log
-          build/release/tests/regression.txt
-          build/release/tests/backup_core.txt
+          build/release/tests/*.txt
+          build/release/tests/*.xml
