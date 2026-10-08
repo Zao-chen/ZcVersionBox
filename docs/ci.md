@@ -14,6 +14,8 @@
 
 旧 CI 的实测证据来自 PR #30 的 [第二轮运行](https://github.com/Zao-chen/ZcVersionBox/actions/runs/37745107340)：Windows 作业 29 分 23 秒，其中 `backup_core` 1068 秒、`regression` 431 秒；macOS 13 分 53 秒，Linux 3 分 32 秒。Qt 缓存命中也无法减少这些测试进程的耗时。新配置的实际结果以最新运行及作业摘要为准，首次建立编译缓存仍需完整编译。
 
+2026-10-08 新配置首次云端验证：[PR #30 运行](https://github.com/Zao-chen/ZcVersionBox/actions/runs/37754093242) 三平台及汇总 `CI` 均通过。Windows 作业 4 分 09 秒（UI 10 个用例 51.6 秒，核心 9 个用例 30.4 秒）；macOS 作业 3 分 35 秒（UI 10 个用例 23.8 秒，核心 9 个用例 11.7 秒）；Linux 作业 3 分 52 秒，standard 有 55 个 UI 用例、156 个核心用例及 5 个更新用例，总计约 61 秒，并通过 X11/Wayland 各 4 个原生检查。Linux 相比旧运行的 3 分 32 秒多 20 秒，但覆盖了完整日常回归及桌面烟测；首轮缓存冷启动用来建立后续编译缓存，不据此宣称缓存已降低首次总耗时。
+
 ## 三种范围
 
 | 场景 | Linux | Windows | macOS | 打包 |
