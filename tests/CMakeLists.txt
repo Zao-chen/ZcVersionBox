@@ -26,6 +26,9 @@ zc_add_regression(zc_backup_tests backup_core.cpp backup_core zc_services)
 zc_add_regression(zc_update_tests update_service.cpp update_core zc_services)
 # Includes the isolated 10,000-file source and complete backup safety checks.
 if(WIN32)
+    # The UI suite now includes isolated Git fixtures for branch creation,
+    # switching and restore; Windows process startup exceeds the 300s budget.
+    set_tests_properties(regression PROPERTIES TIMEOUT 600)
     set_tests_properties(backup_core PROPERTIES TIMEOUT 1200)
 else()
     set_tests_properties(backup_core PROPERTIES TIMEOUT 600)
