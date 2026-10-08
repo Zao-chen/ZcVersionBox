@@ -37,8 +37,7 @@ constexpr int ActionsColumn = 3;
 constexpr int ActionSize = 28;
 constexpr int ActionSpacing = 4;
 constexpr int ActionCount = 6;
-constexpr int RestoreGap = 8;
-constexpr int ActionsWidth = ActionCount * ActionSize + (ActionCount - 1) * ActionSpacing + RestoreGap + 16;
+constexpr int ActionsWidth = ActionCount * ActionSize + (ActionCount - 1) * ActionSpacing + 16;
 enum class RevisionAction
 {
     Preview,
@@ -154,7 +153,7 @@ class HistoryDelegate : public QStyledItemDelegate
                         painter->setBrush(pressed ? colors.separator : colors.selected);
                         painter->drawRoundedRect(rect, 6, 6);
                     }
-                    m_icons[action].paint(painter, QRect(rect.center() - QPoint(8, 8), QSize(16, 16)), Qt::AlignCenter, enabled ? QIcon::Normal : QIcon::Disabled);
+                    m_icons[action].paint(painter, QRect(rect.x() + (rect.width() - 16) / 2, rect.y() + (rect.height() - 16) / 2, 16, 16), Qt::AlignCenter, enabled ? QIcon::Normal : QIcon::Disabled);
                 }
             }
         }
@@ -370,7 +369,7 @@ class HistoryDelegate : public QStyledItemDelegate
     }
     QRect actionRect(const QRect &cell, int action) const
     {
-        return {cell.x() + 8 + action * (ActionSize + ActionSpacing) + (action == static_cast<int>(RevisionAction::Restore) ? RestoreGap : 0), cell.center().y() - ActionSize / 2, ActionSize, ActionSize};
+        return {cell.x() + 8 + action * (ActionSize + ActionSpacing), cell.y() + (cell.height() - ActionSize) / 2, ActionSize, ActionSize};
     }
     bool actionsVisible(const QModelIndex &index) const
     {

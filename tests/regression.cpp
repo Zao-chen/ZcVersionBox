@@ -95,7 +95,7 @@ QString head(const BackupService &service, const QString &id) { return runGit(se
 QPoint historyActionPoint(QTableView *table, int row, int action)
 {
     const auto cell = table->visualRect(table->model()->index(row, table->model()->columnCount() - 1));
-    return {cell.x() + 8 + action * (28 + 4) + (action == 5 ? 8 : 0) + 14, cell.center().y()};
+    return {cell.x() + 8 + action * (28 + 4) + 14, cell.center().y()};
 }
 void openHistoryMenu(QTableView *table, int row)
 {
@@ -1380,7 +1380,7 @@ class Regression : public QObject
                 for (int width : {820, 520})
                 {
                     page.resize(width, 400); QTest::qWait(40);
-                    hoverHistoryAction(table, 0, 4);
+                    hoverHistoryAction(table, 0, 2);
                     QVERIFY(table->viewport()->rect().contains(historyActionPoint(table, 0, 5)));
                     QCOMPARE(table->horizontalScrollBar()->maximum(), 0);
                     QVERIFY(page.grab().save(output + QString("/inline-marked-%1-%2.png").arg(theme).arg(width)));
