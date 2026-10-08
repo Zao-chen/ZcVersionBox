@@ -686,9 +686,11 @@ void HomePageBackupPage::showRevisionMenu(const RevisionContext &context, const 
     add(m_compare, &HomePageBackupPage::compareRevision);
     auto *create = menu->addAction("从此版本新建方案…");
     create->setEnabled(m_service->syncState(context.backupId) == BackupSyncState::Tracking);
+    // Finish Qlementine's synthetic mouse release before a modal dialog can
+    // process the menu's deferred deletion and destroy the event being sent.
     connect(create, &QAction::triggered, this, [this, context] {
         if (isCurrentContext(context)) emit createBranchRequested(context.backupId, context.commit);
-    });
+    }, Qt::QueuedConnection);
     menu->addSeparator();
     add(m_edit, &HomePageBackupPage::editRevision);
     menu->addSeparator();

@@ -250,3 +250,13 @@ ctest --test-dir build -R '^(backup_core|regression)$' --parallel 2 --output-on-
 通过数包含初始化和清理。未追加完整 `regression`、Windows/Linux 构建或发布打包；正常应用未用于回归。
 
 验收时用临时项目检查：在同一版本创建两个方案后分别点击标记进入详情；点击旧版本上的方案标记确认跳转正确；普通删除后直接回到历史页且没有多余报错。并发分支切换和确认过期由隔离测试注入，无需操作真实备份制造故障。
+
+## 2026-10-08 历史菜单新建方案崩溃
+
+鼠标点击“从此版本新建方案…”时，Qlementine 会在闪烁动画后同步重放鼠标释放事件。原来的操作回调直接打开模态对话框，嵌套事件循环可能销毁已关闭的菜单及其持有的鼠标事件，返回菜单调用栈后发生悬空访问。隔离测试在修复前点击菜单并取消弹窗即可触发 `SIGSEGV`（退出码 139），日志为 `build/tests/branch-menu-before.txt`。
+
+新建操作改用队列连接，先完成菜单事件分发，再检查捕获的版本上下文并打开对话框。新增 `historyMenuCreatesBranchAfterMouseDispatch`，覆盖历史页鼠标取消/创建、方案详情页创建后切换及键盘创建。测试核对菜单在弹窗前已释放、新方案指向菜单捕获的旧版本，以及取消/仅创建时原分支和源文件不变。
+
+在 macOS 26.6 / Qt 6.8.3 arm64 的现有 `build` 中增量构建 `zc_tests` 和 `ZcVersionBox` 成功。Offscreen 的新用例及历史菜单/恢复上下文、方案标记、删除确认、详情错误、浏览回归为 12 passed、0 failed、0 skipped，日志为 `build/tests/branch-menu-after.txt`；Cocoa 原生新用例为 6 passed、0 failed、0 skipped，日志为 `build/tests/branch-menu-cocoa.txt`。通过数包含初始化和清理。测试等待独立窗口显示，鼠标先移到菜单入口，再移到目标菜单项，避免连续用例沿用上一个菜单位置导致 Qt 抑制激活；同时显式投递鼠标移动事件，直接向目标菜单发送按键，不依赖系统前台焦点。全部回归均使用临时仓库、隔离 Git 配置和模拟 AI。
+
+验收时使用临时项目，在历史页和方案详情页从旧版本的菜单新建方案，分别取消、取消勾选“创建后切换”、保留勾选并确认切换，确认无崩溃且新方案版本正确。本轮未运行完整 `regression` / `backup_core`、Windows/Linux 构建或发布打包。

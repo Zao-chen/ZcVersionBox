@@ -2261,6 +2261,122 @@ class Regression : public QObject
         QTRY_VERIFY(!popover);
         QTRY_VERIFY(!notification.isVisible());
     }
+    void historyMenuCreatesBranchAfterMouseDispatch_data()
+    {
+        QTest::addColumn<bool>("acceptCreate");
+        QTest::addColumn<bool>("switchAfter");
+        QTest::addColumn<bool>("keyboard");
+        QTest::addColumn<bool>("branchDetail");
+        QTest::newRow("mouse-cancel-history") << false << false << false << false;
+        QTest::newRow("mouse-create-history") << true << false << false << false;
+        QTest::newRow("mouse-create-and-switch-detail") << true << true << false << true;
+        QTest::newRow("keyboard-create-detail") << true << false << true << true;
+    }
+    void historyMenuCreatesBranchAfterMouseDispatch()
+    {
+        QFETCH(bool, acceptCreate);
+        QFETCH(bool, switchAfter);
+        QFETCH(bool, keyboard);
+        QFETCH(bool, branchDetail);
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        const auto base = head(service, id);
+        writeFile(source, "latest\n"); QVERIFY(service.backup(id).success);
+        const auto original = service.branchContext(id);
+        FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.show();
+        window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        Route route{branchDetail ? PageId::Branches : PageId::History, id};
+        if (branchDetail) route.branchRef = original.ref;
+        window.navigate(route); settle(service);
+        auto *branches = window.findChild<HomePageBranchesPage *>(); QVERIFY(branches);
+        auto *history = branchDetail ? branches->findChild<HomePageBackupPage *>() : window.findChild<HomePageBackupPage *>();
+        QVERIFY(history && history->isVisible());
+        auto *table = history->findChild<QTableView *>("table"); QVERIFY(table);
+        QCOMPARE(table->model()->rowCount(), 2);
+        // QMenu tracks movement from the cursor position at popup time.
+        // Reset it to the opener instead of leaving it on the previous menu item.
+        const auto morePoint = historyActionPoint(table, 1, 3);
+        QTest::mouseMove(table->viewport(), morePoint);
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, morePoint);
+        QPointer<QMenu> menu = history->findChild<QMenu *>("revisionMenu"); QVERIFY(menu);
+        QTRY_VERIFY(menu->isVisible() && menu->width() > 0);
+        QAction *create = nullptr;
+        for (auto *action : menu->actions()) if (action->text() == "从此版本新建方案…") create = action;
+        QVERIFY(create && create->isEnabled());
+        QSignalSpy triggered(create, &QAction::triggered);
+        // Changing the selection must not change the version captured by the menu.
+        table->selectRow(0);
+        QSignalSpy notifications(branches, &HomePageBranchesPage::notification);
+        bool shown = false, menuReleased = false, switchShown = false, timedOut = false;
+        QTimer responder;
+        responder.setInterval(10);
+        connect(&responder, &QTimer::timeout, &window, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!dialog) return;
+            if (dialog->objectName() == "createBranchDialog")
+            {
+                shown = true;
+                menuReleased = menu.isNull();
+                auto *name = dialog->findChild<QLineEdit *>("branchName");
+                auto *use = dialog->findChild<QCheckBox *>();
+                if (!name || !use) { dialog->reject(); return; }
+                name->setText("菜单创建方案");
+                use->setChecked(switchAfter);
+                if (acceptCreate) dialog->accept(); else dialog->reject();
+            }
+            else if (dialog->objectName() == "switchBranchDialog")
+            {
+                switchShown = true;
+                dialog->accept();
+            }
+        });
+        QTimer watchdog;
+        watchdog.setSingleShot(true);
+        connect(&watchdog, &QTimer::timeout, &window, [&] {
+            timedOut = true;
+            responder.stop();
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget())) dialog->reject();
+            if (menu) menu->close();
+        });
+        responder.start(); watchdog.start(10000);
+        if (keyboard)
+        {
+            menu->setActiveAction(create);
+            QTest::keyPress(menu, Qt::Key_Return);
+        }
+        else
+        {
+            // Exercise Qlementine's delayed synthetic mouse release, not QAction::trigger().
+            const auto point = menu->actionGeometry(create).center();
+            QTest::mouseMove(menu, point);
+            // Successive rows may reuse the cursor position; still deliver a move.
+            QMouseEvent move(QEvent::MouseMove, point, menu->mapToGlobal(point), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(menu, &move);
+            QTest::mouseClick(menu, Qt::LeftButton, {}, point);
+            QVERIFY(create->property("qlementine_flashing").toBool());
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(triggered.count(), 1, 11000);
+        QTRY_VERIFY_WITH_TIMEOUT(shown || timedOut, 11000);
+        if (acceptCreate) QTRY_VERIFY(notifications.count() >= (switchAfter ? 2 : 1) || timedOut);
+        watchdog.stop(); responder.stop(); settle(service);
+        QVERIFY(!timedOut);
+        QVERIFY(shown);
+        QVERIFY2(menuReleased, "The menu must finish dispatching and be released before the modal dialog opens");
+        QVERIFY(!menu);
+        QCOMPARE(switchShown, switchAfter);
+        for (const auto &args : notifications) QVERIFY(qvariant_cast<OperationResult>(args.first()).success);
+        const auto created = runGit(service.repoPath(id), {"rev-parse", "--verify", "refs/heads/菜单创建方案"});
+        QCOMPARE(created.success(), acceptCreate);
+        if (acceptCreate) QCOMPARE(created.output.trimmed(), base);
+        QCOMPARE(service.branchContext(id).ref, switchAfter ? QString("refs/heads/菜单创建方案") : original.ref);
+        QCOMPARE(head(service, id), switchAfter ? base : original.head);
+        QCOMPARE(readFile(source), switchAfter ? QByteArray("base\n") : QByteArray("latest\n"));
+    }
     void historyBranchBadgesKeepExactTargets()
     {
         TestDirectory dir; TestBackupService service(pathsIn(dir));
