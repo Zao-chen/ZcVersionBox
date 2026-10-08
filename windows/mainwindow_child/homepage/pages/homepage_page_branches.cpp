@@ -43,10 +43,8 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     UiStyle::text(ui->branchDetails, UiStyle::FontRole::Caption, true);
     m_history = new HomePageBackupPage(service, ui->historyContainer);
     ui->historyLayout->addWidget(m_history);
-    m_create = UiStyle::action(this, "createBranchAction", "新建方案…", "add");
     m_refresh = UiStyle::action(this, "refreshBranchesAction", "刷新", "refresh");
     m_refresh->setProperty("iconOnly", true);
-    connect(m_create, &QAction::triggered, this, [this] { createFrom(m_id); });
     connect(m_refresh, &QAction::triggered, this, &HomePageBranchesPage::refresh);
     connect(ui->useBranch, &QPushButton::clicked, this, [this]
     {
@@ -70,7 +68,7 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     updateActions();
 }
 HomePageBranchesPage::~HomePageBranchesPage() = default;
-QList<QAction *> HomePageBranchesPage::toolbarActions() const { return {m_create, m_refresh}; }
+QList<QAction *> HomePageBranchesPage::toolbarActions() const { return {m_refresh}; }
 QWidget *HomePageBranchesPage::dialogOwner() const { return const_cast<HomePageBranchesPage *>(this); }
 BranchRequest HomePageBranchesPage::request() const
 {
@@ -136,7 +134,6 @@ void HomePageBranchesPage::updateActions()
 {
     const bool available = !m_id.isEmpty() && !m_branch.ref.isEmpty() && m_service->contains(m_id);
     const bool editable = available && !m_busy && m_service->syncState(m_id) == BackupSyncState::Tracking;
-    m_create->setEnabled(editable);
     m_refresh->setEnabled(available && !m_busy);
     ui->useBranch->setEnabled(editable && !m_branch.current);
     ui->useBranch->setText(m_branch.remoteBranch ? "加入并使用…" : "使用此方案…");
