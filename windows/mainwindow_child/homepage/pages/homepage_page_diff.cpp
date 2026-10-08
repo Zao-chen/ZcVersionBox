@@ -105,7 +105,7 @@ void HomePageDiffPage::rememberState()
     if (!m_currentFile.isEmpty())
         m_fileScrolls[m_currentFile] = ui->diffView->scrollPosition();
 
-    m_states[m_id + '\n' + m_diff.newCommit] = {
+    m_states[m_id + '\n' + m_diff.oldCommit + '\n' + m_diff.newCommit] = {
         m_repositoryGeneration,
         m_currentFile,
         m_hasAnalysis && !m_loading ? m_analysisText : QString(),
@@ -130,7 +130,7 @@ void HomePageDiffPage::deactivate()
     updateLoadingState();
 }
 
-void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
+void HomePageDiffPage::setRevision(const QString &id, const QString &commit, const QString &oldCommit)
 {
     deactivate();
     m_id = id;
@@ -152,7 +152,7 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
     const auto generation = m_generation;
     const auto repositoryGeneration = m_repositoryGeneration;
 
-    m_service->diff(id, commit, this, [this, id, generation, repositoryGeneration](const BackupResult<DiffData> &reply) {
+    const auto loaded = [this, id, generation, repositoryGeneration](const BackupResult<DiffData> &reply) {
         if (!m_active || generation != m_generation || id != m_id || repositoryGeneration != m_service->repositoryGeneration(id))
             return;
         m_valid = reply.result.success;
@@ -166,7 +166,7 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
         }
 
         m_diff = reply.value;
-        auto state = m_states.value(id + '\n' + m_diff.newCommit);
+        auto state = m_states.value(id + '\n' + m_diff.oldCommit + '\n' + m_diff.newCommit);
         if (state.generation != m_repositoryGeneration)
             state = {};
 
@@ -207,7 +207,9 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit)
 
         updateLoadingState();
         updateResponsiveLayout();
-    });
+    };
+    if (oldCommit.isEmpty()) m_service->diff(id, commit, this, loaded);
+    else m_service->diffBetween(id, oldCommit, commit, this, loaded);
 }
 
 void HomePageDiffPage::loadFile()

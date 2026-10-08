@@ -684,7 +684,10 @@
                  <item>
                   <widget class="QPushButton" name="pullButton">
                    <property name="text">
-                    <string>获取云端更新</string>
+                    <string>全量获取</string>
+                   </property>
+                   <property name="toolTip">
+                    <string>获取所有云端方案及里程碑；当前方案的文件变化会先预览，再确认应用。</string>
                    </property>
                    <property name="autoDefault">
                     <bool>false</bool>
@@ -697,7 +700,10 @@
                  <item>
                   <widget class="QPushButton" name="pushButton">
                    <property name="text">
-                    <string>推送</string>
+                    <string>全量上传</string>
+                   </property>
+                   <property name="toolTip">
+                    <string>上传所有本地方案的已保存历史及里程碑。</string>
                    </property>
                    <property name="autoDefault">
                     <bool>false</bool>

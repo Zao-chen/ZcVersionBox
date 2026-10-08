@@ -97,6 +97,11 @@ struct BackupRecord
     QVector<TagRefChange> tagJournal;
     quint64 tagRevision{0};
     QString tagEndpoint;
+    QString branchRef;
+    quint64 branchVersion{1};
+    // Upload/rebuild baselines belong to a remote branch, not to repository tags.
+    QMap<QString, TagRemoteState> branchRemotes;
+    QDateTime branchesFetchedAt;
     TrackedItem item() const;
 };
 
@@ -114,6 +119,7 @@ struct Revision
     QDateTime committedAt;
     QString shortHash;
     QVector<VersionTag> tags;
+    QStringList parents, refs, branchRefs;
 };
 struct DiffFile
 {
@@ -123,6 +129,53 @@ struct DiffData
 {
     QString oldCommit, newCommit;
     QVector<DiffFile> files;
+};
+struct BranchContext
+{
+    QString id, ref, head;
+    quint64 generation{0}, version{0};
+};
+struct BranchInfo
+{
+    QString ref, name, head, upstream, remote, remoteRef, message, endpoint;
+    bool current{false}, remoteBranch{false};
+};
+struct BranchSnapshot
+{
+    BranchContext context;
+    QVector<BranchInfo> branches;
+    QDateTime fetchedAt;
+};
+struct BranchRequest
+{
+    BranchContext context;
+    QString ref, expectedHead, name, startCommit, upstream, endpoint;
+    bool force{false};
+};
+struct PreparedBranchSwitch
+{
+    BranchContext context;
+    QString targetRef, targetHead;
+    SourceFingerprint sourceFingerprint;
+    QVector<DiffFile> changes;
+    bool savesChanges{false};
+    QVector<DiffFile> savedChanges;
+};
+struct HistoryQuery
+{
+    QStringList tips;
+    int offset{0}, limit{200};
+    bool allBranches{false}, uniqueOnly{false};
+    QStringList excludeTips;
+    bool refsPinned{false};
+};
+struct HistoryPage
+{
+    QVector<Revision> revisions;
+    QStringList tips;
+    bool hasMore{false};
+    int hiddenAncestorCount{0};
+    QStringList excludeTips;
 };
 struct ImportEntry
 {
@@ -142,6 +195,8 @@ struct RestoreRequest
     SourceFingerprint sourceFingerprint;
     bool sourceExists{false};
     bool pulledVersion{false};
+    QString branchRef;
+    quint64 branchVersion{0};
 };
 
 enum class ConflictChoice { Unresolved, Local, Remote };
@@ -169,6 +224,7 @@ struct SyncResolutionSession
     QString staleReason;
     QString currentPath;
     int currentHunk{0};
+    QString localLabel, remoteLabel, mergeRef;
     int total() const { int n = 0; for (const auto &f : files) n += f.hunks.size(); return n; }
     int remaining() const { int n = 0; for (const auto &f : files) for (const auto &h : f.hunks) n += h.choice == ConflictChoice::Unresolved; return n; }
 };

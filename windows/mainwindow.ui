@@ -791,7 +791,7 @@
             <height>52</height>
            </size>
           </property>
-          <layout class="QHBoxLayout" name="headerLayout" stretch="1,0,0">
+          <layout class="QHBoxLayout" name="headerLayout" stretch="1,0,0,0">
            <property name="leftMargin">
             <number>24</number>
            </property>
@@ -821,6 +821,14 @@
                <verstretch>0</verstretch>
               </sizepolicy>
              </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QComboBox" name="branchSelector">
+             <property name="minimumSize"><size><width>130</width><height>32</height></size></property>
+             <property name="maximumSize"><size><width>220</width><height>16777215</height></size></property>
+             <property name="sizeAdjustPolicy"><enum>QComboBox::AdjustToMinimumContentsLengthWithIcon</enum></property>
+             <property name="accessibleName"><string>正在使用的方案</string></property>
             </widget>
            </item>
            <item>

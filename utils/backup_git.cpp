@@ -188,6 +188,20 @@ BackupResult<DiffData> GitRepository::diff(const QString &revision) const
     auto commits = parents.output.trimmed().split(' ', Qt::SkipEmptyParts);
     if (commits.size() > 1)
         data.oldCommit = commits[1];
+    return diffBetween(data.oldCommit, data.newCommit);
+}
+BackupResult<DiffData> GitRepository::diffBetween(const QString &oldCommit, const QString &newCommit) const
+{
+    const auto newer = resolve(newCommit);
+    if (!newer.result.success) return {newer.result};
+    DiffData data;
+    data.newCommit = newer.value;
+    if (!oldCommit.isEmpty())
+    {
+        const auto older = resolve(oldCommit);
+        if (!older.result.success) return {older.result};
+        data.oldCommit = older.value;
+    }
     const auto arguments = [&](const QString &format)
     {
         if (data.oldCommit.isEmpty())

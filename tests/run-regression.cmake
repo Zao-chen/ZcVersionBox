@@ -1,13 +1,43 @@
+cmake_minimum_required(VERSION 3.27)
 set(ENV{QT_QPA_PLATFORM} offscreen)
 if(WIN32)
     set(ENV{PATH} "${QT_BIN_DIR};$ENV{PATH}")
     set(ENV{QT_QPA_PLATFORM_PLUGIN_PATH} "${QT_BIN_DIR}/../plugins/platforms")
 endif()
-# Qt Test may write to the debugger rather than inherited stdout on Windows.
-# Always keep a text result and expose it to CTest, including after a failure.
+if(NOT DEFINED TEST_TIMEOUT)
+    set(TEST_TIMEOUT 300)
+endif()
+if(TEST_PROFILE STREQUAL "standard" AND NOT TEST_FUNCTIONS)
+    # Discover through Qt, so new tests join normal CI without a second manifest.
+    execute_process(COMMAND "${TEST_EXECUTABLE}" -functions
+        OUTPUT_VARIABLE functions ERROR_VARIABLE discovery_error
+        RESULT_VARIABLE discovery_result TIMEOUT 30)
+    if(NOT discovery_result STREQUAL "0")
+        message(FATAL_ERROR "Cannot enumerate tests: ${discovery_result}\n${discovery_error}")
+    endif()
+    string(REGEX MATCHALL "[A-Za-z_][A-Za-z_0-9]*\\(\\)" discovered "${functions}")
+    if(NOT discovered)
+        message(FATAL_ERROR "Qt did not report any test functions")
+    endif()
+    set(extended largeProjectMonitorBoundsEventStorms manyRevisionsAndEditFeedback
+        renderAllPages renderImportantVersions renderConflictPages)
+    foreach(function IN LISTS discovered)
+        string(REPLACE "()" "" function "${function}")
+        if(NOT function IN_LIST extended)
+            list(APPEND TEST_FUNCTIONS "${function}")
+        endif()
+    endforeach()
+    if(NOT TEST_FUNCTIONS)
+        message(FATAL_ERROR "No standard test functions remain after filtering")
+    endif()
+endif()
+# Keep readable diagnostics and JUnit case timings, including on failure.
 file(WRITE "${TEST_LOG}" "")
-execute_process(COMMAND "${TEST_EXECUTABLE}" -o "${TEST_LOG},txt"
-    RESULT_VARIABLE result)
+get_filename_component(log_dir "${TEST_LOG}" DIRECTORY)
+get_filename_component(log_name "${TEST_LOG}" NAME_WE)
+execute_process(COMMAND "${TEST_EXECUTABLE}" ${TEST_FUNCTIONS}
+    -o "${TEST_LOG},txt" -o "${log_dir}/${log_name}.xml,junitxml"
+    RESULT_VARIABLE result TIMEOUT ${TEST_TIMEOUT})
 file(READ "${TEST_LOG}" output)
 message("${output}")
 if(NOT "${result}" STREQUAL "0")

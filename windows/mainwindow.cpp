@@ -1,5 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "windows/mainwindow_child/homepage/pages/homepage_page_branches.h"
+#include <QComboBox>
 #include "utils/update_service.h"
 #include "windows/mainwindow_child/aboutpage/aboutpage.h"
 #include "windows/mainwindow_child/homepage/homepage.h"
@@ -285,6 +287,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     m_history = new HomePageBackupPage(backups, this);
     m_diff = new HomePageDiffPage(backups, settings, gateway, this);
     m_conflict = new HomePageConflictPage(backups, this);
+    m_branches = new HomePageBranchesPage(backups, this);
     m_general = new SettingPage(settings, theme, this);
     m_ai = new SettingPageAiPage(settings, this);
     m_about = new AboutPage(m_updates, this);
@@ -302,7 +305,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
                 navigate({PageId::About});
                 m_about->showAvailableUpdate();
             }); });
-    for (QWidget *page : QList<QWidget *>{m_list, m_dashboard, m_history, m_diff, m_conflict, m_general, m_ai, m_about})
+    for (QWidget *page : QList<QWidget *>{m_list, m_dashboard, m_history, m_diff, m_conflict, m_branches, m_general, m_ai, m_about})
         ui->pages->addWidget(page);
     const auto wire = [this](auto *page)
     {
@@ -314,6 +317,23 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     wire(m_history);
     wire(m_diff);
     wire(m_conflict);
+    wire(m_branches);
+    connect(m_branches, &HomePageBranchesPage::replaceRoute, &m_navigation, &Navigation::replaceCurrent);
+    connect(m_history, &HomePageBackupPage::branchRequested, this, [this](const QString &ref)
+    {
+        if (ref.isEmpty()) return;
+        Route route{PageId::Branches, m_route.backupId};
+        route.branchRef = ref;
+        navigate(route);
+    });
+    connect(m_history, &HomePageBackupPage::createBranchRequested, m_branches, &HomePageBranchesPage::createFrom);
+    connect(ui->branchSelector, &QComboBox::activated, this, [this](int index)
+    {
+        const auto id = m_route.backupId, ref = ui->branchSelector->itemData(index).toString();
+        const auto current = m_backups->branchContext(id).ref;
+        { const QSignalBlocker blocker(ui->branchSelector); ui->branchSelector->setCurrentIndex(ui->branchSelector->findData(current)); }
+        if (!ref.isEmpty() && ref != current) m_branches->requestSwitch(id, ref);
+    });
     wire(m_general);
     wire(m_actions);
     connect(m_ai, &SettingPageAiPage::navigate, &m_navigation, &Navigation::go);
@@ -339,9 +359,16 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     UiStyle::text(ui->diffTitleLabel, UiStyle::FontRole::Caption, true);
     connect(ui->returnHistoryButton, &QToolButton::clicked, this, [this]
     {
-        if (m_route.page == PageId::Conflict)
+        if (m_route.page == PageId::Branches)
         {
             if (m_navigation.canBack() && m_navigation.previous().page == PageId::History)
+                m_navigation.back();
+            else
+                navigate({PageId::History, m_route.backupId});
+        }
+        else if (m_route.page == PageId::Conflict)
+        {
+            if (m_navigation.canBack() && (m_navigation.previous().page == PageId::History || m_navigation.previous().page == PageId::Branches))
                 m_navigation.back();
             else
                 navigate({PageId::Dashboard, m_route.backupId});
@@ -365,9 +392,16 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         }
         else if (m_route.page == PageId::Diff)
             navigate({PageId::History, m_route.backupId});
-        else if (m_route.page == PageId::Conflict)
+        else if (m_route.page == PageId::Branches)
         {
             if (m_navigation.canBack() && m_navigation.previous().page == PageId::History)
+                m_navigation.back();
+            else
+                navigate({PageId::History, m_route.backupId});
+        }
+        else if (m_route.page == PageId::Conflict)
+        {
+            if (m_navigation.canBack() && (m_navigation.previous().page == PageId::History || m_navigation.previous().page == PageId::Branches))
                 m_navigation.back();
             else
                 navigate({PageId::Dashboard, m_route.backupId});
@@ -377,8 +411,10 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     connect(ui->collapseButton, &QToolButton::clicked, this, &MainWindow::toggleSidebar);
     const QList<QPair<QToolButton *, PageId>> tabs{
         {ui->historyTab, PageId::History}, {ui->overviewTab, PageId::Dashboard}, {ui->generalTab, PageId::GeneralSettings}, {ui->aiTab, PageId::AiSettings}, {ui->aboutTab, PageId::About}};
-    for (const auto &[button, page] : tabs)
+    for (const auto &tab : tabs)
     {
+        auto *button = tab.first;
+        const auto page = tab.second;
         button->setAutoExclusive(true);
         connect(button, &QToolButton::clicked, this, [this, page]
                 {
@@ -420,7 +456,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     connect(backups, &BackupService::repositoryChanged, this, [this](const QString &id)
             {
         if (id == m_route.backupId)
-            updateConflictBadge(); });
+        { updateConflictBadge(); updateBranchSelector(); } });
     connect(backups, &BackupService::repositoryInvalidated, this, [this](const QString &id)
             {
         if ((m_applicationRoute.page == PageId::Diff || m_applicationRoute.page == PageId::Conflict) && m_applicationRoute.backupId == id)
@@ -678,6 +714,11 @@ void MainWindow::displayRoute(const Route &route)
             m_navigation.removeBackup(route.backupId);
         return;
     }
+    if (route.page == PageId::Branches && route.branchRef.isEmpty())
+    {
+        m_navigation.replaceCurrent({PageId::History, route.backupId});
+        return;
+    }
     if (m_route.page == PageId::History)
         m_history->deactivate();
     if (m_route.page == PageId::Dashboard)
@@ -762,17 +803,22 @@ void MainWindow::displayRoute(const Route &route)
         break;
     case PageId::History:
         page = m_history;
-        m_history->setBackup(route.backupId, route.commit);
+        m_history->setBackup(route.backupId, route.commit, route.branchRef);
         actions = m_history->toolbarActions();
         break;
     case PageId::Diff:
         page = m_diff;
-        m_diff->setRevision(route.backupId, route.commit);
+        m_diff->setRevision(route.backupId, route.commit, route.oldCommit);
         actions = m_diff->toolbarActions();
+        break;
+    case PageId::Branches:
+        page = m_branches;
+        m_branches->setBackup(route.backupId, route.branchRef);
+        actions = m_branches->toolbarActions();
         break;
     case PageId::Conflict:
         page = m_conflict;
-        m_conflict->setBackup(route.backupId);
+        m_conflict->setBackup(route.backupId, route.branchRef);
         break;
     case PageId::GeneralSettings:
         page = m_general;
@@ -798,12 +844,14 @@ void MainWindow::displayRoute(const Route &route)
     ui->tabs->setVisible(isObject);
     const bool isDiff = (route.page == PageId::Diff);
     const bool isConflict = (route.page == PageId::Conflict);
-    const bool isStandalone = isDiff || isConflict;
+    const bool isBranches = (route.page == PageId::Branches);
+    const bool isStandalone = isDiff || isConflict || isBranches;
     ui->returnHistoryButton->setVisible(isStandalone);
     if (isConflict)
     {
         const bool fromHistory = (m_navigation.canBack() && m_navigation.previous().page == PageId::History);
-        const QString text = fromHistory ? "返回历史版本" : "返回概览";
+        const bool fromBranches = (m_navigation.canBack() && m_navigation.previous().page == PageId::Branches);
+        const QString text = fromHistory ? "返回历史版本" : fromBranches ? "返回方案" : "返回概览";
         ui->returnHistoryButton->setText(text);
         ui->returnHistoryButton->setToolTip(text + " (Esc)");
         ui->returnHistoryButton->setAccessibleName(text);
@@ -817,6 +865,7 @@ void MainWindow::displayRoute(const Route &route)
     ui->diffTitleLabel->setVisible(isDiff);
     ui->historyTab->setVisible(!isStandalone && isObject);
     ui->overviewTab->setVisible(!isStandalone && isObject);
+    updateBranchSelector();
     ui->historyTab->setChecked(route.page == PageId::History);
     ui->overviewTab->setChecked(route.page == PageId::Dashboard);
     ui->generalTab->setChecked(route.page == PageId::GeneralSettings);
@@ -918,7 +967,7 @@ void MainWindow::updateConflictBadge()
     const bool isObject = isObjectPage(m_route.page);
     const auto state = isObject ? m_backups->syncState(m_route.backupId) : BackupSyncState::Tracking;
     const bool hasConflict = isObject && (state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending);
-    const bool isStandalone = (m_route.page == PageId::Diff || m_route.page == PageId::Conflict);
+    const bool isStandalone = (m_route.page == PageId::Diff || m_route.page == PageId::Conflict || m_route.page == PageId::Branches);
     const bool badgeVisible = hasConflict && !isStandalone;
     if (m_overviewBadge)
     {
@@ -994,4 +1043,25 @@ void MainWindow::showEvent(QShowEvent *event)
     if (QGuiApplication::platformName() == "cocoa")
         setupMacTitleBar(winId());
 #endif
+}
+
+void MainWindow::updateBranchSelector()
+{
+    const bool visible = isObjectPage(m_route.page) && m_route.page != PageId::Branches;
+    ui->branchSelector->setVisible(visible);
+    const auto request = ++m_branchRequest;
+    if (!visible) return;
+    const auto id = m_route.backupId;
+    const auto context = m_backups->branchContext(id);
+    ui->branchSelector->setEnabled(m_backups->syncState(id) == BackupSyncState::Tracking);
+    m_backups->branches(id, this, [this, id, request, context](const BackupResult<BranchSnapshot> &result)
+    {
+        if (request != m_branchRequest || id != m_route.backupId || !result.result.success) return;
+        const QSignalBlocker blocker(ui->branchSelector);
+        ui->branchSelector->clear();
+        for (const auto &branch : result.value.branches)
+            if (!branch.remoteBranch) ui->branchSelector->addItem((branch.current ? "正在使用：" : "切换到：") + branch.name, branch.ref);
+        ui->branchSelector->setCurrentIndex(ui->branchSelector->findData(result.value.context.ref));
+        ui->branchSelector->setToolTip("正在使用：" + result.value.context.ref.mid(11));
+    });
 }

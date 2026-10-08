@@ -25,7 +25,7 @@ class HomePageDiffPage : public QWidget
   public:
     HomePageDiffPage(BackupService *service, SettingsService *settings, AiGateway *gateway, QWidget *parent = nullptr);
     ~HomePageDiffPage() override;
-    void setRevision(const QString &id, const QString &commit);
+    void setRevision(const QString &id, const QString &commit, const QString &oldCommit = {});
     void deactivate();
     void refreshTheme();
     QList<QAction *> toolbarActions() const;

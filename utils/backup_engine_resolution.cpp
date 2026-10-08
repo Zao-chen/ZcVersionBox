@@ -25,11 +25,41 @@ BackupResult<BackupRecord> BackupEngine::resolutionRecord(const QString &id, con
 }
 BackupResult<SyncResolutionSession> BackupEngine::prepareSyncResolution(const QString &id, bool restart)
 {
+    return prepareResolution(id, restart);
+}
+BackupResult<SyncResolutionSession> BackupEngine::prepareBranchMerge(const BranchRequest &request)
+{
+    const auto checked = requireBranch(request.context); if (!checked.result.success) return {checked.result};
+    const auto target = checkBranchTarget(request); if (!target.success) return {target};
+    if (request.ref == request.context.ref) return {OperationResult::info("已是当前方案", {}), {}};
+    return prepareResolution(request.context.id, false, request.ref, request.expectedHead);
+}
+BackupResult<SyncResolutionSession> BackupEngine::prepareResolution(const QString &id, bool restart, QString mergeRef, QString mergeHead)
+{
     auto checked = require(id);
     if (!checked.result.success) return {checked.result};
     if (checked.value.state == BackupSyncState::ResolutionPending && !restart) return syncResolution(id);
+    if (restart && checked.value.state == BackupSyncState::ResolutionPending)
+    {
+        BackupMerge previous(resolutionPath(checked.value), m_dependencies, m_cancel);
+        const auto loaded = previous.load(); if (!loaded.success) return {loaded};
+        mergeRef = previous.session().mergeRef;
+        if (!mergeRef.isEmpty())
+        {
+            const auto head = repository(id).resolve(mergeRef); if (!head.result.success) return {head.result};
+            mergeHead = head.value;
+        }
+    }
     QString tagWarning;
-    if (checked.value.state != BackupSyncState::NeedsAttention)
+    if (mergeRef.isEmpty() && checked.value.state == BackupSyncState::Tracking)
+    {
+        const auto &record = checked.value;
+        const auto fetched = fetchBranches({id, record.branchRef, record.lastCommit, record.generation, record.branchVersion});
+        if (!fetched.success) return {fetched};
+        checked = require(id);
+        if (!checked.result.success) return {checked.result};
+    }
+    if (mergeRef.isEmpty() && checked.value.state != BackupSyncState::NeedsAttention)
     {
         const auto tags = syncTags(id, false);
         if (!tags.success) return {tags};
@@ -43,7 +73,7 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareSyncResolution(const QS
     {
         const auto clean = repository(id).clean(), head = repository(id).head().result;
         if (!clean.success) return {clean};
-        if (!head.success || repository(id).head().value != before.resolutionHead) return {OperationResult::warn("需要检查", "仓库在应用外发生变化，不能重新分析。")};
+        if (!head.success || repository(id).head().value != before.resolutionHead || repository(id).branchRef().value != before.branchRef) return {OperationResult::warn("需要检查", "仓库在应用外发生变化，不能重新分析。")};
     }
     else
     {
@@ -55,14 +85,14 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareSyncResolution(const QS
     record.resolutionSession = QUuid::createUuid().toString(QUuid::WithoutBraces);
     record.resolutionHead = repository(id).head().value;
     record.state = BackupSyncState::ResolutionPending;
-    record.stateDetail = "正在整理本地与云端内容。源文件保持原样。";
+    record.stateDetail = mergeRef.isEmpty() ? QStringLiteral("正在整理本地与云端内容。源文件保持原样。") : QString("正在合并方案 %1 到 %2。源文件保持原样。").arg(mergeRef.mid(11), record.branchRef.mid(11));
     record.operation = "prepare-resolution";
     const auto root = resolutionPath(record);
     record.recoveryPaths = {root};
     auto saved = m_catalog.save(record);
     if (!saved.success) return {saved};
     BackupMerge merge(root, m_dependencies, m_cancel);
-    const auto created = merge.create(before, m_catalog.repoPath(id), before.state == BackupSyncState::RemotePending ? before.pendingCommit : QString());
+    const auto created = merge.create(before, m_catalog.repoPath(id), mergeRef.isEmpty() ? (before.state == BackupSyncState::RemotePending ? before.pendingCommit : QString()) : mergeHead, mergeRef);
     if (!created.success)
     {
         const auto reset = m_catalog.save(before);
@@ -80,7 +110,8 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareSyncResolution(const QS
             saved = m_catalog.save(before);
             if (!saved.success) return {saved};
             m_dependencies.files->remove(root);
-            auto result = OperationResult::ok("已是最新", "历史版本与里程碑标记已更新，没有需要应用的文件变化。");
+            auto result = mergeRef.isEmpty() ? OperationResult::ok("已是最新", "历史版本与里程碑标记已更新，没有需要应用的文件变化。")
+                                            : OperationResult::ok("当前方案已包含所选方案", "没有新增提交或文件变化。");
             result.warning = tagWarning;
             return {result, {}};
         }
@@ -163,7 +194,7 @@ OperationResult BackupEngine::applySync(const PreparedSyncApply &request)
     const auto rollbackBeforeCommit = [&](const OperationResult &failure)
     {
         const auto head = live.head();
-        if (!head.result.success || head.value != merge.expectedHead() || !live.clean().success) return stopped(failure);
+        if (!head.result.success || live.branchRef().value != before.branchRef || head.value != merge.expectedHead() || !live.clean().success) return stopped(failure);
         const auto restored = m_catalog.save(before);
         if (!restored.success) return stopped(restored);
         return failure;
@@ -175,7 +206,7 @@ OperationResult BackupEngine::applySync(const PreparedSyncApply &request)
     result = merge.verify(before, m_catalog.repoPath(request.id)); if (!result.success) return rollbackBeforeCommit(result);
     result = GitRepository::outcome(live.run({"merge", "--ff-only", "--no-edit", request.commit}));
     if (!result.success) return rollbackBeforeCommit(result);
-    if (live.head().value != request.commit || !live.clean().success) return stopped(invalidSession());
+    if (live.branchRef().value != before.branchRef || live.head().value != request.commit || !live.clean().success) return stopped(invalidSession());
     // The user may edit the source while Git finishes. Recheck before the first source move.
     SourceFingerprint current;
     result = m_dependencies.files->fingerprint(before.sourcePath, before.directory, current, false);
@@ -193,7 +224,7 @@ OperationResult BackupEngine::applySync(const PreparedSyncApply &request)
     SourceFingerprint fingerprint;
     result = m_dependencies.files->fingerprint(before.sourcePath, before.directory, fingerprint); if (!result.success) return stopped(result);
     result = replacement.verifyInstalled(); if (!result.success) return stopped(result);
-    if (live.head().value != request.commit || !live.clean().success) return stopped(OperationResult::fail("应用已暂停", "仓库在应用期间发生变化"));
+    if (live.branchRef().value != before.branchRef || live.head().value != request.commit || !live.clean().success) return stopped(OperationResult::fail("应用已暂停", "仓库在应用期间发生变化"));
     record.lastCommit = request.commit; record.fingerprint = fingerprint; record.state = BackupSyncState::Tracking;
     record.pendingCommit.clear(); record.resolutionSession.clear(); record.resolutionHead.clear(); record.stateDetail.clear(); record.operation.clear(); record.recoveryPaths.clear();
     result = m_catalog.save(record);
@@ -222,5 +253,25 @@ OperationResult BackupEngine::previewSync(const QString &id, const QString &sess
     result = m_dependencies.files->readOnly(temp.path()); if (!result.success) return result;
     result.path = target;
     m_previews.append(temp.path()); temp.setAutoRemove(false);
+    return result;
+}
+
+OperationResult BackupEngine::cancelResolution(const QString &id, const QString &session)
+{
+    const auto checked = resolutionRecord(id, session); if (!checked.result.success) return checked.result;
+    auto record = checked.value;
+    if (record.state != BackupSyncState::ResolutionPending || !record.operation.isEmpty()) return invalidSession();
+    const auto git = repository(id);
+    if (git.branchRef().value != record.branchRef || git.head().value != record.resolutionHead || !git.clean().success)
+        return attention(record, "仓库在处理期间发生变化，处理副本已保留，不能直接取消。");
+    const auto root = resolutionPath(record);
+    record.state = record.lastCommit == record.resolutionHead ? BackupSyncState::Tracking : BackupSyncState::RemotePending;
+    if (record.state == BackupSyncState::Tracking) { record.pendingCommit.clear(); record.stateDetail.clear(); }
+    else { record.pendingCommit = record.resolutionHead; record.stateDetail = "已拉取的版本仍待应用到源位置。"; }
+    record.resolutionSession.clear(); record.resolutionHead.clear(); record.recoveryPaths.clear();
+    const auto saved = m_catalog.save(record); if (!saved.success) return saved;
+    const auto removed = m_dependencies.files->remove(root);
+    auto result = OperationResult::ok("处理已取消", "源文件保持原样。");
+    if (!removed.success) result.warning = removed.message;
     return result;
 }

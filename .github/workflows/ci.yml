@@ -11,39 +11,94 @@ on:
         type: choice
         default: all
         options: [all, windows, macos, linux]
+      scope:
+        description: Daily checks or full cross-platform regression
+        type: choice
+        default: standard
+        options: [standard, full]
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      code: ${{ github.event_name == 'workflow_dispatch' || steps.paths.outputs.code == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: paths
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!LICENSE*'
+      - name: Validate CI report tool
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python3 -m unittest discover -s tests -p 'test_ci_report.py'
+
   windows:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'windows') }}
     runs-on: windows-2022
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/build-windows
         with:
           package: 'false'
+          test-profile: ${{ inputs.scope == 'full' && 'full' || 'smoke' }}
 
   macos:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'macos') }}
     runs-on: macos-15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/build-macos
         with:
           package: 'false'
-          architectures: arm64;x86_64
+          test-profile: ${{ inputs.scope == 'full' && 'full' || 'smoke' }}
+          architectures: arm64
 
   linux:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux' }}
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' && (github.event_name != 'workflow_dispatch' || inputs.platform == 'all' || inputs.platform == 'linux') }}
     runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/build-linux
         with:
           package: 'false'
+          test-profile: ${{ inputs.scope == 'full' && 'full' || 'standard' }}
+
+  ci:
+    name: CI
+    if: always()
+    needs: [changes, windows, macos, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check selected jobs
+        env:
+          RESULTS: ${{ join(needs.*.result, ',') }}
+        run: |
+          if [[ "$RESULTS" == *failure* || "$RESULTS" == *cancelled* ]]; then
+            echo "CI failed: $RESULTS" >&2
+            exit 1
+          fi
+          echo "Selected checks passed; documentation-only changes skip Qt builds." >> "$GITHUB_STEP_SUMMARY"

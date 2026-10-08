@@ -77,6 +77,49 @@ class TestBackupService : public BackupService
   public:
     explicit TestBackupService(const AppPaths &paths, QObject *parent = nullptr, AiGateway *gateway = nullptr, BackupDependencies dependencies = {})
         : BackupService(paths, parent, gateway, testDependencies(std::move(dependencies))) { settle(*this); }
+    using BackupService::branches;
+    using BackupService::createBranch;
+    using BackupService::renameBranch;
+    using BackupService::deleteBranch;
+    using BackupService::prepareBranchSwitch;
+    using BackupService::switchBranch;
+    BackupResult<BranchSnapshot> branches(const QString &id)
+    { return awaitBackup<BackupResult<BranchSnapshot>>([&](auto f) { BackupService::branches(id, this, f); }); }
+    BranchRequest branchRequest(const QString &id, const QString &ref)
+    {
+        BranchRequest r; r.context = branchContext(id); r.ref = ref;
+        const auto values = branches(id);
+        for (const auto &b : values.value.branches) if (b.ref == ref) { r.expectedHead = b.head; r.endpoint = b.endpoint; }
+        return r;
+    }
+    OperationResult createBranch(const QString &id, const QString &name, const QString &start = {})
+    {
+        BranchRequest r; r.context = branchContext(id); r.name = name;
+        r.startCommit = start.isEmpty() ? r.context.head : start;
+        return awaitBackup<OperationResult>([&](auto f) { BackupService::createBranch(r, this, f); });
+    }
+    OperationResult renameBranch(const QString &id, const QString &ref, const QString &name)
+    {
+        auto r = branchRequest(id, ref); r.name = name;
+        return awaitBackup<OperationResult>([&](auto f) { BackupService::renameBranch(r, this, f); });
+    }
+    OperationResult deleteBranch(const QString &id, const QString &ref, bool force = false)
+    {
+        auto r = branchRequest(id, ref); r.force = force;
+        return awaitBackup<OperationResult>([&](auto f) { BackupService::deleteBranch(r, this, f); });
+    }
+    BackupResult<PreparedBranchSwitch> prepareBranchSwitch(const QString &id, const QString &ref)
+    {
+        const auto r = branchRequest(id, ref);
+        return awaitBackup<BackupResult<PreparedBranchSwitch>>([&](auto f) { BackupService::prepareBranchSwitch(r, this, f); });
+    }
+    OperationResult switchBranch(const PreparedBranchSwitch &r)
+    { return awaitBackup<OperationResult>([&](auto f) { BackupService::switchBranch(r, this, f); }); }
+    OperationResult switchBranch(const QString &id, const QString &ref)
+    {
+        const auto r = prepareBranchSwitch(id, ref);
+        return r.result.success ? switchBranch(r.value) : r.result;
+    }
     using BackupService::prepareSyncResolution;
     using BackupService::syncResolution;
     using BackupService::chooseSyncResolution;

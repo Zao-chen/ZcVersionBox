@@ -5,6 +5,10 @@
 #include "windows/mainwindow.h"
 #include "windows/mainwindow_child/homepage/homepage.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_backup.h"
+#include "windows/mainwindow_child/homepage/pages/homepage_page_branches.h"
+#include "windows/mainwindow_child/homepage/pages/homepage_history_graph.h"
+#include <QTabWidget>
+#include <QTimer>
 #include "windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_diff.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_conflict.h"
@@ -21,6 +25,7 @@
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDialogButtonBox>
+#include <QCheckBox>
 #include <QFile>
 #include <QFontInfo>
 #include <QGlyphRun>
@@ -91,6 +96,13 @@ QPoint historyActionPoint(QTableView *table, int row, int action)
 {
     const auto cell = table->visualRect(table->model()->index(row, table->model()->columnCount() - 1));
     return {cell.x() + 8 + action * (28 + 4) + 14, cell.center().y()};
+}
+void openHistoryMenu(QTableView *table, int row)
+{
+    const auto point = table->visualRect(table->model()->index(row, 0)).center();
+    QTest::mouseMove(table->viewport(), point);
+    QContextMenuEvent context(QContextMenuEvent::Mouse, point, table->viewport()->mapToGlobal(point));
+    QApplication::sendEvent(table->viewport(), &context);
 }
 void hoverHistoryAction(QTableView *table, int row, int action)
 {
@@ -1061,13 +1073,13 @@ class Regression : public QObject
         HomePageBackupPage page(&service); page.resize(820, 580); page.setBackup(id); settle(service); page.show();
         auto *table = page.findChild<QTableView *>("table");
         auto *filter = page.findChild<QAbstractButton *>("milestoneOnlySwitch"); QVERIFY(filter);
-        const auto openManager = [&](int row) -> QDialog *
+        const auto openTagManager = [&](int row) -> QDialog *
         {
             QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, row, 2));
             QCoreApplication::processEvents();
             return page.findChild<QDialog *>("versionTagDialog");
         };
-        QPointer<QDialog> dialog = openManager(1); QVERIFY(dialog);
+        QPointer<QDialog> dialog = openTagManager(1); QVERIFY(dialog);
         auto *name = dialog->findChild<QLineEdit *>("versionTagName");
         auto *buttons = dialog->findChild<QDialogButtonBox *>();
         name->setText("bad name"); QTest::mouseClick(buttons->button(QDialogButtonBox::Save), Qt::LeftButton); settle(service);
@@ -1084,17 +1096,17 @@ class Regression : public QObject
         QVERIFY(table->isRowHidden(0)); QVERIFY(!table->isRowHidden(1));
         page.setBackup(encoded(other)); settle(service); QVERIFY(!filter->isChecked());
         page.setBackup(id); settle(service); QVERIFY(filter->isChecked()); QVERIFY(table->isRowHidden(0));
-        dialog = openManager(1); QVERIFY(dialog);
+        dialog = openTagManager(1); QVERIFY(dialog);
         name = dialog->findChild<QLineEdit *>("versionTagName"); name->setText("定稿");
         QTest::keyClick(name, Qt::Key_Return); settle(service); QTRY_VERIFY(!dialog || !dialog->isVisible());
         QTRY_COMPARE(table->model()->index(1, 0).data(Qt::UserRole + 2).value<QVector<VersionTag>>().size(), 1);
         QTRY_COMPARE(table->model()->index(1, 0).data(Qt::UserRole + 2).value<QVector<VersionTag>>().first().name, QString("定稿"));
-        dialog = openManager(1); QVERIFY(dialog);
+        dialog = openTagManager(1); QVERIFY(dialog);
         QTest::mouseClick(dialog->findChild<QPushButton *>("removeVersionTagButton"), Qt::LeftButton); settle(service);
         QTRY_VERIFY(!dialog || !dialog->isVisible());
         QTRY_VERIFY(!table->isVisible()); QVERIFY(page.findChild<QLabel *>("emptyLabel")->text().contains("还没有里程碑版本"));
         filter->setChecked(false); QVERIFY(table->isVisible()); QCOMPARE(table->model()->rowCount(), 2);
-        dialog = openManager(0); QVERIFY(dialog);
+        dialog = openTagManager(0); QVERIFY(dialog);
         dialog->findChild<QLineEdit *>("versionTagName")->setText("旧弹窗");
         page.setBackup(encoded(other)); settle(service); QTRY_VERIFY(!dialog || !dialog->isVisible());
         page.setBackup(id); settle(service);
@@ -1283,6 +1295,7 @@ class Regression : public QObject
         QVERIFY(menu->findChild<QAction *>("editMessageActionMenu"));
         QTest::keyPress(menu, Qt::Key_Escape);
         QTRY_VERIFY(!QApplication::activePopupWidget());
+        table->setCurrentIndex(table->model()->index(0, 0));
         QTest::keyClick(table, Qt::Key_Menu);
         QTRY_VERIFY(QApplication::activePopupWidget());
         menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
@@ -1291,7 +1304,7 @@ class Regression : public QObject
         QTest::keyPress(menu, Qt::Key_Return);
         QPointer<QLineEdit> editor = table->findChild<QLineEdit *>();
         QVERIFY(editor);
-        QCOMPARE(table->currentIndex().data(Qt::UserRole + 1).toString(), first);
+        QCOMPARE(table->currentIndex().data(Qt::UserRole + 1).toString(), latest);
         QTest::keyClick(editor, Qt::Key_Escape);
         QTRY_VERIFY(!editor);
         QTest::keyClick(table, Qt::Key_F2);
@@ -1313,6 +1326,98 @@ class Regression : public QObject
         QCOMPARE(qvariant_cast<Route>(routes.last().first()).commit, latest);
         QFile::setPermissions(previewPath + "/行内操作.txt", QFileDevice::ReadOwner | QFileDevice::WriteOwner);
         QVERIFY(QDir(previewPath).removeRecursively());
+    }
+    void directHistoryEditAndRestore_data()
+    {
+        QTest::addColumn<bool>("acceptRestore");
+        QTest::addColumn<bool>("changeContext");
+        QTest::newRow("cancel") << false << false;
+        QTest::newRow("restore-clicked-version") << true << false;
+        QTest::newRow("reject-stale-confirmation") << true << true;
+    }
+    void directHistoryEditAndRestore()
+    {
+        QFETCH(bool, acceptRestore);
+        QFETCH(bool, changeContext);
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/inline.txt", other = dir.path() + "/other.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source), base = head(service, id);
+        writeFile(source, "latest\n"); QVERIFY(service.backup(id).success);
+        writeFile(other, "other\n"); QVERIFY(service.addLocal(other).success);
+        HomePageBackupPage page(&service); page.resize(820, 580); page.show();
+        page.setBackup(id); settle(service);
+        page.activateWindow();
+        QVERIFY(QTest::qWaitForWindowExposed(&page));
+        auto *table = page.findChild<QTableView *>("table"); QVERIFY(table);
+        QSignalSpy routes(&page, &HomePageBackupPage::navigate);
+        // An older row cannot open an editor, including through the native edit key.
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 1, 4));
+        QVERIFY(!table->findChild<QLineEdit *>());
+        QVERIFY(!page.findChild<QAction *>("editMessageAction")->isEnabled());
+        QVERIFY(!(table->model()->flags(table->model()->index(1, 0)) & Qt::ItemIsEditable));
+        QTest::keyClick(table, Qt::Key_F2);
+        QVERIFY(!table->findChild<QLineEdit *>());
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 0, 4));
+        QPointer<QLineEdit> editor = table->findChild<QLineEdit *>(); QVERIFY(editor);
+        editor->selectAll(); QTest::keyClicks(editor, "Edited latest description");
+        QTest::keyClick(editor, Qt::Key_Return);
+        settle(service); QTRY_VERIFY(!editor);
+        QCOMPARE(table->model()->index(0, 0).data().toString(), QString("Edited latest description"));
+        QCOMPARE(readFile(source), QByteArray("latest\n"));
+        const auto latest = head(service, id);
+        QVERIFY(service.createTag(service.tagRequest(id, latest, "定稿")).success);
+        settle(service);
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 0, 4));
+        QVERIFY(!table->findChild<QLineEdit *>());
+        QVERIFY(!page.findChild<QAction *>("editMessageAction")->isEnabled());
+        const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS");
+        if (!output.isEmpty())
+        {
+            QDir().mkpath(output);
+            for (int theme = 0; theme < 2; ++theme)
+            {
+                for (int width : {820, 520})
+                {
+                    page.resize(width, 400); QTest::qWait(40);
+                    hoverHistoryAction(table, 0, 2);
+                    QVERIFY(table->viewport()->rect().contains(historyActionPoint(table, 0, 5)));
+                    QCOMPARE(table->horizontalScrollBar()->maximum(), 0);
+                    QVERIFY(page.grab().save(output + QString("/inline-marked-%1-%2.png").arg(theme).arg(width)));
+                }
+                m_theme->toggle();
+            }
+        }
+        page.resize(520, 400); QTest::qWait(20);
+        QVERIFY(table->viewport()->rect().contains(historyActionPoint(table, 1, 5)));
+        bool shown = false, defaultCancel = false, rightVersion = false;
+        QTimer responder; responder.setInterval(10);
+        connect(&responder, &QTimer::timeout, &page, [&] {
+            auto *dialog = page.findChild<QDialog *>("confirmDialog");
+            if (!dialog || !dialog->isVisible()) return;
+            responder.stop(); shown = true;
+            auto *buttons = dialog->findChild<QDialogButtonBox *>();
+            defaultCancel = buttons && buttons->button(QDialogButtonBox::Cancel)->isDefault();
+            for (auto *label : dialog->findChildren<QLabel *>())
+                rightVersion |= label->text().contains(base.left(8));
+            // A later selection must never change the requested restore revision.
+            table->setCurrentIndex(table->model()->index(0, 0));
+            if (changeContext) { page.setBackup(service.idForSource(other)); settle(service); }
+            if (acceptRestore) dialog->accept(); else dialog->reject();
+        });
+        QTimer watchdog; watchdog.setSingleShot(true);
+        connect(&watchdog, &QTimer::timeout, &page, [&] {
+            if (auto *dialog = page.findChild<QDialog *>("confirmDialog")) dialog->reject();
+        });
+        responder.start(); watchdog.start(5000);
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 1, 5));
+        QTRY_VERIFY_WITH_TIMEOUT(shown, 5000);
+        watchdog.stop(); responder.stop(); settle(service);
+        QVERIFY(defaultCancel); QVERIFY(rightVersion);
+        QCOMPARE(routes.count(), 0);
+        QCOMPARE(readFile(source), acceptRestore && !changeContext ? QByteArray("base\n") : QByteArray("latest\n"));
+        QCOMPARE(readFile(other), QByteArray("other\n"));
+        QCOMPARE(head(service, id), latest);
     }
     void conflictChoicesPreviewAndApply()
     {
@@ -1726,7 +1831,7 @@ class Regression : public QObject
         const auto first = table->model()->index(1, 0).data(Qt::UserRole + 1).toString();
         const auto openMenu = [&](int row)
         {
-            QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, row, 3));
+            openHistoryMenu(table, row);
             if (!QTest::qWaitFor([]
                                  { return QApplication::activePopupWidget() != nullptr; }, 1000))
                 return static_cast<QMenu *>(nullptr);
@@ -2048,9 +2153,12 @@ class Regression : public QObject
         QCOMPARE(routes.count(), 1);
         QCOMPARE(qvariant_cast<Route>(routes.first().first()).commit, previous);
         // A monitor update cannot destroy an in-progress message editor.
+        table->setCurrentIndex(table->model()->index(0, 0));
         page.findChild<QAction *>("editMessageAction")->trigger();
-        auto *editor = table->findChild<QLineEdit *>();
+        QPointer<QLineEdit> editor = table->findChild<QLineEdit *>();
         QVERIFY(editor);
+        editor->setFocus();
+        QTRY_VERIFY(editor && editor->hasFocus());
         editor->selectAll();
         QTest::keyClicks(editor, "pending edit");
         writeFile(source, "four\n");
@@ -2256,6 +2364,473 @@ class Regression : public QObject
         QTRY_VERIFY(!popover);
         QTRY_VERIFY(!notification.isVisible());
     }
+    void historyMenuCreatesBranchAfterMouseDispatch_data()
+    {
+        QTest::addColumn<bool>("acceptCreate");
+        QTest::addColumn<bool>("switchAfter");
+        QTest::addColumn<bool>("keyboard");
+        QTest::addColumn<bool>("branchDetail");
+        QTest::addColumn<bool>("direct");
+        QTest::newRow("mouse-cancel-history") << false << false << false << false << false;
+        QTest::newRow("mouse-create-history") << true << false << false << false << false;
+        QTest::newRow("mouse-create-and-switch-detail") << true << true << false << true << false;
+        QTest::newRow("keyboard-create-detail") << true << false << true << true << false;
+        QTest::newRow("direct-cancel-history") << false << false << false << false << true;
+        QTest::newRow("direct-create-history") << true << false << false << false << true;
+        QTest::newRow("direct-create-and-switch-detail") << true << true << false << true << true;
+    }
+    void historyMenuCreatesBranchAfterMouseDispatch()
+    {
+        QFETCH(bool, acceptCreate);
+        QFETCH(bool, switchAfter);
+        QFETCH(bool, keyboard);
+        QFETCH(bool, branchDetail);
+        QFETCH(bool, direct);
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        const auto base = head(service, id);
+        writeFile(source, "latest\n"); QVERIFY(service.backup(id).success);
+        const auto original = service.branchContext(id);
+        FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.show();
+        window.activateWindow();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        Route route{branchDetail ? PageId::Branches : PageId::History, id};
+        if (branchDetail) route.branchRef = original.ref;
+        window.navigate(route); settle(service);
+        auto *branches = window.findChild<HomePageBranchesPage *>(); QVERIFY(branches);
+        auto *history = branchDetail ? branches->findChild<HomePageBackupPage *>() : window.findChild<HomePageBackupPage *>();
+        QVERIFY(history && history->isVisible());
+        auto *table = history->findChild<QTableView *>("table"); QVERIFY(table);
+        QCOMPARE(table->model()->rowCount(), 2);
+        QPointer<QMenu> menu;
+        QAction *create = nullptr;
+        if (!direct)
+        {
+            openHistoryMenu(table, 1);
+            menu = history->findChild<QMenu *>("revisionMenu"); QVERIFY(menu);
+            QTRY_VERIFY(menu->isVisible() && menu->width() > 0);
+            for (auto *action : menu->actions()) if (action->text() == "从此版本新建方案…") create = action;
+            QVERIFY(create && create->isEnabled());
+        }
+        QSignalSpy requested(history, &HomePageBackupPage::createBranchRequested);
+        // The direct opener and the menu must both preserve the clicked revision.
+        table->selectRow(0);
+        QSignalSpy notifications(branches, &HomePageBranchesPage::notification);
+        bool shown = false, menuReleased = false, switchShown = false, timedOut = false;
+        QTimer responder;
+        responder.setInterval(10);
+        connect(&responder, &QTimer::timeout, &window, [&] {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!dialog) return;
+            if (dialog->objectName() == "createBranchDialog")
+            {
+                shown = true;
+                menuReleased = menu.isNull();
+                auto *name = dialog->findChild<QLineEdit *>("branchName");
+                auto *use = dialog->findChild<QCheckBox *>();
+                if (!name || !use) { dialog->reject(); return; }
+                name->setText("菜单创建方案");
+                use->setChecked(switchAfter);
+                if (acceptCreate) dialog->accept(); else dialog->reject();
+            }
+            else if (dialog->objectName() == "switchBranchDialog")
+            {
+                switchShown = true;
+                dialog->accept();
+            }
+        });
+        QTimer watchdog;
+        watchdog.setSingleShot(true);
+        connect(&watchdog, &QTimer::timeout, &window, [&] {
+            timedOut = true;
+            responder.stop();
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget())) dialog->reject();
+            if (menu) menu->close();
+        });
+        responder.start(); watchdog.start(10000);
+        if (direct)
+        {
+            QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 1, 3));
+            table->selectRow(0);
+        }
+        else if (keyboard)
+        {
+            menu->setActiveAction(create);
+            QTest::keyPress(menu, Qt::Key_Return);
+        }
+        else
+        {
+            // Exercise Qlementine's delayed synthetic mouse release, not QAction::trigger().
+            const auto point = menu->actionGeometry(create).center();
+            QTest::mouseMove(menu, point);
+            // Successive rows may reuse the cursor position; still deliver a move.
+            QMouseEvent move(QEvent::MouseMove, point, menu->mapToGlobal(point), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(menu, &move);
+            QTest::mouseClick(menu, Qt::LeftButton, {}, point);
+            QVERIFY(create->property("qlementine_flashing").toBool());
+        }
+        QTRY_COMPARE_WITH_TIMEOUT(requested.count(), 1, 11000);
+        QCOMPARE(requested.first().at(1).toString(), base);
+        QTRY_VERIFY_WITH_TIMEOUT(shown || timedOut, 11000);
+        if (acceptCreate) QTRY_VERIFY_WITH_TIMEOUT(notifications.count() >= (switchAfter ? 2 : 1) || timedOut, 11000);
+        watchdog.stop(); responder.stop(); settle(service);
+        QVERIFY(!timedOut);
+        QVERIFY(shown);
+        QVERIFY2(menuReleased, "The menu must finish dispatching and be released before the modal dialog opens");
+        QVERIFY(!menu);
+        QCOMPARE(switchShown, switchAfter);
+        for (const auto &args : notifications) QVERIFY(qvariant_cast<OperationResult>(args.first()).success);
+        const auto created = runGit(service.repoPath(id), {"rev-parse", "--verify", "refs/heads/菜单创建方案"});
+        QCOMPARE(created.success(), acceptCreate);
+        if (acceptCreate) QCOMPARE(created.output.trimmed(), base);
+        QCOMPARE(service.branchContext(id).ref, switchAfter ? QString("refs/heads/菜单创建方案") : original.ref);
+        QCOMPARE(head(service, id), switchAfter ? base : original.head);
+        QCOMPARE(readFile(source), switchAfter ? QByteArray("base\n") : QByteArray("latest\n"));
+    }
+    void historyBranchBadgesKeepExactTargets()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        QVERIFY(service.renameBranch(id, service.branchContext(id).ref, "main").success);
+        QVERIFY(service.createBranch(id, "earlier").success);
+        writeFile(source, "latest\n"); QVERIFY(service.backup(id).success);
+        QVERIFY(service.createBranch(id, "alias").success);
+        HomePageBackupPage page(&service);
+        page.resize(1080, 700); page.setAttribute(Qt::WA_DontShowOnScreen); page.show();
+        page.setBackup(id); settle(service);
+        auto *table = page.findChild<QTableView *>("table"); QVERIFY(table);
+        QCOMPARE(table->model()->rowCount(), 2);
+        QSignalSpy requested(&page, &HomePageBackupPage::branchRequested);
+        const auto badgePoint = [table](int row, int offset = 4) {
+            const auto index = table->model()->index(row, 0);
+            const auto cell = table->visualRect(index);
+            return QPoint(cell.left() + index.data(HistoryGraph::Width).toInt() + offset, cell.center().y());
+        };
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, badgePoint(0));
+        auto *menu = page.findChild<QMenu *>("historyBranchMenu"); QVERIFY(menu);
+        QAction *alias = nullptr;
+        for (auto *action : menu->actions()) if (action->data().toString() == "refs/heads/alias") alias = action;
+        QVERIFY(alias); alias->trigger(); menu->close();
+        QCOMPARE(requested.count(), 1);
+        QCOMPARE(requested.takeFirst().first().toString(), QString("refs/heads/alias"));
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, badgePoint(1));
+        QCOMPARE(requested.count(), 1);
+        QCOMPARE(requested.takeFirst().first().toString(), QString("refs/heads/earlier"));
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, badgePoint(1, 145));
+        QCOMPARE(requested.count(), 0);
+        QVERIFY(table->model()->index(1, 0).data(HistoryGraph::NodeRefs).toStringList().contains("refs/heads/earlier"));
+
+        QVERIFY(runGit(service.repoPath(id), {"tag", "milestone", "HEAD"}).success());
+        page.refresh(); settle(service);
+        auto *filter = page.findChild<oclero::qlementine::Switch *>(); QVERIFY(filter);
+        filter->setChecked(true); settle(service);
+        const auto cell = table->visualRect(table->model()->index(0, 0));
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, QPoint(cell.left() + 14, cell.center().y()));
+        QCOMPARE(requested.count(), 0);
+        QCOMPARE(readFile(source), QByteArray("latest\n"));
+    }
+    void branchDeletionKeepsConfirmedVersion_data()
+    {
+        QTest::addColumn<bool>("changedDuringConfirmation");
+        QTest::newRow("unchanged-version") << false;
+        QTest::newRow("refreshed-version") << true;
+    }
+    void branchDeletionKeepsConfirmedVersion()
+    {
+        QFETCH(bool, changedDuringConfirmation);
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        QVERIFY(service.createBranch(id, "topic").success);
+        writeFile(source, "latest\n"); QVERIFY(service.backup(id).success);
+        const auto latest = head(service, id);
+        HomePageBranchesPage page(&service);
+        page.resize(1080, 700); page.setAttribute(Qt::WA_DontShowOnScreen); page.show();
+        page.setBackup(id, "refs/heads/topic"); settle(service);
+        auto *operations = page.findChild<QPushButton *>("operations"); QVERIFY(operations && operations->isEnabled());
+        QSignalSpy notifications(&page, &HomePageBranchesPage::notification);
+        QSignalSpy routes(&page, &HomePageBranchesPage::replaceRoute);
+        bool confirmed = false, updated = false;
+        QTimer responder;
+        responder.setInterval(10);
+        connect(&responder, &QTimer::timeout, &page, [&] {
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+            {
+                responder.stop();
+                confirmed = true;
+                updated = !changedDuringConfirmation || runGit(service.repoPath(id), {"update-ref", "refs/heads/topic", latest}).success();
+                page.refresh(); settle(service);
+                dialog->accept();
+            }
+        });
+        QTimer choose;
+        choose.setInterval(10);
+        connect(&choose, &QTimer::timeout, &page, [&] {
+            if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()))
+            {
+                choose.stop();
+                for (auto *action : menu->actions()) if (action->text() == "删除本地方案…")
+                {
+                    menu->setActiveAction(action);
+                    QTest::keyPress(menu, Qt::Key_Return);
+                    return;
+                }
+                menu->close();
+            }
+        });
+        QTimer watchdog;
+        watchdog.setSingleShot(true);
+        connect(&watchdog, &QTimer::timeout, &page, [] {
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget())) dialog->reject();
+            if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget())) menu->close();
+        });
+        responder.start(); choose.start(); watchdog.start(10000);
+        operations->click();
+        watchdog.stop(); responder.stop(); choose.stop();
+        settle(service);
+        QVERIFY(confirmed && updated);
+        const auto branch = runGit(service.repoPath(id), {"rev-parse", "--verify", "refs/heads/topic"});
+        QCOMPARE(branch.success(), changedDuringConfirmation);
+        if (changedDuringConfirmation) QCOMPARE(branch.output.trimmed(), latest);
+        QCOMPARE(notifications.count(), 1);
+        QCOMPARE(qvariant_cast<OperationResult>(notifications.first().first()).success, !changedDuringConfirmation);
+        QCOMPARE(routes.count(), changedDuringConfirmation ? 0 : 1);
+    }
+    void branchDetailReportsHistoryErrors()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        HomePageBranchesPage page(&service);
+        page.setAttribute(Qt::WA_DontShowOnScreen); page.show();
+        page.setBackup(id, service.branchContext(id).ref); settle(service);
+        auto *table = page.findChild<QTableView *>("table"); QVERIFY(table);
+        QCOMPARE(table->model()->rowCount(), 1);
+        const auto original = head(service, id);
+        QSignalSpy notifications(&page, &HomePageBranchesPage::notification);
+        QVERIFY(table->model()->setData(table->model()->index(0, 0), QString()));
+        settle(service);
+        QCOMPARE(notifications.count(), 1);
+        QVERIFY(!qvariant_cast<OperationResult>(notifications.first().first()).success);
+        QCOMPARE(head(service, id), original);
+    }
+    void overviewProvidesTheOnlyCloudSyncEntry()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        QVERIFY(service.renameBranch(id, service.branchContext(id).ref, "main").success);
+        QVERIFY(service.createBranch(id, "topic").success);
+        const auto remote = dir.path() + "/remote.git";
+        QVERIFY(runGit({}, {"init", "--bare", "--initial-branch=main", remote}).success());
+        QVERIFY(service.setRemote(id, remote).success);
+        FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen); window.resize(1080, 740); window.show();
+        window.navigate({PageId::Dashboard, id}); settle(service);
+        auto *overview = window.findChild<HomePageDashboardPage *>(); QVERIFY(overview && overview->isVisible());
+        auto *upload = overview->findChild<QPushButton *>("pushButton"); QVERIFY(upload && upload->isEnabled());
+        QCOMPARE(upload->text(), QString("全量上传"));
+        QSignalSpy notifications(overview, &HomePageDashboardPage::notification);
+        upload->click(); settle(service);
+        QVERIFY(!notifications.isEmpty());
+        QVERIFY(qvariant_cast<OperationResult>(notifications.last().first()).success);
+        const auto topic = runGit(service.repoPath(id), {"rev-parse", "topic"}); QVERIFY(topic.success());
+        QCOMPARE(runGit(remote, {"rev-parse", "topic"}).output.trimmed(), topic.output.trimmed());
+        QVERIFY(runGit(remote, {"branch", "cloud-only", "main"}).success());
+        notifications.clear();
+        auto *download = overview->findChild<QPushButton *>("pullButton"); QVERIFY(download && download->isEnabled());
+        QCOMPARE(download->text(), QString("全量获取"));
+        download->click(); settle(service);
+        QVERIFY(!notifications.isEmpty());
+        QVERIFY(qvariant_cast<OperationResult>(notifications.last().first()).success);
+        QVERIFY(runGit(service.repoPath(id), {"rev-parse", "refs/remotes/origin/cloud-only"}).success());
+        QCOMPARE(readFile(source), QByteArray("base\n"));
+        const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS");
+        if (!output.isEmpty())
+        {
+            QDir().mkpath(output);
+            if (auto *notification = window.findChild<NotificationBar *>()) notification->dismiss();
+            for (const auto theme : {ThemeMode::Light, ThemeMode::Dark})
+            {
+                m_theme->setMode(theme);
+                for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+                {
+                    window.resize(size); QTest::qWait(80);
+                    auto *scroll = overview->findChild<QScrollArea *>("scroll"); QVERIFY(scroll);
+                    scroll->ensureWidgetVisible(upload);
+                    QTest::qWait(30);
+                    QVERIFY(window.grab().save(output + QString("/cloud-overview-%1-%2.png").arg(theme == ThemeMode::Light ? "light" : "dark").arg(size.width())));
+                }
+            }
+        }
+        window.navigate({PageId::Branches, id, {}, {}, QString("refs/heads/topic")}); settle(service);
+        auto *branches = window.findChild<HomePageBranchesPage *>(); QVERIFY(branches && branches->isVisible());
+        QVERIFY(!branches->findChild<QAction *>("fetchBranchesAction"));
+        auto *operations = branches->findChild<QPushButton *>("operations"); QVERIFY(operations && operations->isEnabled());
+        QStringList menuItems;
+        QTimer closer;
+        closer.setInterval(10);
+        connect(&closer, &QTimer::timeout, &window, [&] {
+            if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()))
+            {
+                for (auto *action : menu->actions()) if (!action->isSeparator()) menuItems.append(action->text());
+                menu->close();
+                closer.stop();
+            }
+        });
+        // Bound a failed popup detection so this test cannot leave a modal menu open.
+        QTimer::singleShot(5000, &window, [&] { if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget())) menu->close(); });
+        closer.start(); operations->click(); closer.stop();
+        QCOMPARE(menuItems, QStringList({"与其他方案比较…", "合并到正在使用的方案…", "重命名…", "删除本地方案…", "仍然删除未合并方案…"}));
+    }
+    void branchUiBrowsingGraphAndConfirmation()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/项目/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        QVERIFY(service.renameBranch(id, service.branchContext(id).ref, "main").success);
+        for (int version = 1; version < 7; ++version)
+        {
+            writeFile(source, QByteArray::number(version) + '\n');
+            QVERIFY(service.backup(id).success);
+        }
+        QVERIFY(service.createBranch(id, "试验方案").success);
+        QVERIFY(service.switchBranch(id, "refs/heads/试验方案").success);
+        writeFile(source, "topic\n"); QVERIFY(service.backup(id).success); const auto topic = head(service, id);
+        QVERIFY(service.switchBranch(id, "refs/heads/main").success);
+        writeFile(source, "main\n"); QVERIFY(service.backup(id).success); const auto main = head(service, id);
+        FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen); window.show();
+        window.navigate({PageId::History, id}); settle(service);
+        auto *history = window.findChild<HomePageBackupPage *>(); QVERIFY(history);
+        auto *historyTable = history->findChild<QTableView *>("table"); QVERIFY(historyTable);
+        QVERIFY(historyTable->model()->rowCount() >= 2);
+        const auto lineCell = historyTable->visualRect(historyTable->model()->index(0, 0));
+        QTest::mouseClick(historyTable->viewport(), Qt::LeftButton, {}, QPoint(lineCell.left() + 14, lineCell.center().y()));
+        settle(service);
+        auto *clickedDetail = window.findChild<HomePageBranchesPage *>(); QVERIFY(clickedDetail);
+        QCOMPARE(clickedDetail->findChild<QLabel *>("branchName")->text(), QString("main"));
+        window.navigate({PageId::Branches, id, {}, {}, QString("refs/heads/试验方案")}); settle(service);
+        auto *page = window.findChild<HomePageBranchesPage *>(); QVERIFY(page);
+        QCOMPARE(page->findChild<QLabel *>("branchName")->text(), QString("试验方案"));
+        QVERIFY(page->findChild<QTableView *>("table"));
+        QVERIFY(page->findChild<QComboBox *>("historyScope")->isHidden());
+        QCOMPARE(head(service, id), main);
+        QCOMPARE(readFile(source), QByteArray("main\n"));
+        window.navigate({PageId::History, id}); settle(service);
+        QVERIFY(window.findChild<HomePageBackupPage *>()->isVisible());
+        window.navigate({PageId::Branches, id, {}, {}, QString("refs/heads/试验方案")}); settle(service);
+        auto *detailHistory = page->findChild<QTableView *>("table"); QVERIFY(detailHistory);
+        QVERIFY(detailHistory->model()->rowCount() >= 1);
+        QCOMPARE(detailHistory->model()->index(0, 0).data(HistoryGraph::Width).toInt() > 24, true);
+        QVERIFY(runGit(service.repoPath(id), {"rev-parse", "refs/heads/试验方案"}).success());
+        QVERIFY(topic != main);
+        QCOMPARE(detailHistory->model()->rowCount(), 2);
+        auto ancestor = detailHistory->model()->index(1, 0);
+        QCOMPARE(ancestor.data(HistoryGraph::AncestorCount).toInt(), 7);
+        QVERIFY(ancestor.data(Qt::UserRole + 1).toString().isEmpty());
+        QVERIFY(!ancestor.flags().testFlag(Qt::ItemIsEditable));
+        QCOMPARE(detailHistory->columnSpan(1, 0), 4);
+        QVERIFY(!page->findChild<QPushButton *>("commonAncestors"));
+        detailHistory->setCurrentIndex(ancestor);
+        auto *detailPage = page->findChild<HomePageBackupPage *>(); QVERIFY(detailPage);
+        for (const auto *name : {"restoreAction", "editMessageAction", "previewAction", "milestoneAction", "revisionMenuAction"})
+            QVERIFY(!detailPage->findChild<QAction *>(name)->isEnabled());
+        const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS");
+        const auto originalTheme = m_theme->mode();
+        const auto restoreTheme = qScopeGuard([&] { m_theme->setMode(originalTheme); });
+        if (!output.isEmpty())
+        {
+            QDir().mkpath(output);
+            for (auto theme : {ThemeMode::Light, ThemeMode::Dark})
+            {
+                m_theme->setMode(theme);
+                for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+                {
+                    window.resize(size); QTest::qWait(80);
+                    QCOMPARE(detailHistory->horizontalScrollBar()->maximum(), 0);
+                    QVERIFY(page->grab().save(output + QString("/ancestor-node-%1-%2.png").arg(theme == ThemeMode::Light ? "light" : "dark").arg(size.width())));
+                }
+            }
+        }
+        // A release outside the aggregate row cancels the press.
+        QTest::mousePress(detailHistory->viewport(), Qt::LeftButton, {}, detailHistory->visualRect(ancestor).center());
+        QTest::mouseRelease(detailHistory->viewport(), Qt::LeftButton, {}, QPoint(10, detailHistory->viewport()->height() - 5));
+        QCOMPARE(detailHistory->model()->rowCount(), 2);
+        QTest::mouseClick(detailHistory->viewport(), Qt::LeftButton, {}, detailHistory->visualRect(ancestor).center());
+        settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 9);
+        QCOMPARE(detailHistory->columnSpan(1, 0), 4);
+        QCOMPARE(detailHistory->currentIndex().row(), 1);
+        ancestor = detailHistory->model()->index(1, 0);
+        QCOMPARE(ancestor.data(HistoryGraph::AncestorCount).toInt(), 7);
+        QVERIFY(ancestor.data(HistoryGraph::AncestorsExpanded).toBool());
+        QVERIFY(ancestor.data(Qt::ToolTipRole).toString().contains("收起"));
+        for (int row = 0; row < 9; ++row)
+        {
+            if (row == 1) continue;
+            QVERIFY(!detailHistory->model()->index(row, 0).data(Qt::UserRole + 1).toString().isEmpty());
+            QCOMPARE(detailHistory->model()->index(row, 0).data(HistoryGraph::AncestorCount).toInt(), 0);
+        }
+        page->refresh(); settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 9);
+        QVERIFY(detailHistory->model()->index(1, 0).data(HistoryGraph::AncestorsExpanded).toBool());
+        if (!output.isEmpty())
+        {
+            for (auto theme : {ThemeMode::Light, ThemeMode::Dark})
+            {
+                m_theme->setMode(theme);
+                for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+                {
+                    window.resize(size); QTest::qWait(80);
+                    QVERIFY(page->grab().save(output + QString("/ancestor-node-expanded-%1-%2.png").arg(theme == ThemeMode::Light ? "light" : "dark").arg(size.width())));
+                }
+            }
+        }
+        // The same row remains focused, so repeated Enter activation can close/open it.
+        auto *activate = detailPage->findChild<QAction *>("compareAction"); QVERIFY(activate && activate->isEnabled());
+        activate->trigger(); settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 2);
+        QCOMPARE(detailHistory->currentIndex().row(), 1);
+        QVERIFY(!detailHistory->model()->index(1, 0).data(HistoryGraph::AncestorsExpanded).toBool());
+        page->refresh(); settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 2);
+        activate->trigger(); settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 9);
+        QCOMPARE(detailHistory->currentIndex().row(), 1);
+        QTest::mouseClick(detailHistory->viewport(), Qt::LeftButton, {}, detailHistory->visualRect(detailHistory->currentIndex()).center());
+        settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 2);
+        // A branch with no unique commits still exposes a usable aggregate node.
+        QVERIFY(service.createBranch(id, "全部共享", topic).success);
+        window.navigate({PageId::Branches, id, {}, {}, QString("refs/heads/全部共享")}); settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 1);
+        QCOMPARE(detailHistory->model()->index(0, 0).data(HistoryGraph::AncestorCount).toInt(), 8);
+        detailHistory->activated(detailHistory->model()->index(0, 0));
+        settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 9);
+        QCOMPARE(detailHistory->currentIndex().row(), 0);
+        QCOMPARE(detailHistory->model()->index(0, 0).data(HistoryGraph::AncestorCount).toInt(), 8);
+        QVERIFY(detailHistory->model()->index(0, 0).data(HistoryGraph::AncestorsExpanded).toBool());
+        QVERIFY(detailHistory->model()->index(1, 0).data(HistoryGraph::Incoming).toBool());
+        activate->trigger(); settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 1);
+        QVERIFY(!detailHistory->model()->index(0, 0).data(HistoryGraph::AncestorsExpanded).toBool());
+        QCOMPARE(head(service, id), main);
+        QCOMPARE(readFile(source), QByteArray("main\n"));
+    }
     void renderAllPages()
     {
         TestDirectory dir(QDir::tempPath() + "/zcu-XXXXXX");
@@ -2337,7 +2912,7 @@ class Regression : public QObject
                     QVERIFY(table->viewport()->height() / table->rowHeight(0) >= 10);
                     hoverHistoryAction(table, 2, 0);
                     capture(QString("history-hover-%1").arg(theme));
-                    QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 2, 3));
+                    openHistoryMenu(table, 2);
                     QTRY_VERIFY(QApplication::activePopupWidget());
                     auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
                     QVERIFY(menu);

@@ -174,6 +174,14 @@ OperationResult BackupCatalog::load()
         r.lastCommit = obj["lastCommit"].toString();
         r.pendingCommit = obj["pendingCommit"].toString();
         r.operation = obj["operation"].toString();
+        r.branchRef = obj["branchRef"].toString();
+        r.branchVersion = obj["branchVersion"].toString().toULongLong();
+        if (!r.branchVersion) r.branchVersion = 1;
+        if (!r.branchRef.isEmpty() && !r.branchRef.startsWith("refs/heads/")) { invalid.append(entry.filePath()); continue; }
+        BackupRecord branchState;
+        if (!readTagState(obj["branchUploads"], branchState)) { invalid.append(entry.filePath()); continue; }
+        r.branchRemotes = branchState.tagRemotes;
+        r.branchesFetchedAt = QDateTime::fromString(obj["branchesFetchedAt"].toString(), Qt::ISODateWithMs);
         r.resolutionSession = obj["resolutionSession"].toString();
         r.resolutionHead = obj["resolutionHead"].toString();
         if (!r.resolutionSession.isEmpty() && !validId(r.resolutionSession))
@@ -207,6 +215,12 @@ OperationResult BackupCatalog::save(const BackupRecord &r)
         fingerprint.insert(it.key(), it.value());
     QJsonObject obj{{"format", 1}, {"id", r.id}, {"sourcePath", r.sourcePath}, {"repositoryPath", r.repositoryPath}, {"directory", r.directory}, {"generation", QString::number(r.generation)}, {"state", int(r.state)}, {"stateDetail", r.stateDetail}, {"lastCommit", r.lastCommit}, {"pendingCommit", r.pendingCommit}, {"operation", r.operation}, {"resolutionSession", r.resolutionSession}, {"resolutionHead", r.resolutionHead}, {"fingerprint", fingerprint}, {"recoveryPaths", QJsonArray::fromStringList(r.recoveryPaths)}};
     obj.insert("tags", tagStateJson(r));
+    obj.insert("branchRef", r.branchRef);
+    obj.insert("branchVersion", QString::number(r.branchVersion));
+    BackupRecord branchState;
+    branchState.tagRemotes = r.branchRemotes;
+    obj.insert("branchUploads", tagStateJson(branchState));
+    obj.insert("branchesFetchedAt", r.branchesFetchedAt.toUTC().toString(Qt::ISODateWithMs));
     if (!QDir().mkpath(itemPath(r.id)))
         return OperationResult::fail("保存失败", "无法创建追踪记录目录");
     QSaveFile file(itemPath(r.id) + "/record.json");

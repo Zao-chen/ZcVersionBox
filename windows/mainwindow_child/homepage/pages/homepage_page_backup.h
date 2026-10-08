@@ -23,12 +23,16 @@ class HomePageBackupPage : public QWidget
   public:
     HomePageBackupPage(BackupService *service, QWidget *parent = nullptr);
     ~HomePageBackupPage();
-    void setBackup(const QString &id, const QString &commit = {});
+    void setBackup(const QString &id, const QString &commit = {}, const QString &branchRef = {});
+    void setBranchDetail(const QString &id, const QString &branchRef, bool includeCommonAncestors = false);
     void refresh();
     void deactivate();
     QList<QAction *> toolbarActions() const;
   signals:
     void navigate(const Route &route);
+    void createBranchRequested(const QString &id, const QString &commit);
+    void branchRequested(const QString &branchRef);
+    void commonAncestorsExpansionChanged(bool expanded);
     void notification(const OperationResult &result);
 
   protected:
@@ -50,13 +54,20 @@ class HomePageBackupPage : public QWidget
         QString commit;
         quint64 repositoryGeneration{0};
         quint64 pageGeneration{0};
+        BranchContext workingBranch;
     };
     std::unique_ptr<Ui::HomePageBackupPage> ui;
     BackupService *m_service;
     QString m_id;
+    QString m_branchRef;
+    bool m_branchDetail{false};
+    bool m_includeCommonAncestors{false};
+    int m_commonAncestorCount{0};
+    int m_uniqueRevisionCount{0};
     QString m_loadedId;
     QString m_requestedCommit;
     quint64 m_loadedGeneration{0};
+    BranchContext m_loadedBranch;
     QHash<QString, ViewState> m_states;
     QStandardItemModel m_model;
     QAction *m_compare;
@@ -77,6 +88,7 @@ class HomePageBackupPage : public QWidget
     quint64 m_refreshGeneration{0};
     QString selectedCommit() const;
     void updateActions();
+    void toggleCommonAncestors();
     void rememberState();
     void applyFilter();
     void manageTags(const RevisionContext &context);
@@ -90,6 +102,9 @@ class HomePageBackupPage : public QWidget
     void previewRevision(const RevisionContext &context);
     void restoreRevision(const RevisionContext &context);
     void editRevision(const RevisionContext &context);
+    bool canEditRevision(const RevisionContext &context) const;
+    void createBranchFromRevision(const RevisionContext &context);
     void showRevisionMenu(const RevisionContext &context, const QPoint &position);
+    void showBranchMenu(const RevisionContext &context, const QStringList &refs, const QPoint &position);
     void closeRevisionMenu();
 };

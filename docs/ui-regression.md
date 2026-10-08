@@ -6,6 +6,12 @@
 
 | 场景 | 回归证据 |
 | --- | --- |
+| 方案引用与身份 | 中文名称、创建/改名、同 OID 分支、外部切换、普通/强制删除、删除前并发提交的 OID 校验 |
+| 保存后切换 | 修改只提交到原方案、无变化不新增、忽略文件与源 `.git` 保留、覆盖碰撞、确认过期、源/外部分支变化及写入故障恢复 |
+| 原生合并与云端方案 | 快进、已包含、双亲提交、重启继续、取消、重命名自动合并/冲突与 Git 树对照；fetch、upstream、非当前分支上传、新名发布、远程删除 lease、端点变化与非快进拒绝 |
+| 概览统一云端入口 | 全量上传非当前方案和里程碑、保留云端独有方案与改名 upstream、任一分叉整批拒绝；全量获取与 prune、保持当前源内容、差异确认；概览实际按钮点击及方案菜单入口收敛 |
+| 方案界面 | 浏览与切换分离、真实提交关系图、浅深色和 760/1080 像素宽度、实际点击新建/切换确认及取消按钮 |
+| 多方案重建保护 | 本地多分支、云端分支、独立推送地址含其他分支、离线及确认后断网时保留原仓库 |
 | 默认文件范围 | 重构前先运行行为基线：build 单独变化不触发；其他变化触发时复制 build；隐藏文件处理、Git ignore 与副本/提交区别保持 |
 | 监控调度 | 注入时钟验证 500 ms 静默、5 s 最大合并、30 s 完整校验；执行中再次变化、失效快照、轮转、单扫描/单自动备份上限、退避和取消 |
 | 原生文件事件 | 临时目录中的嵌套写入、原子保存、新目录、源目录改名及重建、共享监听、无关/build 事件过滤；登记失败和静默遗漏均由完整校验补偿 |
@@ -64,7 +70,7 @@ $env:QT_QPA_PLATFORM_PLUGIN_PATH = 'S:/Qt/6.8.3/msvc2022_64/plugins/platforms'
 & ./build/backup-core/Release/zc_tests.exe monitorSurvivesPageRefresh defaultFileSelectionKeepsBuildAndGitIgnoreSemantics automaticAiMessagesAndDeletedContext conflictChoicesPreviewAndApply confirmationsRespectObjectContext asyncControlsAndThemePreserveContext -o ./build/backup-core/monitor-ui-regression.txt,txt
 ```
 
-`backup_core` 包含一万文件的完整备份事务，CTest 超时为 600 秒；小范围调试可指定 Qt Test 函数，避免每次运行压力用例。所有时间窗口策略用注入时钟验证；真实文件事件测试只缩短合并时间，不将平台事件延迟当作严格定时保证。原子保存测试在 Windows 使用 `ReplaceFileW`，其他平台使用 QSaveFile；另有持续 QSaveFile 清单保存测试，覆盖监听对应用自有记录的影响。
+`backup_core` 的 `full` 范围包含一万文件的完整备份事务，内部超时在 macOS/Linux 为 600 秒、Windows 为 1200 秒；小范围调试可指定 Qt Test 函数。日常 CI 使用 Linux `standard` 和 Windows/macOS `smoke`，完整范围与切换命令见 [CI 说明](ci.md)。所有时间窗口策略用注入时钟验证；真实文件事件测试只缩短合并时间，不将平台事件延迟当作严格定时保证。原子保存测试在 Windows 使用 `ReplaceFileW`，其他平台使用 QSaveFile；另有持续 QSaveFile 清单保存测试，覆盖监听对应用自有记录的影响。
 
 macOS 在已有 Qt 6.8.3 / arm64 构建目录运行同组 `ctest -R '^backup_core$'`，文件事件及压力用例不以平台条件跳过。可单独验收监听行为：
 
@@ -81,7 +87,7 @@ QT_QPA_PLATFORM=offscreen ./build/release/zc_backup_tests \
   largeProjectMonitorBoundsEventStorms -o build/release/monitor-macos.txt,txt
 ```
 
-CTest 使用 offscreen 平台运行 UI 回归，显式设置 Qt 插件路径并保留文本结果：
+CTest 使用 offscreen 平台运行 UI 回归，显式设置 Qt 插件路径并保留文本和同名 JUnit XML 结果（下列构建目录可替换为当前目录）：
 
 - `build/backup-core/tests/regression.txt`
 - `build/backup-core/tests/backup_core.txt`
@@ -195,3 +201,75 @@ Cocoa 测试发现 Return 在原生历史表格中被当作编辑键，现通过
 PR #22 首轮 CI 中，macOS 完整构建与回归通过，Linux 构建和 `backup_core` 通过；Linux `regression` 在历史页键盘测试的焦点断言失败。`revisionTimeAndSelection` 的窗口此前设置 `WA_DontShowOnScreen`，无法可靠获得 `WidgetShortcut` 所需的活动窗口焦点。现让该用例正常显示隔离窗口，保留焦点与 Return 键行为断言；本地 Cocoa 定向复验 3 passed、0 failed（`build/conflict-pr-focus-cocoa.txt`），跨平台结果以 PR 最新检查为准。
 
 首轮 Windows 日志还显示相同的焦点失败，以及确认弹窗路径断言未适配本机分隔符：界面使用反斜杠，测试却匹配正斜杠。现按 `QDir::toNativeSeparators` 比较完整源路径，继续校验删除数量，生产弹窗内容不变。
+
+## 2026-10-06 Git 原生方案管理
+
+在 `feature/branch-management` 中完成真实分支管理、保存后切换、分支历史/关系图、本地合并和云端分支操作。使用 macOS 26.6 / Qt 6.8.3 arm64 现有 `build` 增量构建，`ZcVersionBox`、`zc_tests`、`zc_backup_tests` 均构建成功。没有启动正常应用读取真实备份。
+
+最终执行：
+
+```sh
+ctest --test-dir build -R '^(backup_core|regression)$' --parallel 2 --output-on-failure
+```
+
+| 验证 | 实际结果 | 本地日志 |
+| --- | --- | --- |
+| `backup_core` | 144 passed、0 failed、5 skipped | `build/tests/backup_core.txt` |
+| `regression` | 40 passed、0 failed、4 skipped | `build/tests/regression.txt` |
+| Cocoa 历史行操作与快捷键 | 4 passed、0 failed、0 skipped | `build/branch-keyboard-cocoa.txt` |
+| 原生合并树/父提交对照 | 6 passed、0 failed | `build/branch-native-merge.txt` |
+| 合并本地忽略规则、执行位与既有合并行为 | 5 passed、0 failed | `build/branch-merge-rules.txt` |
+
+通过数包含初始化和清理。核心跳过项为 Linux 专用文件系统/执行位用例；界面跳过项为 Linux 设置适配器和 macOS offscreen 的三项焦点场景。历史菜单及版本键盘操作已额外使用原生 Cocoa 验证。未在本机验证 Windows/Linux 构建、真实托管平台认证或发布打包。
+
+方案界面定向测试实际点击新建、切换与取消按钮，检查按钮位于可见布局中，并核对浏览不会改变 HEAD 或源内容。检查了 `build/branch-screenshots/` 中方案列表、关系图的浅深色 1080×740 / 760×520 截图及切换确认框。历史页另以“正在查看历史”标明浏览分支，顶部“正在使用”保留工作分支含义。
+
+新增核心用例对照普通 Git 的引用、upstream、树与父提交，覆盖重命名自动合并/冲突、快进、已包含、重启续办、取消、忽略文件碰撞、过期确认、写入失败、外部修改、远端并发和非快进拒绝。旧测试中的外部改名改为服务改名，保留单独的外部切换拒绝测试；旧离线重建测试按本轮确定的“无法确认云端范围时停止”规则更新。
+
+验收主线与命令见 [方案使用说明](branch-management.md#验收步骤)。验收前保留本地功能分支，不推送或合并。
+
+## 2026-10-07 方案管理 review 修复
+
+审查范围为 `feature/branch-management` 相对 `main` 的改动。本轮修复：
+
+- 合并候选准备期间，外部 Git 切到同提交的另一方案时，必须拒绝请求。会话固定使用开始时的分支身份，不能重新接受现场分支。
+- 方案操作菜单固定对象、分支、完整 OID 和云端端点。删除确认期间刷新到新版本不能改变已确认的删除目标；正常删除会终止旧历史请求并替换当前路由，避免多余的“方案不存在”报错。
+- 历史分页固定首次查询的包含和排除提交；首次没有共同历史也保留该空集合。同一提交上的不同分支按共享历史计算。
+- 共享提交的方案标记提供选择菜单，祖先提交上的标记打开该标记对应的方案；点击正文或已隐藏的关系图不会误导航。
+- 方案详情中的历史操作正常传递错误提示；切换确认结束后先检查页面是否仍存在。
+
+合并期间外部切换、删除确认期间刷新两个故障用例均先在修复前复现失败，再验证修复后通过。新增分页用例覆盖其他分支移动、首次排除集合为空和同 OID 别名；UI 用例覆盖标记选择、误点击、错误提示及正常/过期删除确认。
+
+使用 macOS 26.6 / Qt 6.8.3 arm64 的现有 `build` 增量构建，`zc_backup_tests`、`zc_tests`、`ZcVersionBox` 均成功。实际验证：
+
+| 范围 | 结果 | 证据 |
+| --- | --- | --- |
+| 完整 `backup_core` | 147 passed、0 failed、5 Linux 专属 skipped；216.90 s | `build/tests/backup_core.txt` |
+| 历史标记、方案详情、浏览、行操作、恢复上下文及里程碑定位 | 7 passed、0 failed、1 skipped | 定向运行 6 个 Qt Test 函数；macOS offscreen 既有弹窗后键盘焦点用例跳过 |
+| 最终删除确认、详情错误提示及方案浏览 | 6 passed、0 failed、0 skipped | `build/tests/branch-review-ui.txt` |
+
+通过数包含初始化和清理。未追加完整 `regression`、Windows/Linux 构建或发布打包；正常应用未用于回归。
+
+验收时用临时项目检查：在同一版本创建两个方案后分别点击标记进入详情；点击旧版本上的方案标记确认跳转正确；普通删除后直接回到历史页且没有多余报错。并发分支切换和确认过期由隔离测试注入，无需操作真实备份制造故障。
+
+## 2026-10-08 历史菜单新建方案崩溃
+
+鼠标点击“从此版本新建方案…”时，Qlementine 会在闪烁动画后同步重放鼠标释放事件。原来的操作回调直接打开模态对话框，嵌套事件循环可能销毁已关闭的菜单及其持有的鼠标事件，返回菜单调用栈后发生悬空访问。隔离测试在修复前点击菜单并取消弹窗即可触发 `SIGSEGV`（退出码 139），日志为 `build/tests/branch-menu-before.txt`。
+
+新建操作改用队列连接，先完成菜单事件分发，再检查捕获的版本上下文并打开对话框。新增 `historyMenuCreatesBranchAfterMouseDispatch`，覆盖历史页鼠标取消/创建、方案详情页创建后切换及键盘创建。测试核对菜单在弹窗前已释放、新方案指向菜单捕获的旧版本，以及取消/仅创建时原分支和源文件不变。
+
+在 macOS 26.6 / Qt 6.8.3 arm64 的现有 `build` 中增量构建 `zc_tests` 和 `ZcVersionBox` 成功。Offscreen 的新用例及历史菜单/恢复上下文、方案标记、删除确认、详情错误、浏览回归为 12 passed、0 failed、0 skipped，日志为 `build/tests/branch-menu-after.txt`；Cocoa 原生新用例为 6 passed、0 failed、0 skipped，日志为 `build/tests/branch-menu-cocoa.txt`。通过数包含初始化和清理。测试等待独立窗口显示，鼠标先移到菜单入口，再移到目标菜单项，避免连续用例沿用上一个菜单位置导致 Qt 抑制激活；同时显式投递鼠标移动事件，直接向目标菜单发送按键，不依赖系统前台焦点。全部回归均使用临时仓库、隔离 Git 配置和模拟 AI。
+
+验收时使用临时项目，在历史页和方案详情页从旧版本的菜单新建方案，分别取消、取消勾选“创建后切换”、保留勾选并确认切换，确认无崩溃且新方案版本正确。本轮未运行完整 `regression` / `backup_core`、Windows/Linux 构建或发布打包。
+
+## 2026-10-08 共同祖先节点
+
+方案详情顶部的共同祖先按钮移入历史列表末尾，以同色连线、空心展开节点和“展开查看”呈现。节点随列表滚动，点击整行或通过历史行激活入口展开；没有独有版本时仍显示可展开节点。它没有提交编号，不提供预览、恢复、里程碑或编辑操作；展开及刷新仅改变浏览内容。
+
+增量构建 `ZcVersionBox` 和 `zc_tests` 成功。扩展既有 `branchUiBrowsingGraphAndConfirmation`，验证 7 个共同祖先的展示、跨列布局、取消鼠标点击、展开后刷新及全共享分支，并与方案标记、新建方案菜单、详情错误和历史恢复上下文一同定向执行：10 passed、0 failed、0 skipped（含初始化和清理），日志为 `build/tests/ancestor-node.txt`。已查看 `build/ancestor-node-screenshots/` 下 1080 / 760 宽度的浅深色节点及展开截图。本轮使用隔离测试程序，未运行完整回归或发布打包。
+
+验收补充修复：共同祖先节点改为常驻的分组入口，展开后保留在独有版本与共同祖先之间，显示向上箭头和“收起”；再次点击或通过 Enter 绑定的动作激活即可收起。分组查询使用固定的同一提交，节点保留数量、位置与焦点，展开状态在刷新后保持；祖先列表本身仍使用真实提交和父关系绘制。
+
+补充验证反复展开/收起、两种状态下刷新、节点跨列和焦点保持、全共享分支的双向切换，确认 HEAD 与源内容不变。应用和测试增量构建通过；同一组定向用例为 10 passed、0 failed、0 skipped（含初始化和清理），日志为 `build/tests/ancestor-node-toggle.txt`。已查看 `build/ancestor-node-toggle-screenshots/` 的浅深色、1080 / 760 宽度展开效果。本次没有执行完整回归或原生桌面测试。
+
+最终补齐全共享分支中节点到首条祖先的连线，再次执行该分组交互用例通过：3 passed、0 failed（含初始化和清理），日志为 `build/tests/ancestor-node-toggle-final.txt`。

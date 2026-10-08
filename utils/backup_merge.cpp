@@ -131,7 +131,7 @@ OperationResult BackupMerge::load()
         return failure("处理记录结构无效，请重新分析。");
     for (const auto *name : {"localCommit", "remoteCommit", "expectedHead"})
         if (!oid.match(data[name].toString()).hasMatch()) return failure("处理记录中的版本无效。");
-    for (const auto *name : {"localTree", "remoteTree", "automatic", "extras", "resultTree"})
+    for (const auto *name : {"localTree", "remoteTree", "automatic", "extras", "resultTree", "choiceLocalTree", "choiceRemoteTree"})
     {
         const auto entries = decodeTree(data[name].toObject());
         for (auto it = entries.cbegin(); it != entries.cend(); ++it)
@@ -171,15 +171,17 @@ OperationResult BackupMerge::load()
     m_data = data;
     return git().validate();
 }
-OperationResult BackupMerge::create(const BackupRecord &record, const QString &liveRepository, const QString &pinnedRemote)
+OperationResult BackupMerge::create(const BackupRecord &record, const QString &liveRepository, const QString &pinnedRemote, const QString &mergeRef)
 {
     if (BackupFiles::exists(m_root) || BackupFiles::hasLinkedAncestor(m_root) || !QDir().mkpath(m_root)) return failure("无法创建独立处理目录。");
     GitRepository live(liveRepository, m_dependencies.git, m_cancel);
     MERGE_TRY(live.clean());
     const auto head = live.head(), remote = live.remoteName(), ref = live.targetRef();
     if (!head.result.success || !remote.result.success || !ref.result.success) return failure("无法确定同步版本或云端配置。");
-    const auto url = live.run({"remote", "get-url", remote.value});
-    if (!url.success()) return failure("尚未配置可用的云端地址。");
+    const auto url = mergeRef.isEmpty() ? live.run({"remote", "get-url", remote.value}) : GitResult{};
+    if (mergeRef.isEmpty() && !url.success()) return failure("尚未配置可用的云端地址。");
+    if (!mergeRef.isEmpty() && (!mergeRef.startsWith("refs/heads/") || live.resolve(mergeRef).value != pinnedRemote))
+        return failure("待合并方案已变化，请重新选择。");
     SourceFingerprint before, ignored;
     MERGE_TRY(m_dependencies.files->fingerprint(record.sourcePath, record.directory, before, false));
     // Keep the original basename so full fingerprints for single files are stable.
@@ -191,6 +193,21 @@ OperationResult BackupMerge::create(const BackupRecord &record, const QString &l
     MERGE_TRY(GitRepository::outcome(cloned));
     MERGE_TRY(GitRepository::outcome(git().run({"config", "user.name", "ZcVersionBox"})));
     MERGE_TRY(GitRepository::outcome(git().run({"config", "user.email", "backup@zcversionbox.local"})));
+    // Source capture must obey the same normalization and ignore rules as the
+    // live backup; clone does not copy repository-local configuration/info.
+    for (const auto *key : {"core.autocrlf", "core.eol", "core.filemode", "core.ignorecase", "core.attributesfile", "core.excludesfile"})
+    {
+        const auto value = live.run({"config", "--get", key});
+        if (value.success()) MERGE_TRY(GitRepository::outcome(git().run({"config", key, value.output.trimmed()})));
+        else if (value.exitCode != 1) return GitRepository::outcome(value);
+    }
+    for (const auto *name : {"exclude", "attributes"})
+    {
+        const auto from = liveRepository + "/.git/info/" + name, to = repositoryPath() + "/.git/info/" + name;
+        if (!BackupFiles::exists(from)) continue;
+        MERGE_TRY(m_dependencies.files->remove(to));
+        MERGE_TRY(m_dependencies.files->copy(from, to));
+    }
     auto remoteCommit = pinnedRemote;
     if (remoteCommit.isEmpty())
     {
@@ -203,7 +220,7 @@ OperationResult BackupMerge::create(const BackupRecord &record, const QString &l
     if (!localTree.result.success) return localTree.result;
     if (!remoteTree.result.success) return remoteTree.result;
     MERGE_TRY(git().validateMapping(remoteCommit, record.repositoryPath, record.directory));
-    if (!git().run({"merge-base", record.lastCommit, remoteCommit}).success()) return failure("本地与云端没有共同历史，暂不能合并。请检查云端地址。");
+    if (!git().run({"merge-base", record.lastCommit, remoteCommit}).success()) return failure("两个版本没有共同历史，暂不能合并。请检查所选方案或云端地址。");
     MERGE_TRY(GitRepository::outcome(git().run({"checkout", "--detach", record.lastCommit})));
     const auto managed = record.repositoryPath == "." ? repositoryPath() : repositoryPath() + '/' + record.repositoryPath;
     // Replacement preserves the candidate's .git directory for a root mapping.
@@ -235,13 +252,20 @@ OperationResult BackupMerge::create(const BackupRecord &record, const QString &l
         MERGE_TRY(GitRepository::outcome(object));
         extras.insert(path, {object.output.trimmed(), QFileInfo(file).permission(QFileDevice::ExeOwner) ? "100755" : "100644"});
     }
-    MERGE_TRY(writeBytes(repositoryPath() + "/.git/info/attributes", "* -merge\n"));
+    if (mergeRef.isEmpty()) MERGE_TRY(writeBytes(repositoryPath() + "/.git/info/attributes", "* -merge\n"));
     m_data = {{"format", 1}, {"id", QFileInfo(m_root).fileName()}, {"backupId", record.id}, {"revision", "1"},
               {"generation", QString::number(record.generation)}, {"sourcePath", record.sourcePath}, {"managedPath", record.repositoryPath},
               {"directory", record.directory}, {"sourceFingerprint", fingerprintJson(before)}, {"capturedFingerprint", fingerprintJson(capturedFingerprint)},
               {"localCommit", local.value}, {"remoteCommit", remoteCommit}, {"expectedHead", head.value}, {"remoteName", remote.value},
               {"remoteUrl", url.output.trimmed()}, {"remoteRef", ref.value}, {"localTree", encodeTree(sourceTree.value)}, {"remoteTree", encodeTree(remoteTree.value)},
               {"extras", encodeTree(extras)}, {"localTime", QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
+    // Keep the branch identity from the request, even if another Git client
+    // switches to an alias of the same commit while the candidate is built.
+    m_data["expectedBranch"] = record.branchRef;
+    m_data["branchVersion"] = QString::number(record.branchVersion);
+    m_data["mergeRef"] = mergeRef;
+    m_data["localLabel"] = mergeRef.isEmpty() ? QStringLiteral("此电脑上的内容 (本地)") : record.branchRef.mid(11);
+    m_data["remoteLabel"] = mergeRef.isEmpty() ? QStringLiteral("云端的内容 (云端)") : mergeRef.mid(11);
     const auto date = git().run({"show", "-s", "--format=%ct", remoteCommit});
     MERGE_TRY(GitRepository::outcome(date));
     m_data[QLatin1String("remoteTime")] = QDateTime::fromSecsSinceEpoch(date.output.trimmed().toLongLong(), QTimeZone::UTC).toString(Qt::ISODateWithMs);
@@ -311,11 +335,14 @@ OperationResult BackupMerge::mergeText(QJsonObject &file, const Entry &base, con
 }
 OperationResult BackupMerge::analyze()
 {
-    const auto merged = git().run({"merge", "--no-commit", "--no-ff", "--no-edit", "-s", "recursive", "-Xno-renames", remoteCommit()});
+    QStringList mergeArgs{"merge", "--no-commit", "--no-ff", "--no-edit"};
+    if (m_data["mergeRef"].toString().isEmpty()) mergeArgs << "-s" << "recursive" << "-Xno-renames";
+    mergeArgs << remoteCommit();
+    const auto merged = git().run(mergeArgs);
     if (!merged.started || !merged.finished || (merged.exitCode != 0 && merged.exitCode != 1)) return GitRepository::outcome(merged);
     const auto staged = git().run({"ls-files", "--stage", "-z"});
     MERGE_TRY(GitRepository::outcome(staged));
-    Tree automatic, bases;
+    Tree automatic, bases, localStages, remoteStages;
     QStringList unresolved;
     for (const auto &line : staged.bytes.split('\0'))
     {
@@ -327,9 +354,29 @@ OperationResult BackupMerge::analyze()
         const Entry entry{QString::fromLatin1(header[1]), QString::fromLatin1(header[0])};
         const int stage = header[2].toInt();
         if (stage == 0) automatic.insert(path, entry);
-        else { if (stage == 1) bases.insert(path, entry); if (!unresolved.contains(path)) unresolved.append(path); }
+        else
+        {
+            if (stage == 1) bases.insert(path, entry);
+            if (stage == 2) localStages.insert(path, entry);
+            if (stage == 3) remoteStages.insert(path, entry);
+            if (!unresolved.contains(path)) unresolved.append(path);
+        }
     }
-    const auto local = decodeTree(m_data[QLatin1String("localTree")].toObject()), remote = decodeTree(m_data[QLatin1String("remoteTree")].toObject()), extras = decodeTree(m_data[QLatin1String("extras")].toObject());
+    auto local = decodeTree(m_data[QLatin1String("localTree")].toObject()), remote = decodeTree(m_data[QLatin1String("remoteTree")].toObject());
+    const auto extras = decodeTree(m_data[QLatin1String("extras")].toObject());
+    if (!m_data["mergeRef"].toString().isEmpty())
+    {
+        // Git may move the conflict's two sides to a rename destination. Use
+        // the actual index stages there, while retaining the original trees
+        // separately for preview and native fast-forward checks.
+        for (const auto &path : unresolved)
+        {
+            if (!local.contains(path) && !remote.contains(path)) continue; // structural ~HEAD paths use their parent group
+            if (localStages.contains(path)) local.insert(path, localStages[path]); else local.remove(path);
+            if (remoteStages.contains(path)) remote.insert(path, remoteStages[path]); else remote.remove(path);
+        }
+        m_data["choiceLocalTree"] = encodeTree(local); m_data["choiceRemoteTree"] = encodeTree(remote);
+    }
     Tree localWithExtras = local;
     for (auto it = extras.cbegin(); it != extras.cend(); ++it) localWithExtras.insert(it.key(), it.value());
     QStringList groups;
@@ -399,6 +446,9 @@ SyncResolutionSession BackupMerge::session() const
     result.remoteTime = QDateTime::fromString(m_data[QLatin1String("remoteTime")].toString(), Qt::ISODateWithMs);
     result.currentPath = m_data[QLatin1String("currentPath")].toString();
     result.currentHunk = m_data[QLatin1String("currentHunk")].toInt();
+    result.mergeRef = m_data["mergeRef"].toString();
+    result.localLabel = m_data["localLabel"].toString("此电脑上的内容 (本地)");
+    result.remoteLabel = m_data["remoteLabel"].toString("云端的内容 (云端)");
     for (const auto &value : m_data[QLatin1String("files")].toArray())
     {
         ConflictFile f;
@@ -422,9 +472,22 @@ OperationResult BackupMerge::verify(const BackupRecord &record, const QString &l
     MERGE_TRY(live.clean());
     const auto head = live.head(), remote = live.remoteName(), ref = live.targetRef();
     if (!head.result.success || head.value != expectedHead()) return failure("备份版本在处理期间发生变化，请检查后重新分析。");
-    if (!remote.result.success || !ref.result.success || remote.value != m_data[QLatin1String("remoteName")].toString() || ref.value != m_data[QLatin1String("remoteRef")].toString()) return failure("同步配置已变化，请重新分析。");
-    const auto url = live.run({"remote", "get-url", remote.value});
-    if (!url.success() || url.output.trimmed() != m_data[QLatin1String("remoteUrl")].toString()) return failure("云端地址已变化，请重新分析。");
+    const auto expectedBranch = m_data["expectedBranch"].toString(record.branchRef);
+    if (expectedBranch != record.branchRef || live.branchRef().value != record.branchRef ||
+        (!m_data["branchVersion"].isUndefined() && record.branchVersion != m_data["branchVersion"].toString().toULongLong()))
+        return failure("当前方案在处理期间发生变化，请重新分析。");
+    const auto mergeRef = m_data["mergeRef"].toString();
+    if (!mergeRef.isEmpty())
+    {
+        if (!mergeRef.startsWith("refs/heads/") || live.resolve(mergeRef).value != remoteCommit())
+            return failure("待合并方案在处理期间发生变化，请重新分析。");
+    }
+    else
+    {
+        if (!remote.result.success || !ref.result.success || remote.value != m_data[QLatin1String("remoteName")].toString() || ref.value != m_data[QLatin1String("remoteRef")].toString()) return failure("同步配置已变化，请重新分析。");
+        const auto url = live.run({"remote", "get-url", remote.value});
+        if (!url.success() || url.output.trimmed() != m_data[QLatin1String("remoteUrl")].toString()) return failure("云端地址已变化，请重新分析。");
+    }
     SourceFingerprint current;
     MERGE_TRY(m_dependencies.files->fingerprint(record.sourcePath, record.directory, current, false));
     if (current != fingerprintValue(m_data[QLatin1String("sourceFingerprint")].toObject())) return failure("源内容在处理期间发生变化，已保留选择。请重新分析后再应用。");
@@ -458,8 +521,8 @@ BackupResult<BackupMerge::Tree> BackupMerge::resultTree() const
 {
     if (session().remaining()) return {failure("还有内容尚未选择。")};
     auto result = decodeTree(m_data[QLatin1String("automatic")].toObject());
-    auto local = decodeTree(m_data[QLatin1String("localTree")].toObject());
-    const auto remote = decodeTree(m_data[QLatin1String("remoteTree")].toObject()), extras = decodeTree(m_data[QLatin1String("extras")].toObject());
+    auto local = decodeTree(m_data[m_data.contains("choiceLocalTree") ? "choiceLocalTree" : "localTree"].toObject());
+    const auto remote = decodeTree(m_data[m_data.contains("choiceRemoteTree") ? "choiceRemoteTree" : "remoteTree"].toObject()), extras = decodeTree(m_data[QLatin1String("extras")].toObject());
     for (auto it = extras.cbegin(); it != extras.cend(); ++it) local.insert(it.key(), it.value());
     for (const auto &file : m_data[QLatin1String("files")].toArray())
     {
@@ -506,7 +569,8 @@ BackupResult<PreparedSyncApply> BackupMerge::prepare()
     {
         QStringList args{"commit-tree", treeOid.output.trimmed(), "-p", local};
         if (!localContainsRemote.success()) args << "-p" << remote;
-        args << "-m" << "合并本地与云端修改";
+        args << "-m" << (m_data["mergeRef"].toString().isEmpty() ? QStringLiteral("合并本地与云端修改")
+                         : QString("合并方案 %1 到 %2").arg(session().remoteLabel, session().localLabel));
         const auto created = git().run(args);
         if (!created.success()) return {GitRepository::outcome(created)};
         commit = created.output.trimmed();
@@ -585,7 +649,10 @@ BackupMerge::Tree BackupMerge::withRetainedExtras(Tree entries) const
 }
 BackupMerge::Tree BackupMerge::sideTree(ConflictSide side) const
 {
-    auto entries = decodeTree(m_data[side == ConflictSide::Result ? "resultTree" : side == ConflictSide::Local ? "localTree" : "remoteTree"].toObject());
+    const auto key = side == ConflictSide::Result ? "resultTree" : side == ConflictSide::Local
+        ? (m_data.contains("choiceLocalTree") ? "choiceLocalTree" : "localTree")
+        : (m_data.contains("choiceRemoteTree") ? "choiceRemoteTree" : "remoteTree");
+    auto entries = decodeTree(m_data[key].toObject());
     if (side == ConflictSide::Local)
     { const auto extras = decodeTree(m_data[QLatin1String("extras")].toObject()); for (auto it = extras.cbegin(); it != extras.cend(); ++it) entries.insert(it.key(), it.value()); }
     if (side == ConflictSide::Result) entries = withRetainedExtras(std::move(entries));

@@ -75,9 +75,9 @@ BackupResult<QString> GitRepository::tagEndpoint() const
 {
     const auto remote = remoteName();
     if (!remote.result.success) return remote;
-    const auto url = run({"remote", "get-url", remote.value});
+    const auto url = run({"remote", "get-url", "--all", remote.value});
     if (!url.success()) return {OperationResult::ok({}), {}};
-    const auto pushUrl = run({"remote", "get-url", "--push", remote.value});
+    const auto pushUrl = run({"remote", "get-url", "--push", "--all", remote.value});
     if (!pushUrl.success()) return {outcome(pushUrl)};
     return {OperationResult::ok({}), QString::fromLatin1(QCryptographicHash::hash(
         remote.value.toUtf8() + '\0' + url.bytes.trimmed() + '\0' + pushUrl.bytes.trimmed(), QCryptographicHash::Sha256).toHex())};
