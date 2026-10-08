@@ -39,8 +39,6 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
 {
     ui->setupUi(this);
     UiStyle::text(ui->branchName, UiStyle::FontRole::Object);
-    UiStyle::text(ui->branchState, UiStyle::FontRole::Caption, true);
-    UiStyle::text(ui->branchDetails, UiStyle::FontRole::Caption, true);
     m_history = new HomePageBackupPage(service, ui->historyContainer);
     ui->historyLayout->addWidget(m_history);
     m_refresh = UiStyle::action(this, "refreshBranchesAction", "刷新", "refresh");
@@ -102,7 +100,7 @@ void HomePageBranchesPage::refresh()
     m_service->branches(id, this, [this, id, ref, generation](const BackupResult<BranchSnapshot> &reply)
     {
         if (id != m_id || ref != m_branchRef || generation != m_generation) return;
-        if (!reply.result.success) { ui->status->setText(reply.result.message); return; }
+        if (!reply.result.success) { emit notification(reply.result); return; }
         m_snapshot = reply.value;
         m_branch = {};
         for (const auto &branch : reply.value.branches)
@@ -114,10 +112,6 @@ void HomePageBranchesPage::refresh()
             return;
         }
         ui->branchName->setText(m_branch.name);
-        ui->branchState->setText(m_branch.current ? "正在使用" : m_branch.remoteBranch ? "云端方案" : "本地方案");
-        const auto upstream = m_branch.upstream.isEmpty() ? "未关联云端" : "对应云端：" + m_branch.upstream.mid(13);
-        ui->branchDetails->setText(QString("当前提交：%1\n%2\n引用：%3").arg(m_branch.head.left(8), upstream, m_branch.ref));
-        ui->status->setText(m_branch.message.isEmpty() ? "方案历史" : m_branch.message);
         if (m_history) m_history->setBranchDetail(id, ref, m_historyExpanded);
         updateActions();
     });

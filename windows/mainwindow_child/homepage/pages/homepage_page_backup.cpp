@@ -425,12 +425,11 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     connect(ui->historyScope, &QComboBox::activated, this, [this](int index) {
         Route route{PageId::History, m_id}; route.branchRef = ui->historyScope->itemData(index).toString(); emit navigate(route);
     });
-    m_milestoneOnly = new oclero::qlementine::Switch(this);
+    m_milestoneOnly = new oclero::qlementine::Switch(ui->filterBar);
     m_milestoneOnly->setObjectName("milestoneOnlySwitch");
     m_milestoneOnly->setAccessibleName("只看里程碑版本");
     ui->milestoneFilterLabel->setBuddy(m_milestoneOnly);
     UiStyle::text(ui->milestoneFilterLabel, UiStyle::FontRole::Body);
-    UiStyle::text(ui->viewingBranchLabel, UiStyle::FontRole::Caption, true);
     ui->filterLayout->insertWidget(3, m_milestoneOnly);
     ui->tagConflictButton->hide();
     connect(m_milestoneOnly, &QAbstractButton::toggled, this, [this] { applyFilter(); rememberState(); refresh(); });
@@ -608,6 +607,8 @@ void HomePageBackupPage::setBackup(const QString &id, const QString &commit, con
     m_id = id;
     m_branchDetail = false;
     m_includeCommonAncestors = false;
+    ui->pageLayout->setContentsMargins(24, 24, 24, 24);
+    ui->filterBar->setVisible(true);
     ui->historyScope->setVisible(true);
     ui->milestoneFilterLabel->setVisible(true);
     m_milestoneOnly->setVisible(true);
@@ -626,6 +627,8 @@ void HomePageBackupPage::setBranchDetail(const QString &id, const QString &branc
     m_branchRef = branchRef;
     m_branchDetail = true;
     m_includeCommonAncestors = includeCommonAncestors;
+    ui->pageLayout->setContentsMargins(0, 0, 0, 0);
+    ui->filterBar->setVisible(false);
     ui->historyScope->setVisible(false);
     ui->milestoneFilterLabel->setVisible(false);
     m_milestoneOnly->setVisible(false);
@@ -835,9 +838,6 @@ void HomePageBackupPage::refresh()
     const auto id = m_id;
     const auto generation = m_service->repositoryGeneration(id);
     const auto working = m_service->branchContext(id);
-    const auto browsing = m_branchRef == "HEAD" ? working.ref : m_branchRef;
-    const auto browsingName = browsing.startsWith("refs/heads/") ? browsing.mid(11) : browsing.startsWith("refs/remotes/") ? browsing.mid(13) : browsing;
-    ui->viewingBranchLabel->setText(m_milestoneOnly->isChecked() ? "仓库共享的里程碑" : m_branchRef.isEmpty() ? "全部方案的历史" : "正在查看：" + browsingName);
     const auto request = ++m_refreshGeneration;
     m_commonAncestorCount = 0;
     m_uniqueRevisionCount = 0;

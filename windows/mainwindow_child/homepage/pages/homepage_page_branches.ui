@@ -2,28 +2,42 @@
 <ui version="4.0">
  <class>HomePageBranchesPage</class>
  <widget class="QWidget" name="HomePageBranchesPage">
-  <layout class="QVBoxLayout" name="layout">
+  <layout class="QVBoxLayout" name="layout" stretch="0,0,1,0">
    <property name="leftMargin"><number>24</number></property>
-   <property name="topMargin"><number>20</number></property>
+   <property name="topMargin"><number>24</number></property>
    <property name="rightMargin"><number>24</number></property>
-   <property name="bottomMargin"><number>20</number></property>
-   <property name="spacing"><number>10</number></property>
-   <item><layout class="QHBoxLayout" name="titleLayout">
-    <item><widget class="QLabel" name="branchName"><property name="text"><string>方案</string></property></widget></item>
-    <item><spacer name="titleSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
-    <item><widget class="QLabel" name="branchState"><property name="text"><string/></property></widget></item>
-   </layout></item>
-   <item><widget class="QLabel" name="branchDetails"><property name="text"><string/></property><property name="wordWrap"><bool>true</bool></property><property name="textInteractionFlags"><set>Qt::TextSelectableByMouse</set></property></widget></item>
-   <item><layout class="QHBoxLayout" name="actions">
-    <item><widget class="QPushButton" name="useBranch"><property name="text"><string>使用此方案…</string></property></widget></item>
-    <item><widget class="QPushButton" name="operations"><property name="text"><string>管理方案…</string></property></widget></item>
-    <item><spacer name="actionSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
-   </layout></item>
-   <item><widget class="QWidget" name="historyContainer"><layout class="QVBoxLayout" name="historyLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property></layout></widget></item>
-   <item><layout class="QHBoxLayout" name="statusLayout">
-    <item><widget class="QLabel" name="status"><property name="text"><string/></property><property name="wordWrap"><bool>true</bool></property></widget></item>
-    <item><widget class="QPushButton" name="cancelTask"><property name="text"><string>取消操作</string></property></widget></item>
-   </layout></item>
+   <property name="bottomMargin"><number>24</number></property>
+   <property name="spacing"><number>12</number></property>
+   <item>
+    <widget class="QLabel" name="branchName">
+     <property name="text"><string>方案</string></property>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="actions">
+     <property name="spacing"><number>8</number></property>
+     <item><widget class="QPushButton" name="useBranch"><property name="text"><string>使用此方案…</string></property></widget></item>
+     <item><widget class="QPushButton" name="operations"><property name="text"><string>管理方案…</string></property></widget></item>
+     <item><spacer name="actionSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QWidget" name="historyContainer">
+     <layout class="QVBoxLayout" name="historyLayout">
+      <property name="leftMargin"><number>0</number></property>
+      <property name="topMargin"><number>0</number></property>
+      <property name="rightMargin"><number>0</number></property>
+      <property name="bottomMargin"><number>0</number></property>
+      <property name="spacing"><number>0</number></property>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="cancelLayout">
+     <item><spacer name="cancelSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
+     <item><widget class="QPushButton" name="cancelTask"><property name="text"><string>取消操作</string></property></widget></item>
+    </layout>
+   </item>
   </layout>
  </widget>
  <resources/><connections/>
