@@ -45,6 +45,7 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     ui->historyLayout->addWidget(m_history);
     m_create = UiStyle::action(this, "createBranchAction", "新建方案…", "add");
     m_refresh = UiStyle::action(this, "refreshBranchesAction", "刷新", "refresh");
+    m_refresh->setProperty("iconOnly", true);
     connect(m_create, &QAction::triggered, this, [this] { createFrom(m_id); });
     connect(m_refresh, &QAction::triggered, this, &HomePageBranchesPage::refresh);
     connect(ui->useBranch, &QPushButton::clicked, this, [this]
