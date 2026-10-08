@@ -51,6 +51,14 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareResolution(const QStrin
         }
     }
     QString tagWarning;
+    if (mergeRef.isEmpty() && checked.value.state == BackupSyncState::Tracking)
+    {
+        const auto &record = checked.value;
+        const auto fetched = fetchBranches({id, record.branchRef, record.lastCommit, record.generation, record.branchVersion});
+        if (!fetched.success) return {fetched};
+        checked = require(id);
+        if (!checked.result.success) return {checked.result};
+    }
     if (mergeRef.isEmpty() && checked.value.state != BackupSyncState::NeedsAttention)
     {
         const auto tags = syncTags(id, false);

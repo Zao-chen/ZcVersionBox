@@ -718,62 +718,20 @@ OperationResult BackupEngine::synchronize(const QString &id, bool push)
     {
         if (checked.value.state == BackupSyncState::NeedsAttention || checked.value.state == BackupSyncState::ResolutionPending)
             return paused(checked.value);
-        const auto endpoint = git.branchEndpoint();
-        if (!endpoint.result.success) return endpoint.result;
-        auto state = checked.value.branchRemotes.value(endpoint.value);
-        OperationResult pushed;
-        if (!state.rebuildHead.isEmpty())
-        {
-            if (!git.run({"merge-base", "--is-ancestor", state.rebuildHead, "HEAD"}).success())
-                return OperationResult::warn("云端尚未同步", "本地版本已变化，请重新确认重建后的云端覆盖。");
-            const auto remoteHead = git.remoteHead();
-            if (!remoteHead.result.success) return remoteHead.result;
-            pushed = remoteHead.value == git.head().value ? OperationResult::ok({}) : git.push(true, state.rebuildExpected);
-        }
-        else
-        {
-            const auto configured = git.run({"config", "--get", "branch." + checked.value.branchRef.mid(11) + ".merge"});
-            if (!configured.success() && configured.exitCode == 1)
-            {
-                const auto remote = git.remoteName(), target = git.targetRef();
-                if (!remote.result.success) return remote.result;
-                if (!target.result.success) return target.result;
-                const auto urls = git.run({"remote", "get-url", "--push", "--all", remote.value});
-                if (!urls.success()) return GitRepository::outcome(urls);
-                for (const auto &url : urls.output.split('\n', Qt::SkipEmptyParts))
-                {
-                    const auto existing = git.run({"ls-remote", "--heads", "--", url, target.value}, {}, true, 300000);
-                    if (!existing.success()) return GitRepository::outcome(existing);
-                    if (!existing.output.trimmed().isEmpty()) return OperationResult::warn("同名云端方案已存在", "请先获取云端方案并设置对应关系，再上传。");
-                }
-                pushed = git.push(true, {}); // compare against absence, never overwrite an existing ref
-            }
-            else if (!configured.success()) return GitRepository::outcome(configured);
-            else pushed = git.push();
-        }
+        const auto pushed = uploadBranches(checked.value);
         if (!pushed.success) return pushed;
-        auto uploadedRecord = *m_catalog.find(id);
-        uploadedRecord.branchRemotes[endpoint.value].lastUploadedHead = git.head().value;
-        ++uploadedRecord.tagRevision;
-        const auto recordedUpload = m_catalog.save(uploadedRecord);
-        if (!recordedUpload.success) return recordedUpload;
         auto tags = syncTags(id, true);
         if (!tags.success)
         {
             tags.title = "版本已上传，里程碑尚未同步";
             return tags;
         }
-        if (!state.rebuildHead.isEmpty())
-        {
-            auto record = *m_catalog.find(id);
-            record.branchRemotes[endpoint.value].rebuildHead.clear();
-            record.branchRemotes[endpoint.value].rebuildExpected.clear();
-            const auto saved = m_catalog.save(record); if (!saved.success) return saved;
-        }
-        auto result = OperationResult::ok("上传完成", "历史版本和里程碑标记已上传到云端", 2000);
+        auto result = OperationResult::ok("全量上传完成", "全部方案的已保存历史与里程碑标记已上传到云端", 2000);
         result.warning = tags.warning;
         return result;
     }
+    const auto fetched = fetchBranches({id, checked.value.branchRef, checked.value.lastCommit, checked.value.generation, checked.value.branchVersion});
+    if (!fetched.success) return fetched;
     const auto tags = syncTags(id, false);
     if (!tags.success) return tags;
     const auto withTagWarning = [&tags](OperationResult result)

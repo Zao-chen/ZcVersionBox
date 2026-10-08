@@ -105,6 +105,7 @@ class BackupEngine
     BackupResult<BackupRecord> requireBranch(const BranchContext &context);
     OperationResult checkBranchTarget(const BranchRequest &request, bool remote = false);
     OperationResult rebuildBranchesSafe(const QString &id);
+    OperationResult uploadBranches(BackupRecord record);
     OperationResult prepareSwitchFiles(const BackupRecord &record, const QString &target, const QString &destination,
                                        SourceFingerprint &source, QVector<DiffFile> &changes, bool &savesChanges,
                                        QVector<DiffFile> *savedChanges = nullptr);

@@ -140,7 +140,7 @@ OperationResult BackupEngine::fetchBranches(const BranchContext &context)
     const auto checked = requireBranch(context); if (!checked.result.success) return checked.result;
     const auto git = repository(context.id);
     const auto remote = git.remoteName(); if (!remote.result.success) return remote.result;
-    const auto result = GitRepository::outcome(git.run({"fetch", "--prune", "--no-tags", "--", remote.value,
+    const auto result = GitRepository::outcome(git.run({"fetch", "--prune", "--no-tags", "--no-write-fetch-head", "--", remote.value,
         "+refs/heads/*:refs/remotes/" + remote.value + "/*"}, {}, true, 300000), "获取云端方案失败");
     if (!result.success) return result;
     auto record = checked.value; ++record.branchVersion; record.branchesFetchedAt = QDateTime::currentDateTimeUtc();
@@ -290,4 +290,77 @@ OperationResult BackupEngine::uploadBranch(const BranchRequest &request)
         else completed.warning = tags.warning;
     }
     return completed;
+}
+
+OperationResult BackupEngine::uploadBranches(BackupRecord record)
+{
+    const auto git = repository(record.id);
+    const auto remote = git.remoteName();
+    if (!remote.result.success) return remote.result;
+    const auto endpoint = git.remoteEndpoint(remote.value);
+    if (!endpoint.result.success) return endpoint.result;
+    const auto snapshot = git.branches();
+    if (!snapshot.result.success) return snapshot.result;
+    struct Upload { BranchInfo branch; QString target, endpoint; };
+    QVector<Upload> uploads;
+    QSet<QString> targets;
+    QStringList args{"push", "--atomic", "--no-follow-tags"};
+    for (const auto &branch : snapshot.value)
+    {
+        if (branch.remoteBranch) continue;
+        if (!branch.remote.isEmpty() && branch.remote != remote.value)
+            return OperationResult::warn("方案关联了其他云端", QString("方案“%1”关联 %2，与概览中的 %3 不同。请先统一仓库的远程配置。").arg(branch.name, branch.remote, remote.value));
+        const auto target = branch.upstream.isEmpty() ? "refs/heads/" + branch.name : branch.remoteRef;
+        if (!target.startsWith("refs/heads/") || targets.contains(target))
+            return OperationResult::warn("云端对应关系有冲突", "多个本地方案不能在一次上传中写入同一个云端方案，请先检查仓库的分支关联。");
+        targets.insert(target);
+        const auto key = QString::fromLatin1(QCryptographicHash::hash(endpoint.value.toUtf8() + '\0' + target.toUtf8(), QCryptographicHash::Sha256).toHex());
+        const auto state = record.branchRemotes.value(key);
+        if (!state.rebuildHead.isEmpty())
+        {
+            if (!git.run({"merge-base", "--is-ancestor", state.rebuildHead, branch.head}).success())
+                return OperationResult::warn("云端尚未同步", "本地版本已变化，请重新确认重建后的云端覆盖。");
+            const auto urls = git.run({"remote", "get-url", "--push", "--all", remote.value});
+            if (!urls.success()) return GitRepository::outcome(urls);
+            bool uploaded = true;
+            for (const auto &url : urls.output.split('\n', Qt::SkipEmptyParts))
+            {
+                const auto head = git.run({"ls-remote", "--heads", "--", url, target}, {}, true, 300000);
+                if (!head.success()) return GitRepository::outcome(head);
+                uploaded &= head.output.section('\t', 0, 0).trimmed() == branch.head;
+            }
+            // Retry a completed rebuild upload without overwriting a newer cloud ref.
+            args << "--force-with-lease=" + target + ':' + (uploaded ? branch.head : state.rebuildExpected);
+        }
+        uploads.append({branch, target, key});
+    }
+    args << "--" << remote.value;
+    for (const auto &upload : uploads) args << upload.branch.head + ':' + upload.target;
+    const auto pushed = GitRepository::outcome(git.run(args, {}, true, 300000), "全量上传失败");
+    if (!pushed.success) return pushed;
+    if (git.remoteEndpoint(remote.value).value != endpoint.value)
+        return OperationResult::warn("方案版本已上传", "上传期间云端配置发生变化，请刷新后核对。");
+    for (const auto &upload : uploads)
+        if (git.resolve(upload.branch.ref).value != upload.branch.head)
+            return OperationResult::warn("方案版本已上传", "上传期间本地方案发生变化，请刷新后核对。");
+    record.operation = "branch-upstream";
+    auto saved = m_catalog.save(record);
+    if (!saved.success) return saved;
+    for (const auto &upload : uploads)
+    {
+        // Persist the mapping for every branch, including those never checked out.
+        for (const auto &config : {QStringList{"config", "branch." + upload.branch.name + ".remote", remote.value},
+                                   QStringList{"config", "branch." + upload.branch.name + ".merge", upload.target}})
+        {
+            const auto configured = GitRepository::outcome(git.run(config));
+            if (!configured.success) return attention(record, "方案已上传，但云端关联未完整保存：" + configured.message);
+        }
+        record.branchRemotes[upload.endpoint].lastUploadedHead = upload.branch.head;
+        record.branchRemotes[upload.endpoint].rebuildHead.clear();
+        record.branchRemotes[upload.endpoint].rebuildExpected.clear();
+    }
+    record.operation.clear();
+    ++record.branchVersion;
+    saved = m_catalog.save(record);
+    return saved.success ? OperationResult::ok("方案已全部上传", QString("已上传 %1 个方案的已保存版本。").arg(uploads.size())) : saved;
 }
