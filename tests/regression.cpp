@@ -95,7 +95,14 @@ QString head(const BackupService &service, const QString &id) { return runGit(se
 QPoint historyActionPoint(QTableView *table, int row, int action)
 {
     const auto cell = table->visualRect(table->model()->index(row, table->model()->columnCount() - 1));
-    return {cell.x() + 8 + action * (28 + 4) + 14, cell.center().y()};
+    return {cell.x() + 8 + action * (28 + 4) + (action == 5 ? 8 : 0) + 14, cell.center().y()};
+}
+void openHistoryMenu(QTableView *table, int row)
+{
+    const auto point = table->visualRect(table->model()->index(row, 0)).center();
+    QTest::mouseMove(table->viewport(), point);
+    QContextMenuEvent context(QContextMenuEvent::Mouse, point, table->viewport()->mapToGlobal(point));
+    QApplication::sendEvent(table->viewport(), &context);
 }
 void hoverHistoryAction(QTableView *table, int row, int action)
 {
@@ -1288,6 +1295,7 @@ class Regression : public QObject
         QVERIFY(menu->findChild<QAction *>("editMessageActionMenu"));
         QTest::keyPress(menu, Qt::Key_Escape);
         QTRY_VERIFY(!QApplication::activePopupWidget());
+        table->setCurrentIndex(table->model()->index(0, 0));
         QTest::keyClick(table, Qt::Key_Menu);
         QTRY_VERIFY(QApplication::activePopupWidget());
         menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
@@ -1296,7 +1304,7 @@ class Regression : public QObject
         QTest::keyPress(menu, Qt::Key_Return);
         QPointer<QLineEdit> editor = table->findChild<QLineEdit *>();
         QVERIFY(editor);
-        QCOMPARE(table->currentIndex().data(Qt::UserRole + 1).toString(), first);
+        QCOMPARE(table->currentIndex().data(Qt::UserRole + 1).toString(), latest);
         QTest::keyClick(editor, Qt::Key_Escape);
         QTRY_VERIFY(!editor);
         QTest::keyClick(table, Qt::Key_F2);
@@ -1318,6 +1326,98 @@ class Regression : public QObject
         QCOMPARE(qvariant_cast<Route>(routes.last().first()).commit, latest);
         QFile::setPermissions(previewPath + "/行内操作.txt", QFileDevice::ReadOwner | QFileDevice::WriteOwner);
         QVERIFY(QDir(previewPath).removeRecursively());
+    }
+    void directHistoryEditAndRestore_data()
+    {
+        QTest::addColumn<bool>("acceptRestore");
+        QTest::addColumn<bool>("changeContext");
+        QTest::newRow("cancel") << false << false;
+        QTest::newRow("restore-clicked-version") << true << false;
+        QTest::newRow("reject-stale-confirmation") << true << true;
+    }
+    void directHistoryEditAndRestore()
+    {
+        QFETCH(bool, acceptRestore);
+        QFETCH(bool, changeContext);
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/inline.txt", other = dir.path() + "/other.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source), base = head(service, id);
+        writeFile(source, "latest\n"); QVERIFY(service.backup(id).success);
+        writeFile(other, "other\n"); QVERIFY(service.addLocal(other).success);
+        HomePageBackupPage page(&service); page.resize(820, 580); page.show();
+        page.setBackup(id); settle(service);
+        page.activateWindow();
+        QVERIFY(QTest::qWaitForWindowExposed(&page));
+        auto *table = page.findChild<QTableView *>("table"); QVERIFY(table);
+        QSignalSpy routes(&page, &HomePageBackupPage::navigate);
+        // An older row cannot open an editor, including through the native edit key.
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 1, 4));
+        QVERIFY(!table->findChild<QLineEdit *>());
+        QVERIFY(!page.findChild<QAction *>("editMessageAction")->isEnabled());
+        QVERIFY(!(table->model()->flags(table->model()->index(1, 0)) & Qt::ItemIsEditable));
+        QTest::keyClick(table, Qt::Key_F2);
+        QVERIFY(!table->findChild<QLineEdit *>());
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 0, 4));
+        QPointer<QLineEdit> editor = table->findChild<QLineEdit *>(); QVERIFY(editor);
+        editor->selectAll(); QTest::keyClicks(editor, "Edited latest description");
+        QTest::keyClick(editor, Qt::Key_Return);
+        settle(service); QTRY_VERIFY(!editor);
+        QCOMPARE(table->model()->index(0, 0).data().toString(), QString("Edited latest description"));
+        QCOMPARE(readFile(source), QByteArray("latest\n"));
+        const auto latest = head(service, id);
+        QVERIFY(service.createTag(service.tagRequest(id, latest, "定稿")).success);
+        settle(service);
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 0, 4));
+        QVERIFY(!table->findChild<QLineEdit *>());
+        QVERIFY(!page.findChild<QAction *>("editMessageAction")->isEnabled());
+        const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS");
+        if (!output.isEmpty())
+        {
+            QDir().mkpath(output);
+            for (int theme = 0; theme < 2; ++theme)
+            {
+                for (int width : {820, 520})
+                {
+                    page.resize(width, 400); QTest::qWait(40);
+                    hoverHistoryAction(table, 0, 4);
+                    QVERIFY(table->viewport()->rect().contains(historyActionPoint(table, 0, 5)));
+                    QCOMPARE(table->horizontalScrollBar()->maximum(), 0);
+                    QVERIFY(page.grab().save(output + QString("/inline-marked-%1-%2.png").arg(theme).arg(width)));
+                }
+                m_theme->toggle();
+            }
+        }
+        page.resize(520, 400); QTest::qWait(20);
+        QVERIFY(table->viewport()->rect().contains(historyActionPoint(table, 1, 5)));
+        bool shown = false, defaultCancel = false, rightVersion = false;
+        QTimer responder; responder.setInterval(10);
+        connect(&responder, &QTimer::timeout, &page, [&] {
+            auto *dialog = page.findChild<QDialog *>("confirmDialog");
+            if (!dialog || !dialog->isVisible()) return;
+            responder.stop(); shown = true;
+            auto *buttons = dialog->findChild<QDialogButtonBox *>();
+            defaultCancel = buttons && buttons->button(QDialogButtonBox::Cancel)->isDefault();
+            for (auto *label : dialog->findChildren<QLabel *>())
+                rightVersion |= label->text().contains(base.left(8));
+            // A later selection must never change the requested restore revision.
+            table->setCurrentIndex(table->model()->index(0, 0));
+            if (changeContext) { page.setBackup(service.idForSource(other)); settle(service); }
+            if (acceptRestore) dialog->accept(); else dialog->reject();
+        });
+        QTimer watchdog; watchdog.setSingleShot(true);
+        connect(&watchdog, &QTimer::timeout, &page, [&] {
+            if (auto *dialog = page.findChild<QDialog *>("confirmDialog")) dialog->reject();
+        });
+        responder.start(); watchdog.start(5000);
+        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 1, 5));
+        QTRY_VERIFY_WITH_TIMEOUT(shown, 5000);
+        watchdog.stop(); responder.stop(); settle(service);
+        QVERIFY(defaultCancel); QVERIFY(rightVersion);
+        QCOMPARE(routes.count(), 0);
+        QCOMPARE(readFile(source), acceptRestore && !changeContext ? QByteArray("base\n") : QByteArray("latest\n"));
+        QCOMPARE(readFile(other), QByteArray("other\n"));
+        QCOMPARE(head(service, id), latest);
     }
     void conflictChoicesPreviewAndApply()
     {
@@ -1731,7 +1831,7 @@ class Regression : public QObject
         const auto first = table->model()->index(1, 0).data(Qt::UserRole + 1).toString();
         const auto openMenu = [&](int row)
         {
-            QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, row, 3));
+            openHistoryMenu(table, row);
             if (!QTest::qWaitFor([]
                                  { return QApplication::activePopupWidget() != nullptr; }, 1000))
                 return static_cast<QMenu *>(nullptr);
@@ -2053,9 +2153,12 @@ class Regression : public QObject
         QCOMPARE(routes.count(), 1);
         QCOMPARE(qvariant_cast<Route>(routes.first().first()).commit, previous);
         // A monitor update cannot destroy an in-progress message editor.
+        table->setCurrentIndex(table->model()->index(0, 0));
         page.findChild<QAction *>("editMessageAction")->trigger();
-        auto *editor = table->findChild<QLineEdit *>();
+        QPointer<QLineEdit> editor = table->findChild<QLineEdit *>();
         QVERIFY(editor);
+        editor->setFocus();
+        QTRY_VERIFY(editor && editor->hasFocus());
         editor->selectAll();
         QTest::keyClicks(editor, "pending edit");
         writeFile(source, "four\n");
@@ -2267,10 +2370,14 @@ class Regression : public QObject
         QTest::addColumn<bool>("switchAfter");
         QTest::addColumn<bool>("keyboard");
         QTest::addColumn<bool>("branchDetail");
-        QTest::newRow("mouse-cancel-history") << false << false << false << false;
-        QTest::newRow("mouse-create-history") << true << false << false << false;
-        QTest::newRow("mouse-create-and-switch-detail") << true << true << false << true;
-        QTest::newRow("keyboard-create-detail") << true << false << true << true;
+        QTest::addColumn<bool>("direct");
+        QTest::newRow("mouse-cancel-history") << false << false << false << false << false;
+        QTest::newRow("mouse-create-history") << true << false << false << false << false;
+        QTest::newRow("mouse-create-and-switch-detail") << true << true << false << true << false;
+        QTest::newRow("keyboard-create-detail") << true << false << true << true << false;
+        QTest::newRow("direct-cancel-history") << false << false << false << false << true;
+        QTest::newRow("direct-create-history") << true << false << false << false << true;
+        QTest::newRow("direct-create-and-switch-detail") << true << true << false << true << true;
     }
     void historyMenuCreatesBranchAfterMouseDispatch()
     {
@@ -2278,6 +2385,7 @@ class Regression : public QObject
         QFETCH(bool, switchAfter);
         QFETCH(bool, keyboard);
         QFETCH(bool, branchDetail);
+        QFETCH(bool, direct);
         TestDirectory dir; TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/document.txt";
         writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
@@ -2298,18 +2406,18 @@ class Regression : public QObject
         QVERIFY(history && history->isVisible());
         auto *table = history->findChild<QTableView *>("table"); QVERIFY(table);
         QCOMPARE(table->model()->rowCount(), 2);
-        // QMenu tracks movement from the cursor position at popup time.
-        // Reset it to the opener instead of leaving it on the previous menu item.
-        const auto morePoint = historyActionPoint(table, 1, 3);
-        QTest::mouseMove(table->viewport(), morePoint);
-        QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, morePoint);
-        QPointer<QMenu> menu = history->findChild<QMenu *>("revisionMenu"); QVERIFY(menu);
-        QTRY_VERIFY(menu->isVisible() && menu->width() > 0);
+        QPointer<QMenu> menu;
         QAction *create = nullptr;
-        for (auto *action : menu->actions()) if (action->text() == "从此版本新建方案…") create = action;
-        QVERIFY(create && create->isEnabled());
-        QSignalSpy triggered(create, &QAction::triggered);
-        // Changing the selection must not change the version captured by the menu.
+        if (!direct)
+        {
+            openHistoryMenu(table, 1);
+            menu = history->findChild<QMenu *>("revisionMenu"); QVERIFY(menu);
+            QTRY_VERIFY(menu->isVisible() && menu->width() > 0);
+            for (auto *action : menu->actions()) if (action->text() == "从此版本新建方案…") create = action;
+            QVERIFY(create && create->isEnabled());
+        }
+        QSignalSpy requested(history, &HomePageBackupPage::createBranchRequested);
+        // The direct opener and the menu must both preserve the clicked revision.
         table->selectRow(0);
         QSignalSpy notifications(branches, &HomePageBranchesPage::notification);
         bool shown = false, menuReleased = false, switchShown = false, timedOut = false;
@@ -2344,7 +2452,12 @@ class Regression : public QObject
             if (menu) menu->close();
         });
         responder.start(); watchdog.start(10000);
-        if (keyboard)
+        if (direct)
+        {
+            QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 1, 3));
+            table->selectRow(0);
+        }
+        else if (keyboard)
         {
             menu->setActiveAction(create);
             QTest::keyPress(menu, Qt::Key_Return);
@@ -2360,7 +2473,8 @@ class Regression : public QObject
             QTest::mouseClick(menu, Qt::LeftButton, {}, point);
             QVERIFY(create->property("qlementine_flashing").toBool());
         }
-        QTRY_COMPARE_WITH_TIMEOUT(triggered.count(), 1, 11000);
+        QTRY_COMPARE_WITH_TIMEOUT(requested.count(), 1, 11000);
+        QCOMPARE(requested.first().at(1).toString(), base);
         QTRY_VERIFY_WITH_TIMEOUT(shown || timedOut, 11000);
         if (acceptCreate) QTRY_VERIFY(notifications.count() >= (switchAfter ? 2 : 1) || timedOut);
         watchdog.stop(); responder.stop(); settle(service);
@@ -2798,7 +2912,7 @@ class Regression : public QObject
                     QVERIFY(table->viewport()->height() / table->rowHeight(0) >= 10);
                     hoverHistoryAction(table, 2, 0);
                     capture(QString("history-hover-%1").arg(theme));
-                    QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 2, 3));
+                    openHistoryMenu(table, 2);
                     QTRY_VERIFY(QApplication::activePopupWidget());
                     auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget());
                     QVERIFY(menu);

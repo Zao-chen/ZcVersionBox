@@ -102,6 +102,8 @@ class HomePageBackupPage : public QWidget
     void previewRevision(const RevisionContext &context);
     void restoreRevision(const RevisionContext &context);
     void editRevision(const RevisionContext &context);
+    bool canEditRevision(const RevisionContext &context) const;
+    void createBranchFromRevision(const RevisionContext &context);
     void showRevisionMenu(const RevisionContext &context, const QPoint &position);
     void showBranchMenu(const RevisionContext &context, const QStringList &refs, const QPoint &position);
     void closeRevisionMenu();

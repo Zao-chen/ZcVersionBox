@@ -36,13 +36,17 @@ constexpr int TagsRole = Qt::UserRole + 2;
 constexpr int ActionsColumn = 3;
 constexpr int ActionSize = 28;
 constexpr int ActionSpacing = 4;
-constexpr int ActionCount = 4;
-constexpr int ActionsWidth = ActionCount * ActionSize + (ActionCount - 1) * ActionSpacing + 16;
+constexpr int ActionCount = 6;
+constexpr int RestoreGap = 8;
+constexpr int ActionsWidth = ActionCount * ActionSize + (ActionCount - 1) * ActionSpacing + RestoreGap + 16;
 enum class RevisionAction
 {
     Preview,
     Compare,
     Milestone,
+    CreateBranch,
+    Edit,
+    Restore,
     More,
     ToggleAncestors
 };
@@ -50,9 +54,10 @@ class HistoryDelegate : public QStyledItemDelegate
 {
   public:
     using ActionHandler = std::function<void(const QModelIndex &, RevisionAction, const QPoint &)>;
+    using ActionEnabled = std::function<bool(const QModelIndex &, RevisionAction)>;
     using BranchHandler = std::function<void(const QModelIndex &, const QStringList &, const QPoint &)>;
-    HistoryDelegate(QTableView *view, std::function<void()> editing, ActionHandler action, BranchHandler branch = {})
-        : QStyledItemDelegate(view), m_view(view), m_editing(std::move(editing)), m_action(std::move(action)), m_branch(std::move(branch))
+    HistoryDelegate(QTableView *view, std::function<void()> editing, ActionHandler action, ActionEnabled enabled, BranchHandler branch = {})
+        : QStyledItemDelegate(view), m_view(view), m_editing(std::move(editing)), m_action(std::move(action)), m_enabled(std::move(enabled)), m_branch(std::move(branch))
     {
         updateIcons();
         view->viewport()->installEventFilter(this);
@@ -81,7 +86,7 @@ class HistoryDelegate : public QStyledItemDelegate
     }
     QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
-        if (index.data(HistoryGraph::AncestorCount).toInt() > 0) return nullptr;
+        if (index.data(HistoryGraph::AncestorCount).toInt() > 0 || !m_enabled(index, RevisionAction::Edit)) return nullptr;
         auto *editor = QStyledItemDelegate::createEditor(parent, option, index);
         if (editor)
         {
@@ -141,14 +146,15 @@ class HistoryDelegate : public QStyledItemDelegate
                 for (int action = 0; action < static_cast<int>(m_icons.size()); ++action)
                 {
                     const auto rect = actionRect(opt.rect, action);
-                    if (hover && rect.contains(m_pointerPosition))
+                    const bool enabled = m_enabled(index, static_cast<RevisionAction>(action));
+                    if (enabled && hover && rect.contains(m_pointerPosition))
                     {
                         painter->setPen(Qt::NoPen);
                         const bool pressed = m_actionPress && m_pressed.row() == index.row() && m_pressedAction == action;
                         painter->setBrush(pressed ? colors.separator : colors.selected);
                         painter->drawRoundedRect(rect, 6, 6);
                     }
-                    m_icons[action].paint(painter, QRect(rect.center() - QPoint(8, 8), QSize(16, 16)));
+                    m_icons[action].paint(painter, QRect(rect.center() - QPoint(8, 8), QSize(16, 16)), Qt::AlignCenter, enabled ? QIcon::Normal : QIcon::Disabled);
                 }
             }
         }
@@ -230,7 +236,7 @@ class HistoryDelegate : public QStyledItemDelegate
                     if (action >= 0)
                     {
                         m_actionPress = true;
-                        m_pressed = event->type() == QEvent::MouseButtonPress ? index.siblingAtColumn(0) : QModelIndex{};
+                        m_pressed = event->type() == QEvent::MouseButtonPress && m_enabled(index, static_cast<RevisionAction>(action)) ? index.siblingAtColumn(0) : QModelIndex{};
                         m_pressedAction = action;
                         m_view->setCurrentIndex(index.siblingAtColumn(0));
                         m_view->setFocus(Qt::MouseFocusReason);
@@ -255,7 +261,7 @@ class HistoryDelegate : public QStyledItemDelegate
                     const auto position = mouse->position().toPoint();
                     updateHover(position);
                     const auto index = m_view->indexAt(position);
-                    if (pressed.isValid() && index.siblingAtColumn(0) == pressed && hitAction(index, position) == action)
+                    if (pressed.isValid() && index.siblingAtColumn(0) == pressed && hitAction(index, position) == action && m_enabled(index, static_cast<RevisionAction>(action)))
                         m_action(index, static_cast<RevisionAction>(action), m_view->viewport()->mapToGlobal(actionRect(m_view->visualRect(index.siblingAtColumn(ActionsColumn)), action).bottomLeft()));
                     return true;
                 }
@@ -284,8 +290,15 @@ class HistoryDelegate : public QStyledItemDelegate
                     if (action == 0) label = "预览 (Alt+P)";
                     else if (action == 1) label = "对比 (Enter)";
                     else if (action == 2) label = tags.isEmpty() ? "标记为里程碑 (Alt+M)" : "管理里程碑 (Alt+M)";
-                    else if (action == 3) label = "更多操作 (Shift+F10)";
-                    else if (action == static_cast<int>(RevisionAction::ToggleAncestors))
+                    else if (action == 3) label = "从此版本新建方案";
+                    else if (action == 4) label = "编辑说明 (F2)";
+                    else if (action == 5) label = "恢复到此版本…";
+                    if (action < ActionCount && !m_enabled(index, static_cast<RevisionAction>(action)))
+                    {
+                        if (action == 4) label += tags.isEmpty() ? "\n只能编辑当前方案的最新说明，并需处于正常追踪状态。" : "\n里程碑版本的说明已固定，可通过里程碑按钮修改名称。";
+                        else label += "\n需处于正常追踪状态。";
+                    }
+                    if (action == static_cast<int>(RevisionAction::ToggleAncestors))
                         label = index.data(HistoryGraph::AncestorsExpanded).toBool() ? "收起共同祖先 (Enter)" : "展开查看共同祖先 (Enter)";
                     const auto rect = action == static_cast<int>(RevisionAction::ToggleAncestors) ? m_view->visualRect(index)
                         : actionRect(m_view->visualRect(index.siblingAtColumn(ActionsColumn)), action);
@@ -323,6 +336,7 @@ class HistoryDelegate : public QStyledItemDelegate
     QTableView *m_view;
     std::function<void()> m_editing;
     ActionHandler m_action;
+    ActionEnabled m_enabled;
     BranchHandler m_branch;
     std::array<QIcon, ActionCount> m_icons;
     QPersistentModelIndex m_hovered;
@@ -351,12 +365,12 @@ class HistoryDelegate : public QStyledItemDelegate
     }
     void updateIcons()
     {
-        m_icons = {UiStyle::icon("preview"), UiStyle::icon("compare"), UiStyle::icon("milestone"), UiStyle::icon("more")};
+        m_icons = {UiStyle::icon("preview"), UiStyle::icon("compare"), UiStyle::icon("milestone"), UiStyle::icon("add"), UiStyle::icon("edit"), UiStyle::icon("restore")};
         m_view->viewport()->update();
     }
     QRect actionRect(const QRect &cell, int action) const
     {
-        return {cell.x() + 8 + action * (ActionSize + ActionSpacing), cell.center().y() - ActionSize / 2, ActionSize, ActionSize};
+        return {cell.x() + 8 + action * (ActionSize + ActionSpacing) + (action == static_cast<int>(RevisionAction::Restore) ? RestoreGap : 0), cell.center().y() - ActionSize / 2, ActionSize, ActionSize};
     }
     bool actionsVisible(const QModelIndex &index) const
     {
@@ -393,7 +407,8 @@ class HistoryDelegate : public QStyledItemDelegate
         if (previous != m_hovered)
             updateRow(previous);
         updateRow(m_hovered);
-        if (hitAction(index, position) >= 0 || (m_branch && !branchRefsAt(index, position).isEmpty()))
+        const int action = hitAction(index, position);
+        if ((action >= 0 && m_enabled(index, static_cast<RevisionAction>(action))) || (m_branch && !branchRefsAt(index, position).isEmpty()))
             m_view->viewport()->setCursor(Qt::PointingHandCursor);
         else
             m_view->viewport()->unsetCursor();
@@ -437,9 +452,21 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
         case RevisionAction::Preview: previewRevision(context); break;
         case RevisionAction::Compare: compareRevision(context); break;
         case RevisionAction::Milestone: manageTags(context); break;
+        case RevisionAction::CreateBranch:
+            QTimer::singleShot(0, this, [this, context] { createBranchFromRevision(context); });
+            break;
+        case RevisionAction::Edit: editRevision(context); break;
+        case RevisionAction::Restore: restoreRevision(context); break;
         case RevisionAction::More: showRevisionMenu(context, position); break;
         case RevisionAction::ToggleAncestors: toggleCommonAncestors(); break;
-        } }, [this](const QModelIndex &index, const QStringList &refs, const QPoint &position) {
+        } }, [this](const QModelIndex &index, RevisionAction action) {
+        if (action == RevisionAction::ToggleAncestors) return true;
+        const auto context = revisionContext(index);
+        if (!isCurrentContext(context)) return false;
+        if (action == RevisionAction::Preview || action == RevisionAction::Compare) return true;
+        if (action == RevisionAction::Edit) return canEditRevision(context);
+        return m_service->syncState(context.backupId) == BackupSyncState::Tracking;
+    }, [this](const QModelIndex &index, const QStringList &refs, const QPoint &position) {
         showBranchMenu(revisionContext(index), refs, position);
     });
     ui->table->setItemDelegate(delegate);
@@ -647,7 +674,7 @@ void HomePageBackupPage::previewRevision(const RevisionContext &context)
 }
 void HomePageBackupPage::restoreRevision(const RevisionContext &context)
 {
-    if (!isCurrentContext(context))
+    if (!isCurrentContext(context) || m_service->syncState(context.backupId) != BackupSyncState::Tracking)
         return;
     m_service->prepareRestore(context.backupId, context.commit, this, [this, context](const BackupResult<RestoreRequest> &prepared)
                               {
@@ -665,7 +692,7 @@ void HomePageBackupPage::restoreRevision(const RevisionContext &context)
             return;
         if (!isCurrentContext(context))
         {
-            emit notification(OperationResult::warn("操作已取消", "版本上下文已变化，请重新打开版本菜单后再试。"));
+            emit notification(OperationResult::warn("操作已取消", "版本上下文已变化，请重新选择版本后再试。"));
             return;
         }
         m_service->restore(prepared.value, this, [this, context](const OperationResult &result)
@@ -674,9 +701,19 @@ void HomePageBackupPage::restoreRevision(const RevisionContext &context)
                 emit notification(result);
         }); });
 }
+bool HomePageBackupPage::canEditRevision(const RevisionContext &context) const
+{
+    return isCurrentContext(context) && m_service->syncState(context.backupId) == BackupSyncState::Tracking &&
+           context.commit == context.workingBranch.head && revisionTags(context).isEmpty();
+}
+void HomePageBackupPage::createBranchFromRevision(const RevisionContext &context)
+{
+    if (isCurrentContext(context) && m_service->syncState(context.backupId) == BackupSyncState::Tracking)
+        emit createBranchRequested(context.backupId, context.commit);
+}
 void HomePageBackupPage::editRevision(const RevisionContext &context)
 {
-    if (!isCurrentContext(context))
+    if (!canEditRevision(context))
         return;
     const auto index = indexForRevision(context);
     if (index.isValid() && revisionTags(context).isEmpty())
@@ -717,7 +754,7 @@ void HomePageBackupPage::showRevisionMenu(const RevisionContext &context, const 
     // Finish Qlementine's synthetic mouse release before a modal dialog can
     // process the menu's deferred deletion and destroy the event being sent.
     connect(create, &QAction::triggered, this, [this, context] {
-        if (isCurrentContext(context)) emit createBranchRequested(context.backupId, context.commit);
+        createBranchFromRevision(context);
     }, Qt::QueuedConnection);
     menu->addSeparator();
     add(m_edit, &HomePageBackupPage::editRevision);
@@ -770,7 +807,7 @@ void HomePageBackupPage::updateActions()
     m_compare->setEnabled(enabled || ancestors);
     m_restore->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
     const auto tags = revisionTags(revisionContext(ui->table->currentIndex()));
-    m_edit->setEnabled(enabled && tags.isEmpty() && m_service->syncState(m_id) == BackupSyncState::Tracking);
+    m_edit->setEnabled(enabled && canEditRevision(revisionContext(index)));
     m_edit->setToolTip(tags.isEmpty() ? "只能修改当前方案的最新说明；若版本已上传，修改后可能无法普通上传。" : "里程碑版本的原有说明已固定，可以修改里程碑名称。");
     m_tag->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
     m_tag->setText(tags.isEmpty() ? "标记为里程碑…" : "管理里程碑…");
@@ -850,7 +887,7 @@ void HomePageBackupPage::refresh()
         const auto time = revision.committedAt.toLocalTime().toString("yyyy-MM-dd HH:mm");
         auto *message = new QStandardItem(revision.message);
         message->setData(QVariant::fromValue(revision.tags), TagsRole);
-        message->setEditable(revision.tags.isEmpty());
+        message->setEditable(revision.tags.isEmpty() && revision.hash == working.head && m_service->syncState(id) == BackupSyncState::Tracking);
         QStringList tagNames;
         for (const auto &tag : revision.tags) tagNames.append(tag.name);
         const auto milestone = tagNames.isEmpty() ? QString() : "里程碑：" + tagNames.join("、") + '\n';
@@ -861,7 +898,7 @@ void HomePageBackupPage::refresh()
         date->setEditable(false);
         hash->setEditable(false);
         actions->setEditable(false);
-        actions->setData("预览、对比、里程碑、更多版本操作", Qt::AccessibleTextRole);
+        actions->setData("预览、对比、里程碑、新建方案、编辑说明、恢复", Qt::AccessibleTextRole);
         for (auto *item : {message, date, hash, actions})
         {
             item->setData(revision.hash, CommitRole);
