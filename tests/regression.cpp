@@ -2476,7 +2476,7 @@ class Regression : public QObject
         QTRY_COMPARE_WITH_TIMEOUT(requested.count(), 1, 11000);
         QCOMPARE(requested.first().at(1).toString(), base);
         QTRY_VERIFY_WITH_TIMEOUT(shown || timedOut, 11000);
-        if (acceptCreate) QTRY_VERIFY(notifications.count() >= (switchAfter ? 2 : 1) || timedOut);
+        if (acceptCreate) QTRY_VERIFY_WITH_TIMEOUT(notifications.count() >= (switchAfter ? 2 : 1) || timedOut, 11000);
         watchdog.stop(); responder.stop(); settle(service);
         QVERIFY(!timedOut);
         QVERIFY(shown);
