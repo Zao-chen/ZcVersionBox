@@ -17,7 +17,6 @@
    <item><layout class="QHBoxLayout" name="actions">
     <item><widget class="QPushButton" name="useBranch"><property name="text"><string>使用此方案…</string></property></widget></item>
     <item><widget class="QPushButton" name="operations"><property name="text"><string>管理方案…</string></property></widget></item>
-    <item><widget class="QPushButton" name="commonAncestors"><property name="text"><string/></property></widget></item>
     <item><spacer name="actionSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
    </layout></item>
    <item><widget class="QWidget" name="historyContainer"><layout class="QVBoxLayout" name="historyLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property></layout></widget></item>

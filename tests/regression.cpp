@@ -2515,6 +2515,11 @@ class Regression : public QObject
         writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
         const auto id = service.idForSource(source);
         QVERIFY(service.renameBranch(id, service.branchContext(id).ref, "main").success);
+        for (int version = 1; version < 7; ++version)
+        {
+            writeFile(source, QByteArray::number(version) + '\n');
+            QVERIFY(service.backup(id).success);
+        }
         QVERIFY(service.createBranch(id, "试验方案").success);
         QVERIFY(service.switchBranch(id, "refs/heads/试验方案").success);
         writeFile(source, "topic\n"); QVERIFY(service.backup(id).success); const auto topic = head(service, id);
@@ -2547,6 +2552,60 @@ class Regression : public QObject
         QCOMPARE(detailHistory->model()->index(0, 0).data(HistoryGraph::Width).toInt() > 24, true);
         QVERIFY(runGit(service.repoPath(id), {"rev-parse", "refs/heads/试验方案"}).success());
         QVERIFY(topic != main);
+        QCOMPARE(detailHistory->model()->rowCount(), 2);
+        auto ancestor = detailHistory->model()->index(1, 0);
+        QCOMPARE(ancestor.data(HistoryGraph::CollapsedAncestors).toInt(), 7);
+        QVERIFY(ancestor.data(Qt::UserRole + 1).toString().isEmpty());
+        QVERIFY(!ancestor.flags().testFlag(Qt::ItemIsEditable));
+        QCOMPARE(detailHistory->columnSpan(1, 0), 4);
+        QVERIFY(!page->findChild<QPushButton *>("commonAncestors"));
+        detailHistory->setCurrentIndex(ancestor);
+        auto *detailPage = page->findChild<HomePageBackupPage *>(); QVERIFY(detailPage);
+        for (const auto *name : {"restoreAction", "editMessageAction", "previewAction", "milestoneAction", "revisionMenuAction"})
+            QVERIFY(!detailPage->findChild<QAction *>(name)->isEnabled());
+        const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS");
+        const auto originalTheme = m_theme->mode();
+        const auto restoreTheme = qScopeGuard([&] { m_theme->setMode(originalTheme); });
+        if (!output.isEmpty())
+        {
+            QDir().mkpath(output);
+            for (auto theme : {ThemeMode::Light, ThemeMode::Dark})
+            {
+                m_theme->setMode(theme);
+                for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+                {
+                    window.resize(size); QTest::qWait(80);
+                    QCOMPARE(detailHistory->horizontalScrollBar()->maximum(), 0);
+                    QVERIFY(page->grab().save(output + QString("/ancestor-node-%1-%2.png").arg(theme == ThemeMode::Light ? "light" : "dark").arg(size.width())));
+                }
+            }
+        }
+        // A release outside the aggregate row cancels the press.
+        QTest::mousePress(detailHistory->viewport(), Qt::LeftButton, {}, detailHistory->visualRect(ancestor).center());
+        QTest::mouseRelease(detailHistory->viewport(), Qt::LeftButton, {}, QPoint(10, detailHistory->viewport()->height() - 5));
+        QCOMPARE(detailHistory->model()->rowCount(), 2);
+        QTest::mouseClick(detailHistory->viewport(), Qt::LeftButton, {}, detailHistory->visualRect(ancestor).center());
+        settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 8);
+        QCOMPARE(detailHistory->columnSpan(1, 0), 1);
+        for (int row = 0; row < 8; ++row)
+        {
+            QVERIFY(!detailHistory->model()->index(row, 0).data(Qt::UserRole + 1).toString().isEmpty());
+            QCOMPARE(detailHistory->model()->index(row, 0).data(HistoryGraph::CollapsedAncestors).toInt(), 0);
+        }
+        page->refresh(); settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 8);
+        if (!output.isEmpty()) QVERIFY(page->grab().save(output + "/ancestor-node-expanded.png"));
+        // A branch with no unique commits still exposes a usable aggregate node.
+        QVERIFY(service.createBranch(id, "全部共享", topic).success);
+        window.navigate({PageId::Branches, id, {}, {}, QString("refs/heads/全部共享")}); settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 1);
+        QCOMPARE(detailHistory->model()->index(0, 0).data(HistoryGraph::CollapsedAncestors).toInt(), 8);
+        detailHistory->activated(detailHistory->model()->index(0, 0));
+        settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 8);
+        QCOMPARE(head(service, id), main);
+        QCOMPARE(readFile(source), QByteArray("main\n"));
     }
     void renderAllPages()
     {

@@ -32,7 +32,7 @@ class HomePageBackupPage : public QWidget
     void navigate(const Route &route);
     void createBranchRequested(const QString &id, const QString &commit);
     void branchRequested(const QString &branchRef);
-    void commonAncestorsChanged(int count);
+    void commonAncestorsExpanded();
     void notification(const OperationResult &result);
 
   protected:
@@ -87,6 +87,7 @@ class HomePageBackupPage : public QWidget
     quint64 m_refreshGeneration{0};
     QString selectedCommit() const;
     void updateActions();
+    void expandCommonAncestors();
     void rememberState();
     void applyFilter();
     void manageTags(const RevisionContext &context);

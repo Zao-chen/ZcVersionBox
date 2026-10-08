@@ -1,6 +1,7 @@
 #include "homepage_history_graph.h"
 #include "windows/mainwindow_presentation.h"
 #include <QPainterPath>
+#include <QSet>
 
 namespace HistoryGraph
 {
@@ -61,9 +62,39 @@ void populate(QStandardItemModel &model, const QVector<Revision> &revisions, con
     }
     for (int row = 0; row < model.rowCount(); ++row) model.item(row, 0)->setData(24 + maxLanes * 18, Width);
 }
+void appendCommonAncestors(QStandardItemModel &model, int count)
+{
+    if (count <= 0) return;
+    const auto previous = model.index(model.rowCount() - 1, 0);
+    QVariantList incoming;
+    QSet<int> lanes;
+    for (const auto &value : previous.data(Edges).toList())
+    {
+        const auto edge = value.toList();
+        if (edge.size() < 3 || lanes.contains(edge[1].toInt())) continue;
+        lanes.insert(edge[1].toInt());
+        incoming.append(QVariant(QVariantList{edge[1], 0, edge[2]}));
+    }
+    const auto label = QString("还有 %1 个共同祖先").arg(count);
+    QList<QStandardItem *> items;
+    for (int column = 0; column < model.columnCount(); ++column)
+    {
+        auto *item = new QStandardItem(column == 0 ? label : QString());
+        item->setEditable(false);
+        item->setData(count, CollapsedAncestors);
+        item->setData(label, Qt::AccessibleTextRole);
+        item->setData("点击或按 Enter 展开共同祖先，仅查看历史，不切换方案。", Qt::AccessibleDescriptionRole);
+        item->setToolTip("展开查看共同祖先的历史版本");
+        items.append(item);
+    }
+    items.first()->setData(incoming, Edges);
+    items.first()->setData(previous.data(Color).toInt(), Color);
+    items.first()->setData(qMax(42, previous.data(Width).toInt()), Width);
+    model.appendRow(items);
+}
 QStringList hit(const QRect &rect, const QModelIndex &index, const QPoint &position)
 {
-    if (!index.isValid() || index.column() != 0 || !rect.contains(position)) return {};
+    if (!index.isValid() || index.column() != 0 || index.data(CollapsedAncestors).toInt() > 0 || !rect.contains(position)) return {};
     const int lane = qRound((position.x() - (rect.left() + 14)) / 18.0);
     if (lane < 0) return {};
     const auto lanes = index.data(LaneRefs).toList();
@@ -94,6 +125,25 @@ void paint(QPainter *p, const QRect &rect, const QModelIndex &index)
     const auto nodeColor = color(index.data(Color).toInt());
     const int middle = rect.center().y(), bottom = rect.bottom() + 1;
     p->save(); p->setRenderHint(QPainter::Antialiasing);
+    if (index.data(CollapsedAncestors).toInt() > 0)
+    {
+        // Several unfinished lanes can lead into this aggregate, not a Git commit.
+        for (const auto &value : index.data(Edges).toList())
+        {
+            const auto edge = value.toList();
+            p->setPen(QPen(color(edge[2].toInt()), 1.7, Qt::DashLine, Qt::RoundCap));
+            QPainterPath line(QPointF(x(edge[0].toInt()), rect.top()));
+            line.cubicTo(x(edge[0].toInt()), middle - 10, x(0), middle - 14, x(0), middle - 7);
+            p->drawPath(line);
+        }
+        p->setPen(QPen(nodeColor, 1.5));
+        p->setBrush(UiStyle::colors().canvas);
+        p->drawEllipse(QPoint(x(0), middle), 7, 7);
+        p->setPen(QPen(nodeColor, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        p->drawPolyline(QPolygonF{QPointF(x(0) - 3, middle - 1), QPointF(x(0), middle + 2), QPointF(x(0) + 3, middle - 1)});
+        p->restore();
+        return;
+    }
     p->setPen(QPen(nodeColor, 1.7));
     if (index.data(Incoming).toBool()) p->drawLine(x(node), rect.top(), x(node), middle);
     for (const auto &value : index.data(Edges).toList())

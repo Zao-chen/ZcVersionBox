@@ -5,8 +5,9 @@
 
 namespace HistoryGraph
 {
-enum Role { Node = Qt::UserRole + 20, Edges, Incoming, Color, Width, Merge, Current, Refs, NodeRefs, LaneRefs, TipRefs };
+enum Role { Node = Qt::UserRole + 20, Edges, Incoming, Color, Width, Merge, Current, Refs, NodeRefs, LaneRefs, TipRefs, CollapsedAncestors };
 void populate(QStandardItemModel &model, const QVector<Revision> &revisions, const QString &currentCommit);
+void appendCommonAncestors(QStandardItemModel &model, int count);
 void paint(QPainter *painter, const QRect &rect, const QModelIndex &index);
 QStringList hit(const QRect &rect, const QModelIndex &index, const QPoint &position);
 QColor color(int index);

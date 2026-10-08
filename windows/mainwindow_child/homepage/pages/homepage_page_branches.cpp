@@ -60,11 +60,6 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
         else requestSwitch(m_id, m_branch.ref);
     });
     connect(ui->operations, &QPushButton::clicked, this, &HomePageBranchesPage::showOperations);
-    connect(ui->commonAncestors, &QPushButton::clicked, this, [this]
-    {
-        m_historyExpanded = !m_historyExpanded;
-        if (m_history) m_history->setBranchDetail(m_id, m_branchRef, m_historyExpanded);
-    });
     connect(ui->cancelTask, &QPushButton::clicked, this, [this] { if (m_task) m_service->cancel(m_task); });
     connect(m_history, &HomePageBackupPage::navigate, this, &HomePageBranchesPage::navigate);
     connect(m_history, &HomePageBackupPage::notification, this, &HomePageBranchesPage::notification);
@@ -73,11 +68,7 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     {
         if (!ref.isEmpty() && ref != m_branchRef) { Route route{PageId::Branches, m_id}; route.branchRef = ref; emit navigate(route); }
     });
-    connect(m_history, &HomePageBackupPage::commonAncestorsChanged, this, [this](int count)
-    {
-        ui->commonAncestors->setVisible(count > 0);
-        ui->commonAncestors->setText(QString("还有 %1 个共同祖先").arg(count));
-    });
+    connect(m_history, &HomePageBackupPage::commonAncestorsExpanded, this, [this] { m_historyExpanded = true; });
     connect(service, &BackupService::repositoryChanged, this, [this](const QString &id)
     {
         if (id == m_id && isVisible() && !m_busy) refresh();

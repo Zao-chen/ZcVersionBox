@@ -260,3 +260,9 @@ ctest --test-dir build -R '^(backup_core|regression)$' --parallel 2 --output-on-
 在 macOS 26.6 / Qt 6.8.3 arm64 的现有 `build` 中增量构建 `zc_tests` 和 `ZcVersionBox` 成功。Offscreen 的新用例及历史菜单/恢复上下文、方案标记、删除确认、详情错误、浏览回归为 12 passed、0 failed、0 skipped，日志为 `build/tests/branch-menu-after.txt`；Cocoa 原生新用例为 6 passed、0 failed、0 skipped，日志为 `build/tests/branch-menu-cocoa.txt`。通过数包含初始化和清理。测试等待独立窗口显示，鼠标先移到菜单入口，再移到目标菜单项，避免连续用例沿用上一个菜单位置导致 Qt 抑制激活；同时显式投递鼠标移动事件，直接向目标菜单发送按键，不依赖系统前台焦点。全部回归均使用临时仓库、隔离 Git 配置和模拟 AI。
 
 验收时使用临时项目，在历史页和方案详情页从旧版本的菜单新建方案，分别取消、取消勾选“创建后切换”、保留勾选并确认切换，确认无崩溃且新方案版本正确。本轮未运行完整 `regression` / `backup_core`、Windows/Linux 构建或发布打包。
+
+## 2026-10-08 共同祖先节点
+
+方案详情顶部的共同祖先按钮移入历史列表末尾，以同色连线、空心展开节点和“展开查看”呈现。节点随列表滚动，点击整行或通过历史行激活入口展开；没有独有版本时仍显示可展开节点。它没有提交编号，不提供预览、恢复、里程碑或编辑操作；展开及刷新仅改变浏览内容。
+
+增量构建 `ZcVersionBox` 和 `zc_tests` 成功。扩展既有 `branchUiBrowsingGraphAndConfirmation`，验证 7 个共同祖先的展示、跨列布局、取消鼠标点击、展开后刷新及全共享分支，并与方案标记、新建方案菜单、详情错误和历史恢复上下文一同定向执行：10 passed、0 failed、0 skipped（含初始化和清理），日志为 `build/tests/ancestor-node.txt`。已查看 `build/ancestor-node-screenshots/` 下 1080 / 760 宽度的浅深色节点及展开截图。本轮使用隔离测试程序，未运行完整回归或发布打包。
