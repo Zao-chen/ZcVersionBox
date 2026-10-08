@@ -88,9 +88,9 @@ Windows 显式复制 `ZcAiLib.dll`，并要求部署 `vc_redist.x64.exe`；安�
 
 Linux 使用 Qt 部署 API 和 CPack DEB；应用、SDK、Qt、ICU 和插件位于 `/opt/zcversionbox`，入口位于 `/usr/bin` 和 `/usr/share`，运行库使用相对 RPATH。包声明 Git、证书、OpenSSL 和系统库依赖，显式部署 XCB、Wayland、SVG、TLS。Qt/ICU 许可证快照见 `3rdparty/qt-licenses`。打包不包含测试或 Qt Test，也不写用户目录。
 
-GitHub Actions 的 `ci.yml` 在 PR 和合并到 `main` 后运行三平台构建与测试；Linux 还执行 X11/Wayland desktop smoke。`release.yml` 由 `main` 手动触发，输入 `vMAJOR.MINOR.PATCH` 后并行构建 Windows x64 安装器、macOS Universal DMG 和 Linux amd64 DEB，Linux 在 Ubuntu 22.04/24.04 容器中验证安装、升级、测试和卸载。测试日志独立上传，Release 资产只取 `pkg-*`。Release 当前不接入证书签名和公证，macOS 使用 ad-hoc 签名。
+GitHub Actions 的 `ci.yml` 在 PR 和合并到 `main` 后运行 Linux `standard` 回归及 X11/Wayland desktop smoke、Windows/macOS 构建及 `smoke` 关键检查，macOS 日常仅编译 arm64。纯文档改动跳过 Qt 构建。非打包构建使用 Qt 与 sccache 缓存，隔离测试组并行执行，并上传文本/JUnit 日志及耗时摘要。范围和项目调研见 [CI 说明](docs/ci.md)。`release.yml` 由 `main` 手动触发，始终显式执行 `full` 回归，输入 `vMAJOR.MINOR.PATCH` 后并行构建 Windows x64 安装器、macOS Universal DMG 和 Linux amd64 DEB，Linux 在 Ubuntu 22.04/24.04 容器中验证安装、升级、测试和卸载。测试日志独立上传，Release 资产只取 `pkg-*`。Release 当前不接入证书签名和公证，macOS 使用 ad-hoc 签名。
 
-手动运行 `ci.yml` 时可选 `platform=macos`、`windows` 或 `linux`，用于定向排查；默认 `all`。macOS hosted runner 使用 `offscreen` 插件；该插件无法可靠向隐藏窗口传递键盘焦点，因此 3 项涉及弹窗关闭后的键盘操作、隐藏历史视图键盘操作和隐藏通知宿主焦点的回归在 macOS CI 中明确跳过。其余 macOS 回归与完整 `backup_core` 继续运行；这 3 项在 Windows/Linux CI 中执行，macOS 原生 Cocoa 焦点交互需在有桌面的机器上验收。
+手动运行 `ci.yml` 时可选 `platform=macos`、`windows` 或 `linux`，用于定向排查；默认 `all`。默认 `scope=standard` 使用日常矩阵，选择 `scope=full` 在所选平台执行全部回归。本地新构建默认 `full`，可以通过 `-DZCVERSIONBOX_TEST_PROFILE=smoke|standard|full` 切换；已有 CMake 缓存会保留上次选择。macOS hosted runner 使用 `offscreen` 插件，既有不适用用例的跳过规则保留；原生 Cocoa 焦点交互需在有桌面的机器上验收。
 
 应用版本默认来自 `CMakeLists.txt` 中的 `0.1.0`。Release workflow 将 tag 去掉 `v` 后传入 `-DZCVERSIONBOX_VERSION_OVERRIDE=MAJOR.MINOR.PATCH`，CMake、macOS bundle、安装器和 DEB 使用同一版本。手动 Release 必须从 `main` 运行；同一 tag 可以重跑并覆盖资产，已存在但指向其他提交的 tag 会被拒绝。
 
@@ -122,8 +122,8 @@ scripts/                                    共用打包脚本
 
 Git 和文件操作经 BackupService 的后台串行任务执行，以任务 ID、强类型异步结果及信号反馈给页面。列表和路径来自内存快照；页面绑定对象、仓库代次和请求代次，恢复与 pull 解决还必须使用准备好的确认请求。新增页面不得拥有备份扫描定时器，不通过父对象层级或显示文案寻找其他页面。
 
-详细状态和文件范围见 [备份架构](docs/backup-architecture.md)，页面职责见 [UI 架构](docs/ui-architecture.md)。CTest 包含 `regression`（`zc_tests`，既有 UI 与功能）和 `backup_core`（`zc_backup_tests`，文件/Git 故障及进程边界），均隔离存储、Git 配置和 AI。同步等待便利接口仅存在于测试支持头，不得加入生产服务。
+详细状态和文件范围见 [备份架构](docs/backup-architecture.md)，页面职责见 [UI 架构](docs/ui-architecture.md)。CTest 包含 `regression`（`zc_tests`，既有 UI 与功能）、`backup_core`（`zc_backup_tests`，文件/Git 故障及进程边界）和 `update_core`（`zc_update_tests`，更新元数据），均使用隔离测试环境。同步等待便利接口仅存在于测试支持头，不得加入生产服务。
 
-`regression` 在 macOS/Linux 的整组超时预算为 300 秒，在 Windows 为 600 秒，覆盖方案创建、切换、恢复的隔离 Git 场景及较慢的进程启动。`backup_core` 在 macOS/Linux 为 600 秒，在 Windows 为 1200 秒，覆盖完整 Git 故障回归和 10,000 文件、2,000 次写入的压力场景。全部用例及有限超时保护均保留。
+`standard/full` 的 `regression` 在 macOS/Linux 的整组超时预算为 300 秒，在 Windows 为 600 秒；`backup_core` 为 600/1200 秒。`smoke` 两组各 180 秒，`update_core` 为 60 秒，CTest 外层额外留 30 秒输出诊断。10,000 文件、2,000 次写入的压力场景保留在 `full`，其余完整 Git 故障回归纳入 Linux 日常 `standard`。全部用例及有限超时保护均保留。
 
 测试覆盖、截图方式和平台验收见 [回归验证](docs/ui-regression.md)。回归请使用测试程序：正常应用会读取真实备份并启动监控。不要直接操作真实数据来验证失败或崩溃场景。

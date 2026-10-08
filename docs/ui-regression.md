@@ -70,7 +70,7 @@ $env:QT_QPA_PLATFORM_PLUGIN_PATH = 'S:/Qt/6.8.3/msvc2022_64/plugins/platforms'
 & ./build/backup-core/Release/zc_tests.exe monitorSurvivesPageRefresh defaultFileSelectionKeepsBuildAndGitIgnoreSemantics automaticAiMessagesAndDeletedContext conflictChoicesPreviewAndApply confirmationsRespectObjectContext asyncControlsAndThemePreserveContext -o ./build/backup-core/monitor-ui-regression.txt,txt
 ```
 
-`backup_core` 包含一万文件的完整备份事务，CTest 超时为 600 秒；小范围调试可指定 Qt Test 函数，避免每次运行压力用例。所有时间窗口策略用注入时钟验证；真实文件事件测试只缩短合并时间，不将平台事件延迟当作严格定时保证。原子保存测试在 Windows 使用 `ReplaceFileW`，其他平台使用 QSaveFile；另有持续 QSaveFile 清单保存测试，覆盖监听对应用自有记录的影响。
+`backup_core` 的 `full` 范围包含一万文件的完整备份事务，内部超时在 macOS/Linux 为 600 秒、Windows 为 1200 秒；小范围调试可指定 Qt Test 函数。日常 CI 使用 Linux `standard` 和 Windows/macOS `smoke`，完整范围与切换命令见 [CI 说明](ci.md)。所有时间窗口策略用注入时钟验证；真实文件事件测试只缩短合并时间，不将平台事件延迟当作严格定时保证。原子保存测试在 Windows 使用 `ReplaceFileW`，其他平台使用 QSaveFile；另有持续 QSaveFile 清单保存测试，覆盖监听对应用自有记录的影响。
 
 macOS 在已有 Qt 6.8.3 / arm64 构建目录运行同组 `ctest -R '^backup_core$'`，文件事件及压力用例不以平台条件跳过。可单独验收监听行为：
 
@@ -87,7 +87,7 @@ QT_QPA_PLATFORM=offscreen ./build/release/zc_backup_tests \
   largeProjectMonitorBoundsEventStorms -o build/release/monitor-macos.txt,txt
 ```
 
-CTest 使用 offscreen 平台运行 UI 回归，显式设置 Qt 插件路径并保留文本结果：
+CTest 使用 offscreen 平台运行 UI 回归，显式设置 Qt 插件路径并保留文本和同名 JUnit XML 结果（下列构建目录可替换为当前目录）：
 
 - `build/backup-core/tests/regression.txt`
 - `build/backup-core/tests/backup_core.txt`
