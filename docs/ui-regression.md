@@ -266,3 +266,9 @@ ctest --test-dir build -R '^(backup_core|regression)$' --parallel 2 --output-on-
 方案详情顶部的共同祖先按钮移入历史列表末尾，以同色连线、空心展开节点和“展开查看”呈现。节点随列表滚动，点击整行或通过历史行激活入口展开；没有独有版本时仍显示可展开节点。它没有提交编号，不提供预览、恢复、里程碑或编辑操作；展开及刷新仅改变浏览内容。
 
 增量构建 `ZcVersionBox` 和 `zc_tests` 成功。扩展既有 `branchUiBrowsingGraphAndConfirmation`，验证 7 个共同祖先的展示、跨列布局、取消鼠标点击、展开后刷新及全共享分支，并与方案标记、新建方案菜单、详情错误和历史恢复上下文一同定向执行：10 passed、0 failed、0 skipped（含初始化和清理），日志为 `build/tests/ancestor-node.txt`。已查看 `build/ancestor-node-screenshots/` 下 1080 / 760 宽度的浅深色节点及展开截图。本轮使用隔离测试程序，未运行完整回归或发布打包。
+
+验收补充修复：共同祖先节点改为常驻的分组入口，展开后保留在独有版本与共同祖先之间，显示向上箭头和“收起”；再次点击或通过 Enter 绑定的动作激活即可收起。分组查询使用固定的同一提交，节点保留数量、位置与焦点，展开状态在刷新后保持；祖先列表本身仍使用真实提交和父关系绘制。
+
+补充验证反复展开/收起、两种状态下刷新、节点跨列和焦点保持、全共享分支的双向切换，确认 HEAD 与源内容不变。应用和测试增量构建通过；同一组定向用例为 10 passed、0 failed、0 skipped（含初始化和清理），日志为 `build/tests/ancestor-node-toggle.txt`。已查看 `build/ancestor-node-toggle-screenshots/` 的浅深色、1080 / 760 宽度展开效果。本次没有执行完整回归或原生桌面测试。
+
+最终补齐全共享分支中节点到首条祖先的连线，再次执行该分组交互用例通过：3 passed、0 failed（含初始化和清理），日志为 `build/tests/ancestor-node-toggle-final.txt`。

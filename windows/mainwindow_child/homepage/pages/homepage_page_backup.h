@@ -32,7 +32,7 @@ class HomePageBackupPage : public QWidget
     void navigate(const Route &route);
     void createBranchRequested(const QString &id, const QString &commit);
     void branchRequested(const QString &branchRef);
-    void commonAncestorsExpanded();
+    void commonAncestorsExpansionChanged(bool expanded);
     void notification(const OperationResult &result);
 
   protected:
@@ -62,7 +62,8 @@ class HomePageBackupPage : public QWidget
     QString m_branchRef;
     bool m_branchDetail{false};
     bool m_includeCommonAncestors{false};
-    int m_hiddenAncestorCount{0};
+    int m_commonAncestorCount{0};
+    int m_uniqueRevisionCount{0};
     QString m_loadedId;
     QString m_requestedCommit;
     quint64 m_loadedGeneration{0};
@@ -87,7 +88,7 @@ class HomePageBackupPage : public QWidget
     quint64 m_refreshGeneration{0};
     QString selectedCommit() const;
     void updateActions();
-    void expandCommonAncestors();
+    void toggleCommonAncestors();
     void rememberState();
     void applyFilter();
     void manageTags(const RevisionContext &context);

@@ -2554,7 +2554,7 @@ class Regression : public QObject
         QVERIFY(topic != main);
         QCOMPARE(detailHistory->model()->rowCount(), 2);
         auto ancestor = detailHistory->model()->index(1, 0);
-        QCOMPARE(ancestor.data(HistoryGraph::CollapsedAncestors).toInt(), 7);
+        QCOMPARE(ancestor.data(HistoryGraph::AncestorCount).toInt(), 7);
         QVERIFY(ancestor.data(Qt::UserRole + 1).toString().isEmpty());
         QVERIFY(!ancestor.flags().testFlag(Qt::ItemIsEditable));
         QCOMPARE(detailHistory->columnSpan(1, 0), 4);
@@ -2586,24 +2586,63 @@ class Regression : public QObject
         QCOMPARE(detailHistory->model()->rowCount(), 2);
         QTest::mouseClick(detailHistory->viewport(), Qt::LeftButton, {}, detailHistory->visualRect(ancestor).center());
         settle(service);
-        QCOMPARE(detailHistory->model()->rowCount(), 8);
-        QCOMPARE(detailHistory->columnSpan(1, 0), 1);
-        for (int row = 0; row < 8; ++row)
+        QCOMPARE(detailHistory->model()->rowCount(), 9);
+        QCOMPARE(detailHistory->columnSpan(1, 0), 4);
+        QCOMPARE(detailHistory->currentIndex().row(), 1);
+        ancestor = detailHistory->model()->index(1, 0);
+        QCOMPARE(ancestor.data(HistoryGraph::AncestorCount).toInt(), 7);
+        QVERIFY(ancestor.data(HistoryGraph::AncestorsExpanded).toBool());
+        QVERIFY(ancestor.data(Qt::ToolTipRole).toString().contains("收起"));
+        for (int row = 0; row < 9; ++row)
         {
+            if (row == 1) continue;
             QVERIFY(!detailHistory->model()->index(row, 0).data(Qt::UserRole + 1).toString().isEmpty());
-            QCOMPARE(detailHistory->model()->index(row, 0).data(HistoryGraph::CollapsedAncestors).toInt(), 0);
+            QCOMPARE(detailHistory->model()->index(row, 0).data(HistoryGraph::AncestorCount).toInt(), 0);
         }
         page->refresh(); settle(service);
-        QCOMPARE(detailHistory->model()->rowCount(), 8);
-        if (!output.isEmpty()) QVERIFY(page->grab().save(output + "/ancestor-node-expanded.png"));
+        QCOMPARE(detailHistory->model()->rowCount(), 9);
+        QVERIFY(detailHistory->model()->index(1, 0).data(HistoryGraph::AncestorsExpanded).toBool());
+        if (!output.isEmpty())
+        {
+            for (auto theme : {ThemeMode::Light, ThemeMode::Dark})
+            {
+                m_theme->setMode(theme);
+                for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+                {
+                    window.resize(size); QTest::qWait(80);
+                    QVERIFY(page->grab().save(output + QString("/ancestor-node-expanded-%1-%2.png").arg(theme == ThemeMode::Light ? "light" : "dark").arg(size.width())));
+                }
+            }
+        }
+        // The same row remains focused, so repeated Enter activation can close/open it.
+        auto *activate = detailPage->findChild<QAction *>("compareAction"); QVERIFY(activate && activate->isEnabled());
+        activate->trigger(); settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 2);
+        QCOMPARE(detailHistory->currentIndex().row(), 1);
+        QVERIFY(!detailHistory->model()->index(1, 0).data(HistoryGraph::AncestorsExpanded).toBool());
+        page->refresh(); settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 2);
+        activate->trigger(); settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 9);
+        QCOMPARE(detailHistory->currentIndex().row(), 1);
+        QTest::mouseClick(detailHistory->viewport(), Qt::LeftButton, {}, detailHistory->visualRect(detailHistory->currentIndex()).center());
+        settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 2);
         // A branch with no unique commits still exposes a usable aggregate node.
         QVERIFY(service.createBranch(id, "全部共享", topic).success);
         window.navigate({PageId::Branches, id, {}, {}, QString("refs/heads/全部共享")}); settle(service);
         QCOMPARE(detailHistory->model()->rowCount(), 1);
-        QCOMPARE(detailHistory->model()->index(0, 0).data(HistoryGraph::CollapsedAncestors).toInt(), 8);
+        QCOMPARE(detailHistory->model()->index(0, 0).data(HistoryGraph::AncestorCount).toInt(), 8);
         detailHistory->activated(detailHistory->model()->index(0, 0));
         settle(service);
-        QCOMPARE(detailHistory->model()->rowCount(), 8);
+        QCOMPARE(detailHistory->model()->rowCount(), 9);
+        QCOMPARE(detailHistory->currentIndex().row(), 0);
+        QCOMPARE(detailHistory->model()->index(0, 0).data(HistoryGraph::AncestorCount).toInt(), 8);
+        QVERIFY(detailHistory->model()->index(0, 0).data(HistoryGraph::AncestorsExpanded).toBool());
+        QVERIFY(detailHistory->model()->index(1, 0).data(HistoryGraph::Incoming).toBool());
+        activate->trigger(); settle(service);
+        QCOMPARE(detailHistory->model()->rowCount(), 1);
+        QVERIFY(!detailHistory->model()->index(0, 0).data(HistoryGraph::AncestorsExpanded).toBool());
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
     }

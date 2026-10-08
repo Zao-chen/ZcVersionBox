@@ -68,7 +68,7 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     {
         if (!ref.isEmpty() && ref != m_branchRef) { Route route{PageId::Branches, m_id}; route.branchRef = ref; emit navigate(route); }
     });
-    connect(m_history, &HomePageBackupPage::commonAncestorsExpanded, this, [this] { m_historyExpanded = true; });
+    connect(m_history, &HomePageBackupPage::commonAncestorsExpansionChanged, this, [this](bool expanded) { m_historyExpanded = expanded; });
     connect(service, &BackupService::repositoryChanged, this, [this](const QString &id)
     {
         if (id == m_id && isVisible() && !m_busy) refresh();
