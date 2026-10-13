@@ -15,6 +15,7 @@ struct SourceLocation
     BranchContext context;
     QString root, path;
     bool rootDirectory{false};
+    QByteArray rootIdentity;
 };
 struct SourceEntry
 {
@@ -46,3 +47,22 @@ struct SourceChanges
 SourceContent decodeSourceContent(const QByteArray &bytes);
 BackupResult<QString> sourcePreviewPath(const SourceLocation &location, bool mustExist = true);
 BackupResult<QByteArray> sourcePreviewStamp(const QString &path);
+
+struct SourceSaveRequest
+{
+    SourceLocation location;
+    QByteArray expectedStamp;
+    QString text;
+    bool create{false};
+};
+enum class SourceMutationKind { CreateDirectory, Rename, Delete };
+struct SourceMutationRequest
+{
+    SourceLocation location;
+    SourceMutationKind kind{SourceMutationKind::Delete};
+    QString name;
+    QMap<QString, QByteArray> snapshot;
+};
+QByteArray sourcePreviewIdentity(const QString &path);
+bool validSourceEntryName(const QString &name);
+BackupResult<QByteArray> encodeSourceText(const SourceContent &original, const QString &text);

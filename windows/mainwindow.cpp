@@ -285,6 +285,14 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     m_updates = new UpdateService(this);
     m_list = new HomePage(backups, this, m_backupModel, m_actions);
     m_preview = new HomePagePreviewPage(backups, this);
+    m_actions->setMaintenanceGuard([this](std::function<void()> next) { m_preview->requestLeave(std::move(next)); });
+    m_navigation.setTransitionGuard([this](std::function<void()> next) {
+        m_preview->requestLeave(std::move(next));
+        ui->previewTab->setChecked(m_route.page == PageId::Preview);
+        ui->historyTab->setChecked(m_route.page == PageId::History);
+        ui->overviewTab->setChecked(m_route.page == PageId::Dashboard);
+        syncSidebarSelection();
+    });
     m_dashboard = new HomePageDashboardPage(backups, this);
     m_history = new HomePageBackupPage(backups, this);
     m_diff = new HomePageDiffPage(backups, settings, gateway, this);
@@ -335,7 +343,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         const auto id = m_route.backupId, ref = ui->branchSelector->itemData(index).toString();
         const auto current = m_backups->branchContext(id).ref;
         { const QSignalBlocker blocker(ui->branchSelector); ui->branchSelector->setCurrentIndex(ui->branchSelector->findData(current)); }
-        if (!ref.isEmpty() && ref != current) m_branches->requestSwitch(id, ref);
+        if (!ref.isEmpty() && ref != current) m_preview->requestLeave([this, id, ref] { m_branches->requestSwitch(id, ref); });
     });
     wire(m_general);
     wire(m_actions);
@@ -429,7 +437,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
             { m_actions->showObjectMenu(m_route.backupId, ui->moreButton->mapToGlobal(QPoint(0, ui->moreButton->height()))); });
     auto *menu = new QMenu(this);
     menu->setObjectName("applicationMenu");
-    menu->addAction("退出", qApp, &QApplication::quit);
+    menu->addAction("退出", this, [this] { m_preview->requestLeave([] { qApp->quit(); }); });
     connect(ui->appMenuButton, &QToolButton::clicked, menu, [this, menu]
             { menu->popup(ui->appMenuButton->mapToGlobal(QPoint(0, -menu->sizeHint().height() + 16))); });
     connect(theme, &ThemeController::changed, this, [this]
@@ -454,7 +462,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         m_tray = new QSystemTrayIcon(windowIcon(), this);
         auto *trayMenu = new QMenu(this);
         trayMenu->addAction("主窗口", this, &MainWindow::restoreWindow);
-        trayMenu->addAction("退出", qApp, &QApplication::quit);
+        trayMenu->addAction("退出", this, [this] { m_preview->requestLeave([] { qApp->quit(); }); });
         m_tray->setContextMenu(trayMenu);
         connect(m_tray, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason)
                 {
@@ -900,6 +908,12 @@ void MainWindow::updateHeaderLayout()
 }
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == qApp && event->type() == QEvent::Quit && m_preview && !m_quitApproved &&
+        (m_preview->hasUnsavedChanges() || m_preview->sourceOperationPending()))
+    {
+        m_preview->requestLeave([this] { m_quitApproved = true; qApp->quit(); });
+        return true;
+    }
     if ((watched == ui->header || watched == ui->contextTitle) && event->type() == QEvent::Resize)
         updateHeaderLayout();
 
@@ -1013,9 +1027,14 @@ void MainWindow::closeEvent(QCloseEvent *event)
     }
     else
     {
+        if (m_preview->hasUnsavedChanges() || m_preview->sourceOperationPending())
+        {
+            event->ignore();
+            m_preview->requestLeave([this] { close(); });
+            return;
+        }
         QMainWindow::closeEvent(event);
-        if (m_tray)
-            QCoreApplication::quit();
+        if (m_tray) QCoreApplication::quit();
     }
 }
 void MainWindow::changeEvent(QEvent *event)

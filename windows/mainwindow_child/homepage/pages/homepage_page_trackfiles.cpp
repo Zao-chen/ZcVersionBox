@@ -49,9 +49,15 @@ BackupUiActions::BackupUiActions(BackupService *service, QWidget *owner) : QObje
     connect(m_overview, &QAction::triggered, this, [this]
             { emit navigate({PageId::Dashboard, target()}); });
     connect(m_remove, &QAction::triggered, this, [this]
-            { remove(target()); });
+            {
+        const auto id = target(); const QPointer<BackupUiActions> guard(this);
+        const auto next = [guard, id] { if (guard) guard->remove(id); };
+        if (m_maintenanceGuard) m_maintenanceGuard(next); else next(); });
     connect(m_rebuild, &QAction::triggered, this, [this]
-            { rebuild(target()); });
+            {
+        const auto id = target(); const QPointer<BackupUiActions> guard(this);
+        const auto next = [guard, id] { if (guard) guard->rebuild(id); };
+        if (m_maintenanceGuard) m_maintenanceGuard(next); else next(); });
 }
 void BackupUiActions::refreshIcons()
 {

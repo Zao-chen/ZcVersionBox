@@ -20,6 +20,7 @@ class BackupUiActions : public QObject
     void remove(const QString &id);
     void rebuild(const QString &id);
     void refreshIcons();
+    void setMaintenanceGuard(std::function<void(std::function<void()>)> guard) { m_maintenanceGuard = std::move(guard); }
   signals:
     void navigate(const Route &route);
     void notification(const OperationResult &result);
@@ -34,6 +35,7 @@ class BackupUiActions : public QObject
     QAction *m_copy;
     QAction *m_remove;
     QAction *m_rebuild;
+    std::function<void(std::function<void()>)> m_maintenanceGuard;
     QString m_currentId;
     QString m_menuId;
     QString target() const { return m_menuId.isEmpty() ? m_currentId : m_menuId; }

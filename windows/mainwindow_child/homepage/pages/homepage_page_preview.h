@@ -17,6 +17,9 @@ class HomePagePreviewPage : public QWidget
     ~HomePagePreviewPage() override;
     void setBackup(const QString &id, const QString &path = {});
     void deactivate();
+    void requestLeave(std::function<void()> continuation);
+    bool hasUnsavedChanges() const;
+    bool sourceOperationPending() const { return m_saving || m_mutating; }
     void refreshTheme();
     QList<QAction *> toolbarActions() const;
     QString rememberedPath(const QString &id) const { return m_paths.value(id); }
@@ -32,10 +35,21 @@ class HomePagePreviewPage : public QWidget
     QTimer m_refreshTimer;
     QStandardItemModel m_model;
     oclero::qlementine::LoadingSpinner *m_spinner;
-    QAction *m_refresh, *m_open;
-    QString m_id, m_path;
+    QAction *m_refresh, *m_open, *m_new, *m_edit, *m_save, *m_cancel, *m_manage;
+    bool m_editing{false}, m_newFile{false}, m_saving{false}, m_mutating{false}, m_prompt{false};
+    QString m_statusText;
+    void updateActions();
+    void save(std::function<void()> continuation = {});
+    void beginEdit();
+    void discard();
+    void createEntry(bool directory);
+    void entryMenu(const SourceLocation &location, const QPoint &position);
+    void mutateEntry(const SourceLocation &location, SourceMutationKind kind, const QString &name = {});
+    void status(const QString &text);
+    QString m_id, m_path, m_changesHead;
     QHash<QString, QString> m_paths;
     QHash<QString, QPoint> m_scrolls;
+    QHash<QString, bool> m_rawModes;
     SourceDirectory m_directory;
     SourceContent m_content;
     QMap<QString, Revision> m_changes;

@@ -3,6 +3,7 @@
 #include <QSet>
 #include <QString>
 #include <QVector>
+#include <functional>
 
 enum class PageId
 {
@@ -50,6 +51,7 @@ class Navigation : public QObject
     Route previous() const { return m_index > 0 ? m_routes.at(m_index - 1) : Route{}; }
     bool canBack() const { return m_index > 0; }
     bool canForward() const { return m_index + 1 < m_routes.size(); }
+    void setTransitionGuard(std::function<void(std::function<void()>)> guard) { m_guard = std::move(guard); }
     void go(const Route &route);
     void replaceCurrent(const Route &route);
     void back();
@@ -61,6 +63,9 @@ class Navigation : public QObject
     void changed(const Route &route);
 
   private:
+    std::function<void(std::function<void()>)> m_guard;
+    bool m_guardBypassed{false};
+    bool guarded(std::function<void()> action);
     QVector<Route> m_routes;
     int m_index{0};
 };

@@ -248,6 +248,123 @@ class BackupCoreRegression : public QObject
         bad = awaitBackup<BackupResult<SourceDirectory>>([&](auto f) { service.sourceDirectory(id, ".git", &service, f); });
         QVERIFY(!bad.result.success);
     }
+    void sourcePreviewSavesPreserveEncodingAndRejectStaleInput()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto root = dir.path() + "/source", file = root + "/notes.txt";
+        const auto bytes = QByteArray::fromHex("efbbbf") + "first\r\nlast";
+        writeFile(file, bytes); CHECK_OK(service.addLocal(root));
+        const auto id = service.idForSource(root), initial = head(service, id);
+        const auto baseline = record(service, id).fingerprint;
+        const auto load = [&] { return awaitBackup<BackupResult<SourceContent>>([&](auto f) { service.sourceContent(id, "notes.txt", &service, f); }); };
+        auto content = load(); CHECK_OK(content.result);
+        const auto identity = sourcePreviewIdentity(file);
+        SourceSaveRequest request{content.value.location, content.value.stamp, content.value.text};
+        const auto save = [&] { return awaitBackup<OperationResult>([&](auto f) { service.saveSourceFile(request, &service, f); }); };
+        CHECK_OK(save()); QCOMPARE(readFile(file), bytes); QCOMPARE(sourcePreviewIdentity(file), identity);
+        const auto permissions = QFile::permissions(file);
+        request.text = "second\nlast"; CHECK_OK(save());
+        QCOMPARE(readFile(file), QByteArray::fromHex("efbbbf") + "second\r\nlast");
+        QCOMPARE(QFile::permissions(file), permissions);
+        QCOMPARE(head(service, id), initial); QCOMPARE(record(service, id).fingerprint, baseline);
+        QVERIFY(!save().success); // The old snapshot cannot be submitted twice.
+        content = load(); CHECK_OK(content.result);
+        request = {content.value.location, content.value.stamp, "my edits"};
+        writeFile(file, "outside");
+        QVERIFY(!save().success); QCOMPARE(readFile(file), QByteArray("outside"));
+        content = load(); CHECK_OK(content.result);
+        request = {content.value.location, content.value.stamp, "replacement"};
+        QVERIFY(replaceFileAtomically(file, "outside"));
+        QVERIFY(!save().success); // Same bytes in a replaced file still invalidate editing.
+        writeFile(file, QByteArray::fromHex("fffe2d4e87650d000a00"));
+        content = load(); CHECK_OK(content.result);
+        request = {content.value.location, content.value.stamp, "中文\n新增"};
+        CHECK_OK(save());
+        QCOMPARE(readFile(file), QByteArray::fromHex("fffe2d4e87650d000a00b0659e58"));
+#ifndef Q_OS_WIN
+        content = load(); CHECK_OK(content.result);
+        QVERIFY(QFile::setPermissions(file, QFileDevice::ReadOwner));
+        content = load(); CHECK_OK(content.result);
+        request = {content.value.location, content.value.stamp, "cannot write"};
+        QVERIFY(!save().success);
+        QVERIFY(QFile::setPermissions(file, permissions));
+#endif
+        // Browsing local content remains available when repository metadata is unavailable.
+        QVERIFY(QDir().rename(service.repoPath(id) + "/.git", service.repoPath(id) + "/git-away"));
+        CHECK_OK(load().result);
+        auto changes = awaitBackup<BackupResult<SourceChanges>>([&](auto f) { service.sourceChanges(id, {"notes.txt"}, &service, f); });
+        QVERIFY(!changes.result.success);
+    }
+    void sourcePreviewFileManagementProtectsRootsAndConfirmations()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto root = dir.path() + "/source";
+        writeFile(root + "/folder/item.txt", "one"); CHECK_OK(service.addLocal(root));
+        const auto id = service.idForSource(root), initial = head(service, id);
+        const auto where = [&](const QString &path) {
+            return awaitBackup<BackupResult<SourceDirectory>>([&](auto f) { service.sourceDirectory(id, path, &service, f); }).value.location;
+        };
+        const auto prepare = [&](const SourceLocation &location, SourceMutationKind kind, const QString &name = QString()) {
+            return awaitBackup<BackupResult<SourceMutationRequest>>([&](auto f) { service.prepareSourceMutation(location, kind, name, &service, f); });
+        };
+        const auto apply = [&](const SourceMutationRequest &request) { return awaitBackup<OperationResult>([&](auto f) { service.applySourceMutation(request, &service, f); }); };
+        QVERIFY(!prepare(where({}), SourceMutationKind::Delete).result.success);
+        QVERIFY(!prepare(where({}), SourceMutationKind::CreateDirectory, "../escape").result.success);
+        auto created = prepare(where({}), SourceMutationKind::CreateDirectory, "new folder"); CHECK_OK(created.result); CHECK_OK(apply(created.value));
+        QVERIFY(QFileInfo(root + "/new folder").isDir()); QVERIFY(!apply(created.value).success);
+        auto target = where({}); target.path = "new folder/new.txt";
+        SourceSaveRequest newFile{target, {}, "created\n", true};
+        auto saved = awaitBackup<OperationResult>([&](auto f) { service.saveSourceFile(newFile, &service, f); }); CHECK_OK(saved);
+        saved = awaitBackup<OperationResult>([&](auto f) { service.saveSourceFile(newFile, &service, f); }); QVERIFY(!saved.success);
+        QCOMPARE(readFile(root + "/new folder/new.txt"), QByteArray("created\n"));
+        auto rename = prepare(where("new folder/new.txt"), SourceMutationKind::Rename, "renamed.txt"); CHECK_OK(rename.result); CHECK_OK(apply(rename.value));
+        QVERIFY(!QFileInfo::exists(root + "/new folder/new.txt"));
+        QCOMPARE(readFile(root + "/new folder/renamed.txt"), QByteArray("created\n"));
+        auto deletion = prepare(where("folder"), SourceMutationKind::Delete); CHECK_OK(deletion.result);
+        writeFile(root + "/folder/new-after-confirmation.txt", "keep");
+        QVERIFY(!apply(deletion.value).success); QVERIFY(QFileInfo::exists(root + "/folder/item.txt"));
+        writeFile(root + "/folder/.git/config", "protected");
+        QVERIFY(!prepare(where("folder"), SourceMutationKind::Delete).result.success);
+        QVERIFY(!prepare(where("folder"), SourceMutationKind::Rename, "other").result.success);
+        QCOMPARE(readFile(root + "/folder/.git/config"), QByteArray("protected"));
+#ifndef Q_OS_WIN
+        QVERIFY(QFile::link(root + "/folder", root + "/new folder/linked"));
+        QVERIFY(!prepare(where("new folder"), SourceMutationKind::Delete).result.success);
+        QVERIFY(QFile::remove(root + "/new folder/linked"));
+#endif
+        deletion = prepare(where("new folder"), SourceMutationKind::Delete); CHECK_OK(deletion.result); CHECK_OK(apply(deletion.value));
+        QVERIFY(!QFileInfo::exists(root + "/new folder"));
+        QCOMPARE(head(service, id), initial);
+    }
+    void sourcePreviewEditsFeedExistingMonitorAndRejectBranchChanges()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/file.txt";
+        writeFile(source, "original"); CHECK_OK(service.addLocal(source));
+        const auto id = service.idForSource(source), initial = head(service, id);
+        auto content = awaitBackup<BackupResult<SourceContent>>([&](auto f) { service.sourceContent(id, {}, &service, f); }); CHECK_OK(content.result);
+        SourceSaveRequest request{content.value.location, content.value.stamp, "saved by preview"};
+        auto result = awaitBackup<OperationResult>([&](auto f) { service.saveSourceFile(request, &service, f); }); CHECK_OK(result);
+        QCOMPARE(head(service, id), initial);
+        BackupMonitor monitor(&service); monitor.start(); settle(monitor, service);
+        QVERIFY(head(service, id) != initial);
+        QCOMPARE(readFile(service.repoPath(id) + "/file.txt"), QByteArray("saved by preview"));
+        monitor.stop(); settle(monitor, service);
+        content = awaitBackup<BackupResult<SourceContent>>([&](auto f) { service.sourceContent(id, {}, &service, f); }); CHECK_OK(content.result);
+        request = {content.value.location, content.value.stamp, "stale branch edit"};
+        CHECK_OK(service.createBranch(id, "alternative"));
+        auto prepared = service.prepareBranchSwitch(id, "refs/heads/alternative"); CHECK_OK(prepared.result); CHECK_OK(service.switchBranch(prepared.value));
+        result = awaitBackup<OperationResult>([&](auto f) { service.saveSourceFile(request, &service, f); }); QVERIFY(!result.success);
+        QCOMPARE(readFile(source), QByteArray("saved by preview"));
+        content = awaitBackup<BackupResult<SourceContent>>([&](auto f) { service.sourceContent(id, {}, &service, f); }); CHECK_OK(content.result);
+        request = {content.value.location, content.value.stamp, "locked write"};
+        QLockFile lock(service.paths().backupRoot + "/.writer.lock"); QVERIFY(lock.tryLock(0));
+        result = awaitBackup<OperationResult>([&](auto f) { service.saveSourceFile(request, &service, f); }); QVERIFY(!result.success);
+        lock.unlock(); QCOMPARE(readFile(source), QByteArray("saved by preview"));
+    }
     void sourcePreviewDecodingLimits()
     {
         const auto utf8 = decodeSourceContent(QByteArray::fromHex("efbbbf") + "hello\r\n");

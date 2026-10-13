@@ -7,6 +7,11 @@
 #include <QFileInfo>
 #include <QImageReader>
 #include <QStringConverter>
+#ifdef Q_OS_WIN
+#include <qt_windows.h>
+#else
+#include <sys/stat.h>
+#endif
 
 BackupResult<QString> sourcePreviewPath(const SourceLocation &location, bool mustExist)
 {
@@ -39,7 +44,7 @@ BackupResult<QByteArray> sourcePreviewStamp(const QString &path)
         before.permissions() != after.permissions() || BackupFiles::hasLinkedAncestor(path))
         return {OperationResult::fail("文件正在变化", "请稍后重新读取。")};
     return {OperationResult::ok({}), hash.result().toHex() + ':' + QByteArray::number(after.size()) + ':' +
-        QByteArray::number(after.lastModified().toMSecsSinceEpoch()) + ':' + QByteArray::number(after.birthTime().toMSecsSinceEpoch()) + ':' + QByteArray::number(after.permissions())};
+        QByteArray::number(after.lastModified().toMSecsSinceEpoch()) + ':' + QByteArray::number(after.birthTime().toMSecsSinceEpoch()) + ':' + QByteArray::number(after.permissions()) + ':' + sourcePreviewIdentity(path)};
 }
 SourceContent decodeSourceContent(const QByteArray &bytes)
 {
@@ -86,9 +91,52 @@ SourceContent decodeSourceContent(const QByteArray &bytes)
     }
     content.textual = true;
     const int crlf = content.text.count("\r\n"), lf = content.text.count('\n'), cr = content.text.count('\r');
-    content.editable = cr == crlf && (crlf == 0 || crlf == lf);
+    content.editable = cr == crlf && (crlf == 0 || crlf == lf) && !content.text.contains(QChar(0x2028)) && !content.text.contains(QChar(0x2029));
     content.newline = crlf ? "\r\n" : "\n";
     if (!content.editable) content.notice = "文件含混合换行，仅供查看；请用系统应用编辑。";
     content.text.replace("\r\n", "\n");
     return content;
+}
+
+QByteArray sourcePreviewIdentity(const QString &path)
+{
+#ifdef Q_OS_WIN
+    const auto native = QDir::toNativeSeparators(path);
+    const auto handle = CreateFileW(reinterpret_cast<const wchar_t *>(native.utf16()), FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+        FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) return {};
+    BY_HANDLE_FILE_INFORMATION info{};
+    const bool ok = GetFileInformationByHandle(handle, &info);
+    CloseHandle(handle);
+    if (!ok) return {};
+    return QByteArray::number(info.dwVolumeSerialNumber) + ':' + QByteArray::number(info.nFileIndexHigh) + ':' + QByteArray::number(info.nFileIndexLow);
+#else
+    struct stat info{};
+    if (lstat(QFile::encodeName(path).constData(), &info) != 0) return {};
+    return QByteArray::number(qulonglong(info.st_dev)) + ':' + QByteArray::number(qulonglong(info.st_ino));
+#endif
+}
+bool validSourceEntryName(const QString &name)
+{
+    if (name.isEmpty() || name.trimmed() != name || name == "." || name == ".." || name.endsWith('.') || name.compare(".git", Qt::CaseInsensitive) == 0) return false;
+    for (const auto c : name) if (c.unicode() < 32 || QStringLiteral("<>:\"/\\|?*").contains(c)) return false;
+    const auto stem = name.section('.', 0, 0).toUpper();
+    if (QStringList{"CON", "PRN", "AUX", "NUL"}.contains(stem)) return false;
+    if ((stem.startsWith("COM") || stem.startsWith("LPT")) && stem.size() == 4 && stem[3] >= '1' && stem[3] <= '9') return false;
+    return true;
+}
+BackupResult<QByteArray> encodeSourceText(const SourceContent &original, const QString &text)
+{
+    if (!original.editable || text.size() > SourcePreview::TextLimit || text.count('\n') + 1 > SourcePreview::LineLimit)
+        return {OperationResult::fail("无法保存", "此文件不可编辑，或内容超出文本编辑上限。")};
+    auto encoding = original.encoding == "UTF-16LE" ? QStringConverter::Utf16LE : original.encoding == "UTF-16BE" ? QStringConverter::Utf16BE : QStringConverter::Utf8;
+    QStringEncoder encoder(encoding, QStringConverter::Flag::Stateless);
+    auto normalized = text;
+    if (original.newline == "\r\n") normalized.replace("\n", "\r\n");
+    QByteArray bytes = encoder(normalized);
+    if (original.bom) bytes.prepend(QByteArray::fromHex(encoding == QStringConverter::Utf16LE ? "fffe" : encoding == QStringConverter::Utf16BE ? "feff" : "efbbbf"));
+    if (encoder.hasError() || bytes.size() > SourcePreview::TextLimit || !decodeSourceContent(bytes).editable)
+        return {OperationResult::fail("无法保存", "内容无法按原编码和换行方式安全保存，或超出大小限制。")};
+    return {OperationResult::ok({}), bytes};
 }

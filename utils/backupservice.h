@@ -33,6 +33,9 @@ class BackupService : public QObject
     BackupTaskId reload(QObject *context = nullptr, Completion callback = {}, BackupReloadOptions options = {});
     BackupTaskId addLocal(const QString &source, QObject *context, Completion callback = {});
     BackupTaskId backup(const QString &id, QObject *context, Completion callback = {}, BackupRequestOptions options = {});
+    BackupTaskId saveSourceFile(const SourceSaveRequest &request, QObject *context, Completion callback);
+    BackupTaskId prepareSourceMutation(const SourceLocation &location, SourceMutationKind kind, const QString &name, QObject *context, Reply<SourceMutationRequest> callback);
+    BackupTaskId applySourceMutation(const SourceMutationRequest &request, QObject *context, Completion callback);
     BackupTaskId sourceDirectory(const QString &id, const QString &path, QObject *context, Reply<SourceDirectory> callback);
     BackupTaskId sourceContent(const QString &id, const QString &path, QObject *context, Reply<SourceContent> callback);
     BackupTaskId sourceChanges(const QString &id, const QStringList &paths, QObject *context, Reply<SourceChanges> callback);
@@ -92,6 +95,7 @@ class BackupService : public QObject
     void ready();
     void reloadFinished(const OperationResult &result);
     void trackedItemsChanged();
+    void sourceChanged(const QString &id);
     void repositoryChanged(const QString &id);
     void repositoryInvalidated(const QString &id);
     void taskStarted(BackupTaskId task, const QString &id);

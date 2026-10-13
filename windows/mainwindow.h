@@ -66,7 +66,8 @@ class MainWindow : public QMainWindow
     NotificationBar *m_notifications;
     HomePage *m_list;
     HomePageDashboardPage *m_dashboard;
-    HomePagePreviewPage *m_preview;
+    HomePagePreviewPage *m_preview{nullptr};
+    bool m_quitApproved{false};
     HomePageBackupPage *m_history;
     HomePageDiffPage *m_diff;
     HomePageConflictPage *m_conflict;
