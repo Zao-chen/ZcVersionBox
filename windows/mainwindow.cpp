@@ -426,7 +426,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     menu->setObjectName("applicationMenu");
     menu->addAction("退出", qApp, &QApplication::quit);
     connect(ui->appMenuButton, &QToolButton::clicked, menu, [this, menu]
-            { menu->popup(ui->appMenuButton->mapToGlobal(QPoint(0, -menu->sizeHint().height() + 12))); });
+            { menu->popup(ui->appMenuButton->mapToGlobal(QPoint(0, -menu->sizeHint().height() + 16))); });
     connect(theme, &ThemeController::changed, this, [this]
             {
         updateIcons();
