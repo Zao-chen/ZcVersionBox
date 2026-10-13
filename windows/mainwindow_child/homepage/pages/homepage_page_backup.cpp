@@ -694,7 +694,8 @@ void HomePageBackupPage::setBackup(const QString &id, const QString &commit, con
     m_id = id;
     m_branchDetail = false;
     m_includeCommonAncestors = false;
-    ui->pageLayout->setContentsMargins(24, 24, 24, 24);
+    const int margin = width() < 640 ? 16 : 24;
+    ui->pageLayout->setContentsMargins(margin, 12, margin, 16);
     ui->filterBar->setVisible(true);
     ui->historyScope->setVisible(true);
     ui->milestoneFilterLabel->setVisible(true);
@@ -1116,8 +1117,13 @@ void HomePageBackupPage::applyFilter()
 void HomePageBackupPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-    const int margin = width() < 640 ? 16 : 24;
-    ui->pageLayout->setContentsMargins(margin, 12, margin, 16);
+    if (m_branchDetail)
+        ui->pageLayout->setContentsMargins(0, 0, 0, 0);
+    else
+    {
+        const int margin = width() < 640 ? 16 : 24;
+        ui->pageLayout->setContentsMargins(margin, 12, margin, 16);
+    }
     ui->table->setColumnHidden(1, width() < 760);
     ui->table->setColumnHidden(2, width() < 1050);
 }
