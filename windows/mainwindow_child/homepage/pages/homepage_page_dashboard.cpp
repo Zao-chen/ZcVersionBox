@@ -17,13 +17,15 @@
 HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *parent) : QWidget(parent), ui(new Ui::HomePageDashboardPage), m_service(service)
 {
     ui->setupUi(this);
-    for (auto *label : {ui->sourceLabel, ui->stateValue, ui->syncStateLabel, ui->headerDot, ui->versionCaption, ui->fileCaption, ui->sizeCaption, ui->cacheCaption})
+    for (auto *label : {ui->sourceLabel, ui->repositoryLabel, ui->stateValue, ui->syncStateLabel, ui->headerDot, ui->versionCaption, ui->fileCaption, ui->sizeCaption, ui->cacheCaption})
         UiStyle::text(label, UiStyle::FontRole::Caption, true);
     for (auto *value : {ui->versionValue, ui->fileValue, ui->sizeValue, ui->cacheValue})
         UiStyle::text(value, UiStyle::FontRole::Object);
     UiStyle::text(ui->sourcePathEdit, UiStyle::FontRole::Body);
+    UiStyle::text(ui->repositoryPathEdit, UiStyle::FontRole::Body);
     UiStyle::text(ui->remoteUrl, UiStyle::FontRole::Body);
     ui->sourcePathEdit->setAccessibleName("源位置");
+    ui->repositoryPathEdit->setAccessibleName("备份仓库位置");
     ui->remoteUrl->setAccessibleName("云端仓库地址");
     m_syncState = ui->syncStateLabel;
     ui->headerDot->hide();
@@ -59,15 +61,21 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
     m_refresh = UiStyle::action(this, "refreshOverviewAction", "刷新概览", "refresh");
     m_refresh->setProperty("iconOnly", true);
     connect(m_refresh, &QAction::triggered, this, &HomePageDashboardPage::refresh);
-    ui->copySourceButton->setIcon(UiStyle::icon("copy"));
-    ui->openSourceButton->setIcon(UiStyle::icon("external"));
+    for (auto *button : {ui->copySourceButton, ui->copyRepositoryButton})
+        button->setIcon(UiStyle::icon("copy"));
+    for (auto *button : {ui->openSourceButton, ui->openRepositoryButton})
+        button->setIcon(UiStyle::icon("external"));
     ui->openRemoteButton->setIcon(UiStyle::icon("external"));
     ui->pullButton->setIcon(UiStyle::icon("cloud_download"));
     ui->pushButton->setIcon(UiStyle::icon("cloud_upload"));
     connect(ui->copySourceButton, &QToolButton::clicked, this, [this]
             { QApplication::clipboard()->setText(ui->sourcePathEdit->text()); });
+    connect(ui->copyRepositoryButton, &QToolButton::clicked, this, [this]
+            { QApplication::clipboard()->setText(ui->repositoryPathEdit->text()); });
     connect(ui->openSourceButton, &QToolButton::clicked, this, [this]
             { openLocalPath(this, m_service->sourcePath(m_id)); });
+    connect(ui->openRepositoryButton, &QToolButton::clicked, this, [this]
+            { openLocalPath(this, m_service->repoPath(m_id)); });
     m_remoteSwitch = new oclero::qlementine::Switch(this);
     m_remoteSwitch->setObjectName("remoteSwitch");
     m_remoteSwitch->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -196,6 +204,7 @@ void HomePageDashboardPage::refresh()
         field->setToolTip(native);
     };
     updatePath(ui->sourcePathEdit, m_service->sourcePath(m_id));
+    updatePath(ui->repositoryPathEdit, m_service->repoPath(m_id));
     ui->versionValue->setText(QString::number(stats.versionCount));
     ui->fileValue->setText(QString::number(stats.fileCount));
     ui->sizeValue->setText(formatBytes(stats.fileSize));
