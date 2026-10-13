@@ -51,6 +51,7 @@ class HomePageDashboardPage : public QWidget
     QAction *m_refresh;
     QLabel *m_syncState, *m_syncDetail;
     QPushButton *m_continueResolution, *m_recheck;
+    QWidget *m_syncPanel{nullptr};
     void remoteToggled(bool checked);
     void rememberState();
     void updateActions();

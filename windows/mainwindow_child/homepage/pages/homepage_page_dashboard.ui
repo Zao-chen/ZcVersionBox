@@ -74,7 +74,7 @@
            <number>0</number>
           </property>
           <property name="spacing">
-           <number>24</number>
+           <number>16</number>
           </property>
           <item>
            <layout class="QVBoxLayout" name="objectLayout">

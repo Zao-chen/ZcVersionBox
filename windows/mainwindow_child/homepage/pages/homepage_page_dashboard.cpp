@@ -28,28 +28,29 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
     m_syncState = ui->syncStateLabel;
     ui->headerDot->hide();
     m_syncState->hide();
-    auto *syncPanel = new QWidget(this);
-    syncPanel->setObjectName("syncStatePanel");
-    auto *syncLayout = new QVBoxLayout(syncPanel);
+    m_syncPanel = new QWidget(this);
+    m_syncPanel->setObjectName("syncStatePanel");
+    auto *syncLayout = new QVBoxLayout(m_syncPanel);
     syncLayout->setContentsMargins(0, 0, 0, 0);
     syncLayout->setSpacing(8);
-    m_syncDetail = new QLabel(syncPanel);
+    m_syncDetail = new QLabel(m_syncPanel);
     m_syncDetail->setObjectName("syncDetailLabel");
     m_syncDetail->setWordWrap(true);
     m_syncDetail->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_syncDetail->setTextFormat(Qt::PlainText);
     syncLayout->addWidget(m_syncDetail);
     UiStyle::text(m_syncDetail, UiStyle::FontRole::Caption, true);
-    m_continueResolution = new QPushButton("继续处理同步差异…", syncPanel);
+    m_continueResolution = new QPushButton("继续处理同步差异…", m_syncPanel);
     m_continueResolution->setObjectName("continueResolutionButton");
-    m_recheck = new QPushButton("重新检查", syncPanel);
+    m_recheck = new QPushButton("重新检查", m_syncPanel);
     m_recheck->setObjectName("recheckBackupButton");
     for (auto *button : {m_continueResolution, m_recheck})
     {
         button->setAutoDefault(false);
         syncLayout->addWidget(button, 0, Qt::AlignLeft);
     }
-    ui->bodyLayout->insertWidget(1, syncPanel);
+    ui->bodyLayout->insertWidget(1, m_syncPanel);
+    m_syncPanel->hide();
     connect(m_continueResolution, &QPushButton::clicked, this, [this]
             { emit navigate({PageId::Conflict, m_id}); });
     connect(m_recheck, &QPushButton::clicked, this, [this]
@@ -278,6 +279,7 @@ void HomePageDashboardPage::updateActions()
     m_syncDetail->setVisible(!detail.isEmpty());
     m_continueResolution->setVisible(pending);
     m_recheck->setVisible(present && state == BackupSyncState::NeedsAttention);
+    m_syncPanel->setVisible(m_syncDetail->isVisible() || m_continueResolution->isVisible() || m_recheck->isVisible());
     for (auto *button : {m_continueResolution, m_recheck})
         button->setEnabled(!busy);
     m_remoteSwitch->setEnabled(!busy);
