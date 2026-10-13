@@ -517,7 +517,7 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     m_milestoneOnly->setAccessibleName("只看里程碑版本");
     ui->milestoneFilterLabel->setBuddy(m_milestoneOnly);
     UiStyle::text(ui->milestoneFilterLabel, UiStyle::FontRole::Body);
-    ui->filterLayout->insertWidget(3, m_milestoneOnly);
+    ui->filterLayout->insertWidget(ui->filterLayout->indexOf(ui->milestoneFilterLabel) + 1, m_milestoneOnly);
     ui->tagConflictButton->hide();
     connect(m_milestoneOnly, &QAbstractButton::toggled, this, [this] { applyFilter(); rememberState(); refresh(); });
     connect(ui->tagConflictButton, &QPushButton::clicked, this, &HomePageBackupPage::resolveTagConflicts);
