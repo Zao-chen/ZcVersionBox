@@ -17,7 +17,7 @@
 HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *parent) : QWidget(parent), ui(new Ui::HomePageDashboardPage), m_service(service)
 {
     ui->setupUi(this);
-    for (auto *label : {ui->sourceLabel, ui->repositoryLabel, ui->stateValue, ui->versionCaption, ui->fileCaption, ui->sizeCaption, ui->cacheCaption})
+    for (auto *label : {ui->sourceLabel, ui->repositoryLabel, ui->stateValue, ui->syncStateLabel, ui->headerDot, ui->versionCaption, ui->fileCaption, ui->sizeCaption, ui->cacheCaption, ui->remoteUrlLabel})
         UiStyle::text(label, UiStyle::FontRole::Caption, true);
     for (auto *value : {ui->versionValue, ui->fileValue, ui->sizeValue, ui->cacheValue})
         UiStyle::text(value, UiStyle::FontRole::Object);
@@ -27,23 +27,20 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
     ui->repositoryPathEdit->setAccessibleName("备份仓库位置");
     ui->remoteUrl->setAccessibleName("云端仓库地址");
     ui->remoteUrlLabel->setBuddy(ui->remoteUrl);
+    m_syncState = ui->syncStateLabel;
+    ui->headerDot->hide();
+    m_syncState->hide();
     auto *syncPanel = new QWidget(this);
     syncPanel->setObjectName("syncStatePanel");
     auto *syncLayout = new QVBoxLayout(syncPanel);
     syncLayout->setContentsMargins(0, 0, 0, 0);
     syncLayout->setSpacing(8);
-    m_syncState = new QLabel(syncPanel);
-    m_syncState->setObjectName("syncStateLabel");
     m_syncDetail = new QLabel(syncPanel);
     m_syncDetail->setObjectName("syncDetailLabel");
     m_syncDetail->setWordWrap(true);
     m_syncDetail->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    for (auto *label : {m_syncState, m_syncDetail})
-    {
-        label->setTextFormat(Qt::PlainText);
-        syncLayout->addWidget(label);
-    }
-    UiStyle::text(m_syncState, UiStyle::FontRole::Body);
+    m_syncDetail->setTextFormat(Qt::PlainText);
+    syncLayout->addWidget(m_syncDetail);
     UiStyle::text(m_syncDetail, UiStyle::FontRole::Caption, true);
     m_continueResolution = new QPushButton("继续处理同步差异…", syncPanel);
     m_continueResolution->setObjectName("continueResolutionButton");
@@ -209,6 +206,9 @@ void HomePageDashboardPage::refresh()
     ui->sizeValue->setText(formatBytes(stats.fileSize));
     ui->cacheValue->setText(formatBytes(stats.cacheSize));
     ui->stateValue->setText(stats.sourceState);
+    const bool hasState = !m_syncState->text().isEmpty();
+    const bool hasType = !stats.sourceState.isEmpty();
+    ui->headerDot->setVisible(hasState && hasType);
     const bool hasRemote = !stats.remoteUrl.isEmpty();
     const bool editing = (ui->remoteUrl->hasFocus() || ui->remoteUrl->isModified()) && m_remoteSwitch->isChecked();
     const bool active = hasRemote || editing;
@@ -267,6 +267,10 @@ void HomePageDashboardPage::updateActions()
     if (busy)
         stateText = stateText.isEmpty() ? QStringLiteral("正在处理备份任务…") : stateText + " · 正在处理备份任务…";
     m_syncState->setText(stateText);
+    const bool hasState = !stateText.isEmpty();
+    const bool hasType = !ui->stateValue->text().isEmpty();
+    m_syncState->setVisible(hasState);
+    ui->headerDot->setVisible(hasState && hasType);
     QString detail;
     for (const auto &item : m_service->trackedItems())
         if (item.id == m_id)
@@ -291,5 +295,5 @@ void HomePageDashboardPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     const auto margin = width() < 640 ? 16 : 24;
-    ui->readingLayout->setContentsMargins(margin, 24, margin, 24);
+    ui->readingLayout->setContentsMargins(margin, 12, margin, 24);
 }
