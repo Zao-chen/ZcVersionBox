@@ -23,6 +23,8 @@
   <file alias="window_restore.svg">res/icons/window_restore.svg</file>
   <file alias="search.svg">res/icons/search.svg</file>
   <file alias="cloud.svg">res/icons/cloud.svg</file>
+  <file alias="cloud_download.svg">res/icons/cloud.svg</file>
+  <file alias="cloud_upload.svg">res/icons/cloud_upload.svg</file>
   <file alias="edit.svg">res/icons/edit.svg</file>
   <file alias="arrow_down.svg">res/icons/arrow_down.svg</file>
   <file alias="chevron_right.svg">res/icons/chevron_right.svg</file>

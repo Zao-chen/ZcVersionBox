@@ -17,16 +17,16 @@
 HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *parent) : QWidget(parent), ui(new Ui::HomePageDashboardPage), m_service(service)
 {
     ui->setupUi(this);
-    for (auto *label : {ui->sourceLabel, ui->repositoryLabel, ui->stateValue, ui->syncStateLabel, ui->headerDot, ui->versionCaption, ui->fileCaption, ui->sizeCaption, ui->cacheCaption, ui->remoteUrlLabel})
+    for (auto *label : {ui->sourceLabel, ui->repositoryLabel, ui->stateValue, ui->syncStateLabel, ui->headerDot, ui->versionCaption, ui->fileCaption, ui->sizeCaption, ui->cacheCaption})
         UiStyle::text(label, UiStyle::FontRole::Caption, true);
     for (auto *value : {ui->versionValue, ui->fileValue, ui->sizeValue, ui->cacheValue})
         UiStyle::text(value, UiStyle::FontRole::Object);
     UiStyle::text(ui->sourcePathEdit, UiStyle::FontRole::Body);
     UiStyle::text(ui->repositoryPathEdit, UiStyle::FontRole::Body);
+    UiStyle::text(ui->remoteUrl, UiStyle::FontRole::Body);
     ui->sourcePathEdit->setAccessibleName("源位置");
     ui->repositoryPathEdit->setAccessibleName("备份仓库位置");
     ui->remoteUrl->setAccessibleName("云端仓库地址");
-    ui->remoteUrlLabel->setBuddy(ui->remoteUrl);
     m_syncState = ui->syncStateLabel;
     ui->headerDot->hide();
     m_syncState->hide();
@@ -64,6 +64,9 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
         button->setIcon(UiStyle::icon("copy"));
     for (auto *button : {ui->openSourceButton, ui->openRepositoryButton})
         button->setIcon(UiStyle::icon("external"));
+    ui->openRemoteButton->setIcon(UiStyle::icon("external"));
+    ui->pullButton->setIcon(UiStyle::icon("cloud_download"));
+    ui->pushButton->setIcon(UiStyle::icon("cloud_upload"));
     connect(ui->copySourceButton, &QToolButton::clicked, this, [this]
             { QApplication::clipboard()->setText(ui->sourcePathEdit->text()); });
     connect(ui->copyRepositoryButton, &QToolButton::clicked, this, [this]

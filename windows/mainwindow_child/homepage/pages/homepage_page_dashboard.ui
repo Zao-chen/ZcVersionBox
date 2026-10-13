@@ -675,7 +675,7 @@
             </item>
             <item>
              <widget class="QWidget" name="remoteContent">
-              <layout class="QVBoxLayout" name="remoteContentLayout">
+              <layout class="QHBoxLayout" name="remoteRow" stretch="1,0,0,0">
                <property name="leftMargin">
                 <number>0</number>
                </property>
@@ -689,25 +689,15 @@
                 <number>0</number>
                </property>
                <property name="spacing">
-                <number>8</number>
+                <number>6</number>
                </property>
-               <item>
-                <widget class="QLabel" name="remoteUrlLabel">
-                 <property name="text">
-                  <string>仓库地址</string>
-                 </property>
-                 <property name="textFormat">
-                  <enum>Qt::PlainText</enum>
-                 </property>
-                </widget>
-               </item>
                <item>
                 <widget class="QLineEdit" name="remoteUrl">
                  <property name="placeholderText">
                   <string>https://github.com/user/repo.git</string>
                  </property>
                  <property name="accessibleName">
-                  <string>https://github.com/user/repo.git</string>
+                  <string>云端仓库地址</string>
                  </property>
                  <property name="minimumSize">
                   <size>
@@ -718,90 +708,124 @@
                 </widget>
                </item>
                <item>
-                <layout class="QHBoxLayout" name="remoteButtonsLayout">
-                 <property name="leftMargin">
-                  <number>0</number>
+                <widget class="QPushButton" name="pullButton">
+                 <property name="text">
+                  <string/>
                  </property>
-                 <property name="topMargin">
-                  <number>0</number>
+                 <property name="toolTip">
+                  <string>全量获取</string>
                  </property>
-                 <property name="rightMargin">
-                  <number>0</number>
+                 <property name="accessibleName">
+                  <string>全量获取</string>
                  </property>
-                 <property name="bottomMargin">
-                  <number>0</number>
+                 <property name="iconSize">
+                  <size>
+                   <width>16</width>
+                   <height>16</height>
+                  </size>
                  </property>
-                 <property name="spacing">
-                  <number>8</number>
+                 <property name="minimumSize">
+                  <size>
+                   <width>28</width>
+                   <height>32</height>
+                  </size>
                  </property>
-                 <item>
-                  <widget class="QPushButton" name="pullButton">
-                   <property name="text">
-                    <string>全量获取</string>
-                   </property>
-                   <property name="toolTip">
-                    <string>获取所有云端方案及里程碑；当前方案的文件变化会先预览，再确认应用。</string>
-                   </property>
-                   <property name="minimumSize">
-                    <size>
-                     <width>0</width>
-                     <height>32</height>
-                    </size>
-                   </property>
-                   <property name="autoDefault">
-                    <bool>false</bool>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QPushButton" name="pushButton">
-                   <property name="text">
-                    <string>全量上传</string>
-                   </property>
-                   <property name="toolTip">
-                    <string>上传所有本地方案的已保存历史及里程碑。</string>
-                   </property>
-                   <property name="minimumSize">
-                    <size>
-                     <width>0</width>
-                     <height>32</height>
-                    </size>
-                   </property>
-                   <property name="autoDefault">
-                    <bool>false</bool>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QPushButton" name="openRemoteButton">
-                   <property name="text">
-                    <string>打开地址</string>
-                   </property>
-                   <property name="minimumSize">
-                    <size>
-                     <width>0</width>
-                     <height>32</height>
-                    </size>
-                   </property>
-                   <property name="autoDefault">
-                    <bool>false</bool>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <spacer name="remoteButtonsSpace">
-                   <property name="orientation">
-                    <enum>Qt::Horizontal</enum>
-                   </property>
-                   <property name="sizeHint" stdset="0">
-                    <size>
-                     <width>0</width>
-                     <height>0</height>
-                    </size>
-                   </property>
-                  </spacer>
-                 </item>
-                </layout>
+                 <property name="maximumSize">
+                  <size>
+                   <width>28</width>
+                   <height>32</height>
+                  </size>
+                 </property>
+                 <property name="focusPolicy">
+                  <enum>Qt::TabFocus</enum>
+                 </property>
+                 <property name="autoDefault">
+                  <bool>false</bool>
+                 </property>
+                 <property name="flat">
+                  <bool>true</bool>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="pushButton">
+                 <property name="text">
+                  <string/>
+                 </property>
+                 <property name="toolTip">
+                  <string>全量上传</string>
+                 </property>
+                 <property name="accessibleName">
+                  <string>全量上传</string>
+                 </property>
+                 <property name="iconSize">
+                  <size>
+                   <width>16</width>
+                   <height>16</height>
+                  </size>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>28</width>
+                   <height>32</height>
+                  </size>
+                 </property>
+                 <property name="maximumSize">
+                  <size>
+                   <width>28</width>
+                   <height>32</height>
+                  </size>
+                 </property>
+                 <property name="focusPolicy">
+                  <enum>Qt::TabFocus</enum>
+                 </property>
+                 <property name="autoDefault">
+                  <bool>false</bool>
+                 </property>
+                 <property name="flat">
+                  <bool>true</bool>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="openRemoteButton">
+                 <property name="text">
+                  <string/>
+                 </property>
+                 <property name="toolTip">
+                  <string>打开地址</string>
+                 </property>
+                 <property name="accessibleName">
+                  <string>打开地址</string>
+                 </property>
+                 <property name="iconSize">
+                  <size>
+                   <width>16</width>
+                   <height>16</height>
+                  </size>
+                 </property>
+                 <property name="minimumSize">
+                  <size>
+                   <width>28</width>
+                   <height>32</height>
+                  </size>
+                 </property>
+                 <property name="maximumSize">
+                  <size>
+                   <width>28</width>
+                   <height>32</height>
+                  </size>
+                 </property>
+                 <property name="focusPolicy">
+                  <enum>Qt::TabFocus</enum>
+                 </property>
+                 <property name="autoDefault">
+                  <bool>false</bool>
+                 </property>
+                 <property name="flat">
+                  <bool>true</bool>
+                 </property>
+                </widget>
                </item>
               </layout>
              </widget>

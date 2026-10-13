@@ -2639,7 +2639,7 @@ class Regression : public QObject
         window.navigate({PageId::Dashboard, id}); settle(service);
         auto *overview = window.findChild<HomePageDashboardPage *>(); QVERIFY(overview && overview->isVisible());
         auto *upload = overview->findChild<QPushButton *>("pushButton"); QVERIFY(upload && upload->isEnabled());
-        QCOMPARE(upload->text(), QString("全量上传"));
+        QCOMPARE(upload->accessibleName(), QString("全量上传"));
         QSignalSpy notifications(overview, &HomePageDashboardPage::notification);
         upload->click(); settle(service);
         QVERIFY(!notifications.isEmpty());
@@ -2649,7 +2649,7 @@ class Regression : public QObject
         QVERIFY(runGit(remote, {"branch", "cloud-only", "main"}).success());
         notifications.clear();
         auto *download = overview->findChild<QPushButton *>("pullButton"); QVERIFY(download && download->isEnabled());
-        QCOMPARE(download->text(), QString("全量获取"));
+        QCOMPARE(download->accessibleName(), QString("全量获取"));
         download->click(); settle(service);
         QVERIFY(!notifications.isEmpty());
         QVERIFY(qvariant_cast<OperationResult>(notifications.last().first()).success);
