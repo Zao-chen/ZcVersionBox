@@ -25,6 +25,7 @@
 #include <QStyledItemDelegate>
 #include <QTimer>
 #include <QToolTip>
+#include <QVariantAnimation>
 #include <QtMath>
 #include <array>
 #include <utility>
@@ -59,6 +60,21 @@ class HistoryDelegate : public QStyledItemDelegate
         : QStyledItemDelegate(view), m_view(view), m_editing(std::move(editing)), m_action(std::move(action)), m_enabled(std::move(enabled)), m_branch(std::move(branch))
     {
         updateIcons();
+        m_graphAnimation = new QVariantAnimation(this);
+        m_graphAnimation->setDuration(150);
+        m_graphAnimation->setEasingCurve(QEasingCurve::OutCubic);
+        connect(m_graphAnimation, &QVariantAnimation::valueChanged, this, [this](const QVariant &value)
+                {
+            m_graphHoverProgress = value.toDouble();
+            m_view->viewport()->update(); });
+        connect(m_graphAnimation, &QVariantAnimation::finished, this, [this]
+                {
+            if (m_graphHoverProgress <= 0.001)
+            {
+                m_hoveredBranchRefs.clear();
+                m_hoveredColor = -1;
+                m_view->viewport()->update();
+            } });
         view->viewport()->installEventFilter(this);
         view->installEventFilter(this);
         connect(view->selectionModel(), &QItemSelectionModel::currentChanged, this, [this](const QModelIndex &current, const QModelIndex &previous)
@@ -163,7 +179,11 @@ class HistoryDelegate : public QStyledItemDelegate
             if (index.column() == 0 && !m_view->property("milestonesOnly").toBool())
             {
                 const int graphWidth = index.data(HistoryGraph::Width).toInt();
-                HistoryGraph::paint(painter, opt.rect, index);
+                HistoryGraph::HoverInfo hoverInfo;
+                hoverInfo.refs = m_hoveredBranchRefs;
+                hoverInfo.colorIndex = m_hoveredColor;
+                hoverInfo.progress = m_graphHoverProgress;
+                HistoryGraph::paint(painter, opt.rect, index, hoverInfo);
                 textRect.setLeft(opt.rect.left() + graphWidth);
                 const auto refs = index.data(HistoryGraph::Refs).toStringList();
                 if (!refs.isEmpty())
@@ -173,7 +193,9 @@ class HistoryDelegate : public QStyledItemDelegate
                     const auto label = refs.first() + (refs.size() > 1 ? QString(" +%1").arg(refs.size() - 1) : QString());
                     const auto badge = branchBadgeRect(opt.rect, index);
                     auto accent = HistoryGraph::color(index.data(HistoryGraph::Color).toInt());
-                    auto background = accent; background.setAlpha(28);
+                    const bool badgeHovered = m_graphHoverProgress > 0.0 && (!m_hoveredBranchRefs.isEmpty() && refs == m_hoveredBranchRefs);
+                    auto background = accent;
+                    background.setAlpha(badgeHovered ? (28 + qRound(16 * m_graphHoverProgress)) : 28);
                     painter->setPen(Qt::NoPen); painter->setBrush(background); painter->drawRoundedRect(badge, 4, 4);
                     painter->setFont(badgeFont); painter->setPen(accent);
                     painter->drawText(badge.adjusted(7, 0, -7, 0), Qt::AlignVCenter,
@@ -220,6 +242,14 @@ class HistoryDelegate : public QStyledItemDelegate
                 m_pointerInside = false;
                 m_view->viewport()->unsetCursor();
                 updateRow(previous);
+                if (m_graphHoverProgress > 0.0 || !m_hoveredBranchRefs.isEmpty())
+                {
+                    if (m_graphAnimation->state() == QAbstractAnimation::Running)
+                        m_graphAnimation->stop();
+                    m_graphAnimation->setStartValue(m_graphHoverProgress);
+                    m_graphAnimation->setEndValue(0.0);
+                    m_graphAnimation->start();
+                }
             }
             else if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::MouseButtonDblClick)
             {
@@ -324,6 +354,11 @@ class HistoryDelegate : public QStyledItemDelegate
             m_pressed = QModelIndex{};
             m_actionPress = false;
             m_pointerInside = false;
+            if (m_graphAnimation && m_graphAnimation->state() == QAbstractAnimation::Running)
+                m_graphAnimation->stop();
+            m_graphHoverProgress = 0.0;
+            m_hoveredBranchRefs.clear();
+            m_hoveredColor = -1;
         }
         // The base filter manages editor focus and commit events, not the view itself.
         if (watched == m_view || watched == m_view->viewport())
@@ -345,6 +380,10 @@ class HistoryDelegate : public QStyledItemDelegate
     bool m_actionPress{false};
     bool m_pointerInside{false};
     mutable bool m_editorOpen{false};
+    QVariantAnimation *m_graphAnimation{nullptr};
+    double m_graphHoverProgress{0.0};
+    QStringList m_hoveredBranchRefs;
+    int m_hoveredColor{-1};
     QRect branchBadgeRect(const QRect &cell, const QModelIndex &index) const
     {
         const auto refs = index.data(HistoryGraph::Refs).toStringList();
@@ -355,12 +394,17 @@ class HistoryDelegate : public QStyledItemDelegate
         const int width = qMax(0, qMin(qMin(156, (cell.width() - graphWidth - 12) / 2), metrics.horizontalAdvance(label) + 16));
         return {cell.left() + graphWidth, cell.center().y() - 10, width, 20};
     }
-    QStringList branchRefsAt(const QModelIndex &index, const QPoint &position) const
+    HistoryGraph::HitResult hitBranchAt(const QModelIndex &index, const QPoint &position) const
     {
         if (!index.isValid() || index.column() != 0 || m_editorOpen || index.data(HistoryGraph::AncestorCount).toInt() > 0 || m_view->property("milestonesOnly").toBool()) return {};
         const auto cell = m_view->visualRect(index);
-        if (branchBadgeRect(cell, index).contains(position)) return index.data(HistoryGraph::TipRefs).toStringList();
-        return HistoryGraph::hit(cell, index, position);
+        if (branchBadgeRect(cell, index).contains(position))
+            return {index.data(HistoryGraph::TipRefs).toStringList(), index.data(HistoryGraph::Color).toInt()};
+        return HistoryGraph::hitTest(cell, index, position);
+    }
+    QStringList branchRefsAt(const QModelIndex &index, const QPoint &position) const
+    {
+        return hitBranchAt(index, position).refs;
     }
     void updateIcons()
     {
@@ -406,8 +450,51 @@ class HistoryDelegate : public QStyledItemDelegate
         if (previous != m_hovered)
             updateRow(previous);
         updateRow(m_hovered);
+
+        const auto branchHit = (m_branch && index.isValid()) ? hitBranchAt(index, position) : HistoryGraph::HitResult{};
+        const bool hasBranchTarget = !branchHit.refs.isEmpty() || branchHit.colorIndex >= 0;
+        const bool sameBranchTarget = hasBranchTarget && (branchHit.refs == m_hoveredBranchRefs && (branchHit.colorIndex == m_hoveredColor || branchHit.colorIndex < 0));
+
+        if (!hasBranchTarget)
+        {
+            if (m_graphHoverProgress > 0.0 || !m_hoveredBranchRefs.isEmpty())
+            {
+                if (m_graphAnimation->state() == QAbstractAnimation::Running)
+                    m_graphAnimation->stop();
+                m_graphAnimation->setStartValue(m_graphHoverProgress);
+                m_graphAnimation->setEndValue(0.0);
+                m_graphAnimation->start();
+            }
+        }
+        else
+        {
+            if (!sameBranchTarget)
+            {
+                m_hoveredBranchRefs = branchHit.refs;
+                m_hoveredColor = branchHit.colorIndex;
+                if (m_graphAnimation->state() == QAbstractAnimation::Running)
+                    m_graphAnimation->stop();
+                m_graphAnimation->setStartValue(m_graphHoverProgress < 0.2 ? 0.0 : 0.2);
+                m_graphAnimation->setEndValue(1.0);
+                m_graphAnimation->start();
+            }
+            else if (m_graphAnimation->state() == QAbstractAnimation::Running && m_graphAnimation->endValue().toDouble() != 1.0)
+            {
+                m_graphAnimation->stop();
+                m_graphAnimation->setStartValue(m_graphHoverProgress);
+                m_graphAnimation->setEndValue(1.0);
+                m_graphAnimation->start();
+            }
+            else if (m_graphAnimation->state() != QAbstractAnimation::Running && m_graphHoverProgress < 0.999)
+            {
+                m_graphAnimation->setStartValue(m_graphHoverProgress);
+                m_graphAnimation->setEndValue(1.0);
+                m_graphAnimation->start();
+            }
+        }
+
         const int action = hitAction(index, position);
-        if ((action >= 0 && m_enabled(index, static_cast<RevisionAction>(action))) || (m_branch && !branchRefsAt(index, position).isEmpty()))
+        if ((action >= 0 && m_enabled(index, static_cast<RevisionAction>(action))) || (m_branch && hasBranchTarget))
             m_view->viewport()->setCursor(Qt::PointingHandCursor);
         else
             m_view->viewport()->unsetCursor();

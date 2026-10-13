@@ -97,37 +97,120 @@ void insertCommonAncestors(QStandardItemModel &model, int row, int count, bool e
     if (expanded && row == 0 && next.isValid()) model.item(row, 0)->setData(true, Incoming);
     model.insertRow(row, items);
 }
-QStringList hit(const QRect &rect, const QModelIndex &index, const QPoint &position)
+HitResult hitTest(const QRect &rect, const QModelIndex &index, const QPoint &position)
 {
-    if (!index.isValid() || index.column() != 0 || index.data(AncestorCount).toInt() > 0 || !rect.contains(position)) return {};
-    const int lane = qRound((position.x() - (rect.left() + 14)) / 18.0);
-    if (lane < 0) return {};
-    const auto lanes = index.data(LaneRefs).toList();
-    if (lane < lanes.size()) {
-        const auto refs = lanes[lane].toStringList();
-        if (qAbs(position.x() - (rect.left() + 14 + lane * 18)) <= 8) return refs.isEmpty() ? QStringList{"HEAD"} : refs;
-    }
-    for (const auto &value : index.data(Edges).toList()) {
-        const auto edge = value.toList(); if (edge.size() < 4) continue;
-        const int from = edge[0].toInt(), to = edge[1].toInt();
-        const int y0 = from == index.data(Node).toInt() ? rect.center().y() : rect.top();
-        const int y1 = rect.bottom() + 1;
-        const double t = qBound(0.0, (position.y() - y0) / double(qMax(1, y1 - y0)), 1.0);
-        const double x0 = rect.left() + 14 + from * 18, x1 = rect.left() + 14 + to * 18;
-        const double x = x0 + (x1 - x0) * t;
-        if (qAbs(position.x() - x) <= 7)
+    if (!index.isValid() || index.column() != 0 || index.data(AncestorCount).toInt() > 0 || !rect.contains(position))
+        return {};
+    const int node = index.data(Node).toInt();
+    const auto x = [&](int lane) { return rect.left() + 14 + lane * 18; };
+    const int middle = rect.center().y();
+    const int bottom = rect.bottom() + 1;
+    const int nodeColor = index.data(Color).toInt();
+
+    struct Candidate {
+        QStringList refs;
+        int colorIndex{-1};
+        double distance{999.0};
+    };
+    QVector<Candidate> candidates;
+
+    if (index.data(Incoming).toBool() && position.y() >= rect.top() && position.y() <= middle)
+    {
+        const double dist = qAbs(position.x() - x(node));
+        if (dist <= 8.0)
         {
-            const auto refs = edge[3].toStringList();
-            return refs.isEmpty() ? QStringList{"HEAD"} : refs;
+            const auto nodeRefs = index.data(NodeRefs).toStringList();
+            const QStringList refs = nodeRefs.isEmpty() ? QStringList{} : QStringList{nodeRefs.first()};
+            candidates.append({refs, nodeColor, dist});
         }
     }
-    return {};
+
+    for (const auto &value : index.data(Edges).toList())
+    {
+        const auto edge = value.toList();
+        if (edge.size() < 4) continue;
+        const int from = edge[0].toInt(), to = edge[1].toInt();
+        const int colorIdx = edge[2].toInt();
+        const auto edgeRefs = edge[3].toStringList();
+        const int start = (from == node) ? middle : rect.top();
+
+        if (position.y() >= start && position.y() <= bottom)
+        {
+            const double t = qBound(0.0, (position.y() - start) / double(qMax(1, bottom - start)), 1.0);
+            const double x0 = x(from), x1 = x(to);
+            const double curveX = (from == to) ? x0 : (x0 + (x1 - x0) * (3.0 * t * t - 2.0 * t * t * t));
+            const double dist = qAbs(position.x() - curveX);
+            if (dist <= 8.0)
+            {
+                const QStringList refs = (from == to && !edgeRefs.isEmpty()) ? QStringList{edgeRefs.first()} : edgeRefs;
+                candidates.append({refs, colorIdx, dist});
+            }
+        }
+    }
+
+    const double nodeDist = QLineF(position, QPointF(x(node), middle)).length();
+    if (nodeDist <= 9.0)
+    {
+        const auto tipRefs = index.data(TipRefs).toStringList();
+        const auto nodeRefs = index.data(NodeRefs).toStringList();
+        const bool isMerge = index.data(Merge).toBool();
+        QStringList refs;
+        if (tipRefs.size() > 1)
+            refs = tipRefs;
+        else if (isMerge)
+            refs = nodeRefs;
+        else if (!nodeRefs.isEmpty())
+            refs = QStringList{nodeRefs.first()};
+        candidates.append({refs, nodeColor, nodeDist});
+    }
+
+    const auto lanes = index.data(LaneRefs).toList();
+    const int lane = qRound((position.x() - (rect.left() + 14)) / 18.0);
+    if (lane >= 0 && lane < lanes.size())
+    {
+        const double dist = qAbs(position.x() - x(lane));
+        if (dist <= 8.0)
+        {
+            int laneColor = (lane == node) ? nodeColor : -1;
+            for (const auto &value : index.data(Edges).toList())
+            {
+                const auto edge = value.toList();
+                if (edge.size() >= 3 && edge[0].toInt() == lane)
+                {
+                    laneColor = edge[2].toInt();
+                    break;
+                }
+            }
+            const auto laneRefList = lanes[lane].toStringList();
+            const QStringList refs = laneRefList.isEmpty() ? QStringList{} : QStringList{laneRefList.first()};
+            candidates.append({refs, laneColor >= 0 ? laneColor : nodeColor, dist});
+        }
+    }
+
+    if (candidates.isEmpty())
+        return {};
+
+    auto best = candidates.first();
+    for (int i = 1; i < candidates.size(); ++i)
+    {
+        if (candidates[i].distance < best.distance)
+            best = candidates[i];
+    }
+
+    return {best.refs.isEmpty() ? QStringList{"HEAD"} : best.refs, best.colorIndex};
 }
-void paint(QPainter *p, const QRect &rect, const QModelIndex &index)
+
+QStringList hit(const QRect &rect, const QModelIndex &index, const QPoint &position)
+{
+    return hitTest(rect, index, position).refs;
+}
+
+void paint(QPainter *p, const QRect &rect, const QModelIndex &index, const HoverInfo &hover)
 {
     const int node = index.data(Node).toInt();
     const auto x = [&](int lane) { return rect.left() + 14 + lane * 18; };
-    const auto nodeColor = color(index.data(Color).toInt());
+    const int nodeColorIdx = index.data(Color).toInt();
+    const auto nodeColor = color(nodeColorIdx);
     const int middle = rect.center().y(), bottom = rect.bottom() + 1;
     p->save(); p->setRenderHint(QPainter::Antialiasing);
     if (index.data(AncestorCount).toInt() > 0)
@@ -162,25 +245,88 @@ void paint(QPainter *p, const QRect &rect, const QModelIndex &index)
         p->restore();
         return;
     }
-    p->setPen(QPen(nodeColor, 1.7));
-    if (index.data(Incoming).toBool()) p->drawLine(x(node), rect.top(), x(node), middle);
+
+    const auto matchesHover = [&](int colorIdx, const QStringList &refs) -> bool {
+        if (hover.progress <= 0.0) return false;
+        if (hover.colorIndex >= 0 && colorIdx != hover.colorIndex) return false;
+        if (!hover.refs.isEmpty()) {
+            for (const auto &ref : refs) {
+                if (hover.refs.contains(ref)) return true;
+            }
+            return false;
+        }
+        return true;
+    };
+
+    if (index.data(Incoming).toBool())
+    {
+        const auto nodeRefs = index.data(NodeRefs).toStringList();
+        const bool hovered = matchesHover(nodeColorIdx, nodeRefs);
+        if (hovered && hover.progress > 0.0)
+        {
+            QColor halo = nodeColor;
+            halo.setAlpha(qRound(32 * hover.progress));
+            p->setPen(QPen(halo, 4.2 + 0.8 * hover.progress, Qt::SolidLine, Qt::RoundCap));
+            p->drawLine(x(node), rect.top(), x(node), middle);
+        }
+        const double penWidth = hovered ? (1.7 + 0.5 * hover.progress) : 1.7;
+        p->setPen(QPen(nodeColor, penWidth, Qt::SolidLine, Qt::RoundCap));
+        p->drawLine(x(node), rect.top(), x(node), middle);
+    }
+
     for (const auto &value : index.data(Edges).toList())
     {
         const auto edge = value.toList();
         const int from = edge[0].toInt(), to = edge[1].toInt();
+        const int edgeColorIdx = edge[2].toInt();
+        const auto edgeRefs = edge.size() >= 4 ? edge[3].toStringList() : QStringList{};
+        const auto edgeColor = color(edgeColorIdx);
         const int start = from == node ? middle : rect.top();
-        p->setPen(QPen(color(edge[2].toInt()), 1.7));
+        const bool hovered = matchesHover(edgeColorIdx, edgeRefs);
+
         QPainterPath line(QPointF(x(from), start));
         if (from == to) line.lineTo(x(to), bottom);
         else line.cubicTo(x(from), start + (bottom - start) * .65, x(to), start + (bottom - start) * .35, x(to), bottom);
+
+        if (hovered && hover.progress > 0.0)
+        {
+            QColor halo = edgeColor;
+            halo.setAlpha(qRound(32 * hover.progress));
+            p->setPen(QPen(halo, 4.2 + 0.8 * hover.progress, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+            p->drawPath(line);
+        }
+        const double penWidth = hovered ? (1.7 + 0.5 * hover.progress) : 1.7;
+        p->setPen(QPen(edgeColor, penWidth, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         p->drawPath(line);
     }
-    p->setPen(QPen(nodeColor, 1.8));
+
+    const auto nodeRefs = index.data(NodeRefs).toStringList();
+    const bool nodeHovered = matchesHover(nodeColorIdx, nodeRefs);
+    const double nodeProgress = nodeHovered ? hover.progress : 0.0;
     const bool ring = index.data(Merge).toBool() || index.data(Current).toBool();
+
+    if (nodeHovered && nodeProgress > 0.0)
+    {
+        QColor halo = nodeColor;
+        halo.setAlpha(qRound(36 * nodeProgress));
+        p->setPen(Qt::NoPen);
+        p->setBrush(halo);
+        const double haloRadius = (ring ? 5.0 : 3.0) + 1.8 * nodeProgress;
+        p->drawEllipse(QPointF(x(node), middle), haloRadius, haloRadius);
+    }
+
+    const double baseRadius = (ring ? 5.0 : 3.0) + 0.5 * nodeProgress;
+    p->setPen(QPen(nodeColor, 1.8 + 0.2 * nodeProgress));
     p->setBrush(ring ? UiStyle::colors().canvas : nodeColor);
-    const int radius = ring ? 5 : 3;
-    p->drawEllipse(QPoint(x(node), middle), radius, radius);
-    if (ring) { p->setPen(Qt::NoPen); p->setBrush(nodeColor); p->drawEllipse(QPoint(x(node), middle), 2, 2); }
+    p->drawEllipse(QPointF(x(node), middle), baseRadius, baseRadius);
+
+    if (ring) {
+        p->setPen(Qt::NoPen);
+        p->setBrush(nodeColor);
+        const double innerRadius = 2.0 + 0.2 * nodeProgress;
+        p->drawEllipse(QPointF(x(node), middle), innerRadius, innerRadius);
+    }
+
     p->restore();
 }
 }
