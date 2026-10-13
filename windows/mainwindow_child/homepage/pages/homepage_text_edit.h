@@ -2,6 +2,8 @@
 #include "utils/code_text_style.h"
 #include <QPlainTextEdit>
 
+class HomePageTextHeader;
+
 class HomePageTextEdit : public QPlainTextEdit
 {
     Q_OBJECT
@@ -9,6 +11,7 @@ class HomePageTextEdit : public QPlainTextEdit
     explicit HomePageTextEdit(QWidget *parent = nullptr);
     void refreshTheme();
     void setLineNumbersVisible(bool visible);
+    void setHeaderText(const QString &text);
     int gutterWidth() const;
     void paintGutter(QPaintEvent *event);
 
@@ -19,6 +22,7 @@ class HomePageTextEdit : public QPlainTextEdit
 
   private:
     QWidget *m_gutter;
+    HomePageTextHeader *m_header;
     CodeTextStyle::Colors m_colors;
     bool m_lineNumbersVisible{true};
     void updateGutter();

@@ -13,6 +13,8 @@ inline constexpr int HorizontalPadding = 8;
 inline constexpr int VerticalPadding = 4;
 inline constexpr int MinimumGutterWidth = 36;
 inline constexpr int BorderWidth = 1;
+inline constexpr int DocumentMargin = 4;
+inline constexpr qreal LineHeight = 1.6;
 
 struct Colors
 {
@@ -26,4 +28,6 @@ struct Colors
 Colors colors(const QColor &canvas);
 QFont font(const QFont &base, bool lineNumber = false);
 QString htmlStyle(const Colors &colors, const QString &fontFamily);
+QString headerStyle(const Colors &colors, const QColor &secondaryText);
+qreal rowHeight(qreal textHeight);
 } // namespace CodeTextStyle

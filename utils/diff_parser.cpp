@@ -848,8 +848,8 @@ QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &co
 
     html += "<html><head><style>";
     html += CodeTextStyle::htmlStyle(codeColors, fontFamily);
+    html += CodeTextStyle::headerStyle(codeColors, colors.secondaryText);
     html += QString(
-        "th { font-size: %1px; font-weight: 600; padding: 7px 10px; background-color: %2; color: %3; border-bottom: 2px solid %4; text-align: left; user-select: none; }"
         ".header-cell { background-color: %2; color: %3; font-weight: 500; font-size: %1px; padding: 4px 12px; text-align: center; border-top: 1px dashed %4; border-bottom: 1px dashed %4; letter-spacing: 2px; user-select: none; }"
         ".del-num { background-color: %5; color: %6; border-right: 1px solid %4; }"
         ".del-text { background-color: %5; color: %6; }"

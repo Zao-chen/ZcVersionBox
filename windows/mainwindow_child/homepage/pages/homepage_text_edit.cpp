@@ -1,11 +1,74 @@
 #include "homepage_text_edit.h"
 #include "windows/mainwindow_presentation.h"
 #include <QEvent>
+#include <QAbstractTextDocumentLayout>
 #include <QPainter>
 #include <QTextBlock>
+#include <QTextFrame>
+#include <QtMath>
+
+// The title band uses the very same HTML as the diff table, including Qt's
+// actual font fallback and cell layout instead of approximating them in QLabel.
+class HomePageTextHeader : public QWidget
+{
+  public:
+    explicit HomePageTextHeader(QWidget *parent) : QWidget(parent) {}
+    QString text;
+    void refreshTheme()
+    {
+        const auto colors = CodeTextStyle::colors(UiStyle::colors().canvas);
+        m_document.setDefaultFont(UiStyle::font(UiStyle::FontRole::Body));
+        m_document.setDocumentMargin(0);
+        m_document.setHtml("<html><head><style>"
+            + CodeTextStyle::htmlStyle(colors, UiStyle::font(UiStyle::FontRole::Code).family())
+            + CodeTextStyle::headerStyle(colors, UiStyle::colors().secondary)
+            + "</style></head><body><table width=\"100%\" cellspacing=\"0\" cellpadding=\"0\">"
+              "<tr><th>" + text.toHtmlEscaped() + "</th></tr></table></body></html>");
+        update();
+    }
+    int layoutHeight(int width)
+    {
+        if (text.isEmpty())
+            return 0;
+        m_document.setTextWidth(width);
+        const auto frames = m_document.rootFrame()->childFrames();
+        return frames.isEmpty() ? 0 : qCeil(m_document.documentLayout()->frameBoundingRect(frames.first()).height());
+    }
+
+  protected:
+    void paintEvent(QPaintEvent *event) override
+    {
+        QPainter painter(this);
+        m_document.drawContents(&painter, event->rect());
+    }
+
+  private:
+    QTextDocument m_document;
+};
 
 namespace
 {
+class CodeDocumentLayout : public QPlainTextDocumentLayout
+{
+  public:
+    explicit CodeDocumentLayout(QTextDocument *document) : QPlainTextDocumentLayout(document) {}
+    QRectF blockBoundingRect(const QTextBlock &block) const override
+    {
+        auto rect = QPlainTextDocumentLayout::blockBoundingRect(block);
+        auto *layout = block.layout();
+        qreal top = 0;
+        for (int i = 0; i < layout->lineCount(); ++i)
+        {
+            auto line = layout->lineAt(i);
+            line.setPosition({line.x(), top + CodeTextStyle::VerticalPadding});
+            top += CodeTextStyle::rowHeight(line.height());
+        }
+        rect.setTop(0);
+        rect.setHeight(top);
+        return rect;
+    }
+};
+
 class TextGutter : public QWidget
 {
   public:
@@ -19,17 +82,18 @@ class TextGutter : public QWidget
 }
 
 HomePageTextEdit::HomePageTextEdit(QWidget *parent)
-    : QPlainTextEdit(parent), m_gutter(new TextGutter(this))
+    : QPlainTextEdit(parent), m_gutter(new TextGutter(this)), m_header(new HomePageTextHeader(this))
 {
     setLineWrapMode(QPlainTextEdit::NoWrap);
     setFrameShape(QFrame::NoFrame);
-    document()->setDocumentMargin(CodeTextStyle::VerticalPadding);
+    // Only the layout changes. No block formats are inserted into the document
+    // or undo stack, so spacing never becomes an unsaved source modification.
+    document()->setDocumentLayout(new CodeDocumentLayout(document()));
+    document()->setDocumentMargin(0);
     connect(this, &QPlainTextEdit::blockCountChanged, this, &HomePageTextEdit::updateGutter);
     connect(this, &QPlainTextEdit::updateRequest, this, [this](const QRect &rect, int dy) {
-        if (dy)
-            m_gutter->scroll(0, dy);
-        else
-            m_gutter->update(0, rect.y(), m_gutter->width(), rect.height());
+        Q_UNUSED(dy);
+        m_gutter->update();
         if (rect.contains(viewport()->rect()))
             updateGutter();
     });
@@ -46,8 +110,16 @@ void HomePageTextEdit::refreshTheme()
     codePalette.setColor(QPalette::Text, m_colors.text);
     setPalette(codePalette);
     setAutoFillBackground(true);
+    m_header->refreshTheme();
     updateGutter();
     viewport()->update();
+}
+
+void HomePageTextEdit::setHeaderText(const QString &text)
+{
+    m_header->text = text;
+    m_header->refreshTheme();
+    updateGutter();
 }
 
 void HomePageTextEdit::setLineNumbersVisible(bool visible)
@@ -64,17 +136,20 @@ int HomePageTextEdit::gutterWidth() const
     const QFontMetrics metrics(CodeTextStyle::font(font(), true));
     const auto digits = QString::number(qMax(1, blockCount())).size();
     return qMax(CodeTextStyle::MinimumGutterWidth,
-                int(metrics.horizontalAdvance('9') * digits + 2 * CodeTextStyle::HorizontalPadding))
-        + CodeTextStyle::BorderWidth;
+                int(metrics.horizontalAdvance('9') * digits + 2 * CodeTextStyle::HorizontalPadding));
 }
 
 void HomePageTextEdit::updateGutter()
 {
-    // The document already supplies the vertical padding on all four sides.
-    const int inset = CodeTextStyle::HorizontalPadding - CodeTextStyle::VerticalPadding;
-    setViewportMargins(gutterWidth() + inset, 0, inset, 0);
+    const int inset = CodeTextStyle::DocumentMargin;
+    const int headerHeight = m_header->layoutHeight(qMax(0, contentsRect().width() - 2 * inset));
+    setViewportMargins(inset + gutterWidth() + CodeTextStyle::HorizontalPadding,
+                       inset + headerHeight, inset + CodeTextStyle::HorizontalPadding, inset);
     const auto viewportRect = viewport()->geometry();
-    m_gutter->setGeometry(contentsRect().left(), viewportRect.top(), gutterWidth(), viewportRect.height());
+    m_header->setGeometry(contentsRect().left() + inset, contentsRect().top() + inset,
+                          contentsRect().width() - 2 * inset, headerHeight);
+    m_header->setVisible(headerHeight > 0);
+    m_gutter->setGeometry(contentsRect().left() + inset, viewportRect.top(), gutterWidth(), viewportRect.height());
     m_gutter->update();
 }
 
@@ -104,9 +179,7 @@ void HomePageTextEdit::paintEvent(QPaintEvent *event)
 void HomePageTextEdit::paintGutter(QPaintEvent *event)
 {
     QPainter painter(m_gutter);
-    painter.fillRect(event->rect(), m_colors.gutter);
-    painter.fillRect(m_gutter->width() - CodeTextStyle::BorderWidth, event->rect().top(),
-                     CodeTextStyle::BorderWidth, event->rect().height(), m_colors.border);
+    painter.fillRect(event->rect(), m_colors.canvas);
     painter.setPen(m_colors.lineNumber);
     const auto numberFont = CodeTextStyle::font(font(), true);
     painter.setFont(numberFont);
@@ -118,10 +191,14 @@ void HomePageTextEdit::paintGutter(QPaintEvent *event)
         const auto height = qRound(blockBoundingRect(block).height());
         if (block.isVisible() && top + height >= event->rect().top())
         {
+            painter.fillRect(0, top, m_gutter->width(), height, m_colors.gutter);
+            painter.fillRect(m_gutter->width() - CodeTextStyle::BorderWidth, top,
+                             CodeTextStyle::BorderWidth, height, m_colors.border);
             const auto number = QString::number(block.blockNumber() + 1);
             const auto x = m_gutter->width() - CodeTextStyle::BorderWidth
                 - CodeTextStyle::HorizontalPadding - numberMetrics.horizontalAdvance(number);
-            painter.drawText(x, top + fontMetrics().ascent(), number);
+            const auto line = block.layout()->lineAt(0);
+            painter.drawText(x, top + line.y() + numberMetrics.ascent(), number);
         }
         top += height;
         block = block.next();

@@ -47,6 +47,7 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     ui->files->setColumnWidth(0, 240);
     ui->editor->setReadOnly(true);
     ui->editor->setAccessibleName("文件内容");
+    ui->editor->setHeaderText("文件内容");
     ui->markdown->setAccessibleName("Markdown 预览");
     m_refresh = UiStyle::action(this, "refreshPreviewAction", "刷新预览", "refresh");
     m_refresh->setProperty("iconOnly", true);
