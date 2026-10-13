@@ -1,4 +1,5 @@
 #include "diff_parser.h"
+#include "code_text_style.h"
 #include <QRegularExpression>
 #include <QStringList>
 #include <algorithm>
@@ -842,30 +843,25 @@ QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &co
     const QString addText = dark ? "#85e89d" : "#1a7f37";
 
     const QString emptyBg = dark ? "#1c2128" : "#f6f8fa";
-    const QString headerBg = dark ? "#21262d" : "#f1f3f5";
-    const QString borderColor = dark ? "#30363d" : "#d0d7de";
-    const QString numColor = dark ? "#768390" : "#656d76";
-    const QString textColor = dark ? "#e6edf3" : "#24292f";
+    const auto codeColors = CodeTextStyle::colors(colors.canvas);
+    const auto numberCellWidth = QString::number(CodeTextStyle::MinimumGutterWidth);
 
+    html += "<html><head><style>";
+    html += CodeTextStyle::htmlStyle(codeColors, fontFamily);
     html += QString(
-        "<html><head><style>"
-        "body { font-family: %1; background-color: %2; color: %3; margin: 0; padding: 0; }"
-        "table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; line-height: 1.6; }"
-        "th { font-size: 11px; font-weight: 600; padding: 7px 10px; background-color: %4; color: %5; border-bottom: 2px solid %6; text-align: left; user-select: none; }"
-        "td { padding: 4px 8px; vertical-align: top; white-space: pre-wrap; word-break: break-all; }"
-        ".num { width: 36px; text-align: right; user-select: none; color: %7; font-size: 11px; padding-right: 8px; border-right: 1px solid %6; background-color: %4; }"
-        ".header-cell { background-color: %4; color: %5; font-weight: 500; font-size: 11px; padding: 4px 12px; text-align: center; border-top: 1px dashed %6; border-bottom: 1px dashed %6; letter-spacing: 2px; user-select: none; }"
-        ".del-num { background-color: %8; color: %9; border-right: 1px solid %6; }"
-        ".del-text { background-color: %8; color: %9; }"
-        ".add-num { background-color: %10; color: %11; border-right: 1px solid %6; }"
-        ".add-text { background-color: %10; color: %11; }"
-        ".empty-cell { background-color: %12; color: transparent; user-select: none; }"
-        ".col-divider { border-right: 1px solid %6; }"
+        "th { font-size: %1px; font-weight: 600; padding: 7px 10px; background-color: %2; color: %3; border-bottom: 2px solid %4; text-align: left; user-select: none; }"
+        ".header-cell { background-color: %2; color: %3; font-weight: 500; font-size: %1px; padding: 4px 12px; text-align: center; border-top: 1px dashed %4; border-bottom: 1px dashed %4; letter-spacing: 2px; user-select: none; }"
+        ".del-num { background-color: %5; color: %6; border-right: 1px solid %4; }"
+        ".del-text { background-color: %5; color: %6; }"
+        ".add-num { background-color: %7; color: %8; border-right: 1px solid %4; }"
+        ".add-text { background-color: %7; color: %8; }"
+        ".empty-cell { background-color: %9; color: transparent; user-select: none; }"
+        ".col-divider { border-right: 1px solid %4; }"
         "</style></head><body><table width=\"100%\" border=\"0\" cellspacing=\"0\" cellpadding=\"0\">"
-        "<tr class=\"top-bar\"><th colspan=\"2\" class=\"col-divider\">%13</th><th colspan=\"2\">%14</th></tr>")
-        .arg(fontFamily, colors.canvas.name(), textColor,
-             headerBg, colors.secondaryText.name(), borderColor,
-             numColor, delBg, delText, addBg, addText, emptyBg)
+        "<tr class=\"top-bar\"><th colspan=\"2\" class=\"col-divider\">%10</th><th colspan=\"2\">%11</th></tr>")
+        .arg(CodeTextStyle::LineNumberFontSize)
+        .arg(codeColors.gutter.name(), colors.secondaryText.name(), codeColors.border.name(),
+             delBg, delText, addBg, addText, emptyBg)
         .arg(oldHeader.toHtmlEscaped(), newHeader.toHtmlEscaped());
 
     if (mode == ViewMode::SideBySide)
@@ -884,7 +880,8 @@ QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &co
             // 左栏 (旧版本)
             if (row.oldType == LineType::Empty)
             {
-                html += "<td width=\"36\" class=\"num empty-cell\"></td><td width=\"45%\" class=\"empty-cell col-divider\"></td>";
+                html += QString("<td width=\"%1\" class=\"num empty-cell\"></td><td width=\"45%\" class=\"empty-cell col-divider\"></td>")
+                            .arg(numberCellWidth);
             }
             else
             {
@@ -893,14 +890,15 @@ QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &co
                 QString numCls = isDel ? "num del-num" : "num";
                 QString textCls = isDel ? "del-text col-divider" : "col-divider";
                 QString cellHtml = spansToHtml(row.oldText, row.oldSpans, delWordBg);
-                html += QString("<td width=\"36\" class=\"%1\">%2</td><td width=\"45%\" class=\"%3\">%4</td>")
-                            .arg(numCls, numStr, textCls, cellHtml);
+                html += QString("<td width=\"%5\" class=\"%1\">%2</td><td width=\"45%\" class=\"%3\">%4</td>")
+                            .arg(numCls, numStr, textCls, cellHtml, numberCellWidth);
             }
 
             // 右栏 (新版本)
             if (row.newType == LineType::Empty)
             {
-                html += "<td width=\"36\" class=\"num empty-cell\"></td><td width=\"45%\" class=\"empty-cell\"></td>";
+                html += QString("<td width=\"%1\" class=\"num empty-cell\"></td><td width=\"45%\" class=\"empty-cell\"></td>")
+                            .arg(numberCellWidth);
             }
             else
             {
@@ -909,8 +907,8 @@ QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &co
                 QString numCls = isAdd ? "num add-num" : "num";
                 QString textCls = isAdd ? "add-text" : "";
                 QString cellHtml = spansToHtml(row.newText, row.newSpans, addWordBg);
-                html += QString("<td width=\"36\" class=\"%1\">%2</td><td width=\"45%\" class=\"%3\">%4</td>")
-                            .arg(numCls, numStr, textCls, cellHtml);
+                html += QString("<td width=\"%5\" class=\"%1\">%2</td><td width=\"45%\" class=\"%3\">%4</td>")
+                            .arg(numCls, numStr, textCls, cellHtml, numberCellWidth);
             }
 
             html += "</tr>";
@@ -948,8 +946,8 @@ QString renderHtml(const ParsedDiff &diff, ViewMode mode, const RenderColors &co
 
             QString cellHtml = spansToHtml(row.text, row.spans, wordBg);
 
-            html += QString("<tr><td width=\"36\" class=\"%1\">%2</td><td width=\"36\" class=\"%1\">%3</td><td class=\"%4\">%5</td></tr>")
-                        .arg(numCls, oldNumStr, newNumStr, textCls, cellHtml);
+            html += QString("<tr><td width=\"%6\" class=\"%1\">%2</td><td width=\"%6\" class=\"%1\">%3</td><td class=\"%4\">%5</td></tr>")
+                        .arg(numCls, oldNumStr, newNumStr, textCls, cellHtml, numberCellWidth);
         }
     }
 

@@ -141,7 +141,7 @@ HomePagePreviewPage::~HomePagePreviewPage() { deactivate(); }
 QList<QAction *> HomePagePreviewPage::toolbarActions() const { return {m_new, m_open, m_refresh}; }
 void HomePagePreviewPage::refreshTheme()
 {
-    UiStyle::text(ui->editor, UiStyle::FontRole::Code);
+    ui->editor->refreshTheme();
     UiStyle::text(ui->files, UiStyle::FontRole::Body);
     UiStyle::text(ui->statusLabel, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->fileInfo, UiStyle::FontRole::Caption, true);

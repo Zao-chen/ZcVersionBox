@@ -1,20 +1,13 @@
 #pragma once
+#include "homepage_text_edit.h"
 #include "utils/source_preview.h"
-#include <QPlainTextEdit>
 #include <QTextBrowser>
 
-class PreviewTextEdit : public QPlainTextEdit
+class PreviewTextEdit : public HomePageTextEdit
 {
     Q_OBJECT
   public:
-    explicit PreviewTextEdit(QWidget *parent = nullptr);
-    int gutterWidth() const;
-    void paintGutter(QPaintEvent *event);
-  protected:
-    void resizeEvent(QResizeEvent *event) override;
-  private:
-    QWidget *m_gutter;
-    void updateGutter();
+    using HomePageTextEdit::HomePageTextEdit;
 };
 class PreviewMarkdown : public QTextBrowser
 {

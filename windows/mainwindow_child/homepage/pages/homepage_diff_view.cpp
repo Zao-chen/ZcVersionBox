@@ -1,4 +1,5 @@
 #include "homepage_diff_view.h"
+#include "homepage_text_edit.h"
 #include "windows/mainwindow_presentation.h"
 #include <QFileInfo>
 #include <QLabel>
@@ -67,12 +68,10 @@ HomePageDiffView::HomePageDiffView(QWidget *parent)
     rawLayout->setContentsMargins(0, 0, 0, 0);
     rawLayout->setSpacing(0);
 
-    m_rawEditor = new QPlainTextEdit(m_rawPage);
+    m_rawEditor = new HomePageTextEdit(m_rawPage);
     m_rawEditor->setObjectName("content");
     m_rawEditor->setReadOnly(true);
-    m_rawEditor->setFrameShape(QFrame::NoFrame);
-    m_rawEditor->setLineWrapMode(QPlainTextEdit::NoWrap);
-    UiStyle::text(m_rawEditor, UiStyle::FontRole::Code);
+    m_rawEditor->setLineNumbersVisible(false);
     m_highlighter = new DiffHighlighter(m_rawEditor->document());
     rawLayout->addWidget(m_rawEditor);
     m_stack->addWidget(m_rawPage);
@@ -204,6 +203,7 @@ void HomePageDiffView::clear()
 
 void HomePageDiffView::refreshTheme()
 {
+    m_rawEditor->refreshTheme();
     if (m_highlighter)
         m_highlighter->rehighlight();
     renderVisualDiff();
