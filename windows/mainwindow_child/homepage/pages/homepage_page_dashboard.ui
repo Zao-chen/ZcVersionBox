@@ -41,7 +41,7 @@
         <number>24</number>
        </property>
        <property name="bottomMargin">
-        <number>24</number>
+        <number>8</number>
        </property>
        <property name="spacing">
         <number>0</number>
