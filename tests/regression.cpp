@@ -3068,10 +3068,6 @@ class Regression : public QObject
         capture("sidebar-collapsed");
         window.findChild<QToolButton *>("collapseButton")->click();
         QTRY_VERIFY(window.findChild<QWidget *>("sidebar")->isVisible());
-        window.findChild<QAction *>("pinAction")->trigger();
-        QVERIFY(window.windowFlags().testFlag(Qt::WindowStaysOnTopHint));
-        window.findChild<QAction *>("pinAction")->trigger();
-        QVERIFY(!window.windowFlags().testFlag(Qt::WindowStaysOnTopHint));
         window.navigate({PageId::About});
         settle(service);
         window.findChild<QToolButton *>("backButton")->click();

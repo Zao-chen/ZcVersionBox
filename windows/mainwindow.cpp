@@ -424,28 +424,9 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
             { m_actions->showObjectMenu(m_route.backupId, ui->moreButton->mapToGlobal(QPoint(0, ui->moreButton->height()))); });
     auto *menu = new QMenu(this);
     menu->setObjectName("applicationMenu");
-    auto *themeAction = UiStyle::action(this, "themeAction", "切换明暗主题", "theme");
-    auto *pinAction = UiStyle::action(this, "pinAction", "窗口置顶", "pin");
-    auto *aboutAction = UiStyle::action(this, "aboutAction", "关于 ZcVersionBox", "info");
-    pinAction->setCheckable(true);
-    menu->addActions({themeAction, pinAction, aboutAction});
-    menu->addSeparator();
     menu->addAction("退出", qApp, &QApplication::quit);
     connect(ui->appMenuButton, &QToolButton::clicked, menu, [this, menu]
             { menu->popup(ui->appMenuButton->mapToGlobal(QPoint(0, 0)) - QPoint(0, menu->sizeHint().height())); });
-    connect(themeAction, &QAction::triggered, theme, &ThemeController::toggle);
-    connect(aboutAction, &QAction::triggered, this, [this]
-            {
-        ui->settingsSearch->clear();
-        navigate({PageId::About}); });
-    connect(pinAction, &QAction::toggled, this, [this](bool checked)
-            {
-        const auto state = windowState();
-        const bool wasVisible = isVisible();
-        setWindowFlag(Qt::WindowStaysOnTopHint, checked);
-        setWindowState(state);
-        if (wasVisible)
-            show(); });
     connect(theme, &ThemeController::changed, this, [this]
             {
         updateIcons();
