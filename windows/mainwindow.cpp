@@ -1,3 +1,4 @@
+#include "windows/mainwindow_child/homepage/pages/homepage_page_preview.h"
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_branches.h"
@@ -177,7 +178,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         m_windowAgent->setHitTestVisible(ui->backButton, true);
         m_windowAgent->setHitTestVisible(ui->forwardButton, true);
     }
-    for (auto *button : {ui->historyTab, ui->overviewTab, ui->returnHistoryButton, ui->generalTab, ui->aiTab, ui->aboutTab,
+    for (auto *button : {ui->previewTab, ui->historyTab, ui->overviewTab, ui->returnHistoryButton, ui->generalTab, ui->aiTab, ui->aboutTab,
                          ui->backupsButton, ui->settingsButton, ui->returnApplicationButton,
                          ui->addSidebarButton, ui->collapseButton, ui->backButton, ui->forwardButton,
                          ui->moreButton, ui->appMenuButton})
@@ -259,7 +260,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         if (index.isValid())
         {
             const auto id = index.data(BackupListModel::IdRole).toString();
-            navigate({PageId::History, id});
+            navigate({PageId::Preview, id});
         }
     };
     connect(ui->sidebarList, &QListView::clicked, this, open);
@@ -283,6 +284,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     m_notifications = new NotificationBar(ui->content);
     m_updates = new UpdateService(this);
     m_list = new HomePage(backups, this, m_backupModel, m_actions);
+    m_preview = new HomePagePreviewPage(backups, this);
     m_dashboard = new HomePageDashboardPage(backups, this);
     m_history = new HomePageBackupPage(backups, this);
     m_diff = new HomePageDiffPage(backups, settings, gateway, this);
@@ -305,7 +307,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
                 navigate({PageId::About});
                 m_about->showAvailableUpdate();
             }); });
-    for (QWidget *page : QList<QWidget *>{m_list, m_dashboard, m_history, m_diff, m_conflict, m_branches, m_general, m_ai, m_about})
+    for (QWidget *page : QList<QWidget *>{m_list, m_preview, m_dashboard, m_history, m_diff, m_conflict, m_branches, m_general, m_ai, m_about})
         ui->pages->addWidget(page);
     const auto wire = [this](auto *page)
     {
@@ -313,6 +315,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         connect(page, &std::remove_pointer_t<decltype(page)>::notification, this, &MainWindow::notify);
     };
     wire(m_list);
+    wire(m_preview);
     wire(m_dashboard);
     wire(m_history);
     wire(m_diff);
@@ -410,7 +413,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     connect(ui->clearSettingsSearchButton, &QPushButton::clicked, ui->settingsSearch, &QLineEdit::clear);
     connect(ui->collapseButton, &QToolButton::clicked, this, &MainWindow::toggleSidebar);
     const QList<QPair<QToolButton *, PageId>> tabs{
-        {ui->historyTab, PageId::History}, {ui->overviewTab, PageId::Dashboard}, {ui->generalTab, PageId::GeneralSettings}, {ui->aiTab, PageId::AiSettings}, {ui->aboutTab, PageId::About}};
+        {ui->previewTab, PageId::Preview}, {ui->historyTab, PageId::History}, {ui->overviewTab, PageId::Dashboard}, {ui->generalTab, PageId::GeneralSettings}, {ui->aiTab, PageId::AiSettings}, {ui->aboutTab, PageId::About}};
     for (const auto &tab : tabs)
     {
         auto *button = tab.first;
@@ -418,7 +421,9 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         button->setAutoExclusive(true);
         connect(button, &QToolButton::clicked, this, [this, page]
                 {
-            navigate(isObjectPage(page) ? Route{page, m_route.backupId} : Route{page}); });
+            Route target = isObjectPage(page) ? Route{page, m_route.backupId} : Route{page};
+            if (page == PageId::Preview) target.path = m_preview->rememberedPath(m_route.backupId);
+            navigate(target); });
     }
     connect(ui->moreButton, &QToolButton::clicked, this, [this]
             { m_actions->showObjectMenu(m_route.backupId, ui->moreButton->mapToGlobal(QPoint(0, ui->moreButton->height()))); });
@@ -430,6 +435,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     connect(theme, &ThemeController::changed, this, [this]
             {
         updateIcons();
+        m_preview->refreshTheme();
         m_diff->refreshTheme();
         m_conflict->refreshTheme();
         updateHeaderLayout(); });
@@ -700,6 +706,8 @@ void MainWindow::displayRoute(const Route &route)
         m_navigation.replaceCurrent({PageId::History, route.backupId});
         return;
     }
+    if (m_route.page == PageId::Preview)
+        m_preview->deactivate();
     if (m_route.page == PageId::History)
         m_history->deactivate();
     if (m_route.page == PageId::Dashboard)
@@ -777,6 +785,11 @@ void MainWindow::displayRoute(const Route &route)
         m_list->refresh();
         actions = m_list->toolbarActions();
         break;
+    case PageId::Preview:
+        page = m_preview;
+        m_preview->setBackup(route.backupId, route.path);
+        actions = m_preview->toolbarActions();
+        break;
     case PageId::Dashboard:
         page = m_dashboard;
         m_dashboard->setBackup(route.backupId);
@@ -844,9 +857,11 @@ void MainWindow::displayRoute(const Route &route)
         ui->returnHistoryButton->setAccessibleName("返回历史版本");
     }
     ui->diffTitleLabel->setVisible(isDiff);
+    ui->previewTab->setVisible(!isStandalone && isObject);
     ui->historyTab->setVisible(!isStandalone && isObject);
     ui->overviewTab->setVisible(!isStandalone && isObject);
     updateBranchSelector();
+    ui->previewTab->setChecked(route.page == PageId::Preview);
     ui->historyTab->setChecked(route.page == PageId::History);
     ui->overviewTab->setChecked(route.page == PageId::Dashboard);
     ui->generalTab->setChecked(route.page == PageId::GeneralSettings);

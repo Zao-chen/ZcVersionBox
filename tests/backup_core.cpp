@@ -206,6 +206,64 @@ class BackupCoreRegression : public QObject
         qputenv("GIT_CONFIG_GLOBAL", (m_environment.path() + "/gitconfig").toUtf8());
         QVERIFY(runGit({}, {"--version"}).success());
     }
+    void sourcePreviewReadsLocalContentAndMappedCommits()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/source";
+        writeFile(source + "/docs/说明.md", "# first\n");
+        writeFile(source + "/stable.txt", "stable\n");
+        CHECK_OK(service.addLocal(source));
+        const auto id = service.idForSource(source), first = head(service, id);
+        writeFile(source + "/docs/说明.md", "# second\n");
+        CHECK_OK(service.backup(id));
+        const auto second = head(service, id);
+        writeFile(source + "/docs/说明.md", "# not backed up\n");
+        writeFile(source + "/.hidden", "new\n");
+        QDir().mkpath(source + "/empty");
+        auto listed = awaitBackup<BackupResult<SourceDirectory>>([&](auto f) { service.sourceDirectory(id, {}, &service, f); });
+        CHECK_OK(listed.result);
+        QCOMPARE(listed.value.children.size(), 4);
+        QVERIFY(listed.value.children.first().directory);
+        auto content = awaitBackup<BackupResult<SourceContent>>([&](auto f) { service.sourceContent(id, "docs/说明.md", &service, f); });
+        CHECK_OK(content.result);
+        QCOMPARE(content.value.text, QString("# not backed up\n"));
+        QVERIFY(content.value.editable);
+        auto changes = awaitBackup<BackupResult<SourceChanges>>([&](auto f) { service.sourceChanges(id, {"docs", "stable.txt", ".hidden"}, &service, f); });
+        CHECK_OK(changes.result);
+        QCOMPARE(changes.value.revisions["docs"].hash, second);
+        QCOMPARE(changes.value.revisions["stable.txt"].hash, first);
+        QVERIFY(changes.value.revisions[".hidden"].hash.isEmpty());
+        // The imported target name differs from its original repository mapping.
+        const auto prepared = service.prepareImport(service.repoPath(id));
+        CHECK_OK(prepared.result);
+        const auto target = dir.path() + "/renamed-local-target";
+        CHECK_OK(service.finishImport(prepared.value.sessionId, "source/docs", target));
+        const auto imported = service.idForSource(target);
+        auto mapped = awaitBackup<BackupResult<SourceChanges>>([&](auto f) { service.sourceChanges(imported, {"说明.md"}, &service, f); });
+        CHECK_OK(mapped.result);
+        QCOMPARE(mapped.value.revisions["说明.md"].hash, second);
+        auto bad = awaitBackup<BackupResult<SourceDirectory>>([&](auto f) { service.sourceDirectory(id, "../Backup", &service, f); });
+        QVERIFY(!bad.result.success);
+        bad = awaitBackup<BackupResult<SourceDirectory>>([&](auto f) { service.sourceDirectory(id, ".git", &service, f); });
+        QVERIFY(!bad.result.success);
+    }
+    void sourcePreviewDecodingLimits()
+    {
+        const auto utf8 = decodeSourceContent(QByteArray::fromHex("efbbbf") + "hello\r\n");
+        QVERIFY(utf8.editable && utf8.bom);
+        QCOMPARE(utf8.text, QString("hello\n"));
+        QCOMPARE(utf8.newline, QString("\r\n"));
+        const auto utf16 = decodeSourceContent(QByteArray::fromHex("fffe2d4e87650d000a00"));
+        QVERIFY(utf16.editable);
+        QCOMPARE(utf16.text, QString("中文\n"));
+        QVERIFY(!decodeSourceContent(QByteArray::fromHex("e4b8")).textual);
+        QVERIFY(!decodeSourceContent(QByteArray("abc\0def", 7)).textual);
+        const auto mixed = decodeSourceContent("first\r\nsecond\n");
+        QVERIFY(mixed.textual && !mixed.editable);
+        QVERIFY(!decodeSourceContent(QByteArray(SourcePreview::TextLimit + 1, 'x')).textual);
+        QVERIFY(!decodeSourceContent(QByteArray(SourcePreview::LineLimit, '\n')).textual);
+    }
     void branchReferencesHistoryAndExternalIdentity()
     {
         TestDirectory dir;

@@ -1,3 +1,5 @@
+#include "windows/mainwindow_child/homepage/pages/homepage_page_preview.h"
+#include "windows/mainwindow_child/homepage/pages/homepage_preview_widgets.h"
 #include "backup_test_support.h"
 #include "utils/backupmonitor.h"
 #include "utils/gitcommand.h"
@@ -8,6 +10,7 @@
 #include "windows/mainwindow_child/homepage/pages/homepage_page_branches.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_history_graph.h"
 #include <QTabWidget>
+#include <QTreeView>
 #include <QTimer>
 #include "windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_diff.h"
@@ -204,6 +207,47 @@ class Regression : public QObject
         QCoreApplication::setApplicationName("ZcVersionBox tests");
         QCoreApplication::setApplicationVersion("0.1.0");
         m_theme = new ThemeController(nullptr, this);
+    }
+    void sourcePreviewNavigationAndRendering()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/示例工程";
+        writeFile(source + "/docs/README.md", "# Preview\n\nLocal **Markdown**.\n");
+        writeFile(source + "/main.cpp", "int main() {\n    return 0;\n}\n");
+        writeFile(source + "/.hidden", "hidden");
+        QVERIFY(service.addLocal(source).success);
+        FakeAi gateway;
+        SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen); window.show();
+        auto *sidebar = window.findChild<QListView *>("sidebarList");
+        emit sidebar->clicked(sidebar->model()->index(0, 0)); settle(service);
+        auto *page = window.findChild<HomePagePreviewPage *>();
+        QCOMPARE(window.findChild<QStackedWidget *>("pages")->currentWidget(), page);
+        QVERIFY(window.findChild<QToolButton *>("previewTab")->isChecked());
+        auto *files = page->findChild<QTreeView *>("files");
+        QCOMPARE(files->model()->rowCount(), 3);
+        const auto output = qEnvironmentVariable("ZC_PREVIEW_SCREENSHOTS");
+        if (!output.isEmpty()) QDir().mkpath(output);
+        for (auto theme : {ThemeMode::Light, ThemeMode::Dark})
+        {
+            m_theme->setMode(theme);
+            for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+            {
+                window.resize(size); QCoreApplication::processEvents();
+                if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/preview-%1-%2.png").arg(theme == ThemeMode::Light ? "light" : "dark").arg(size.width())));
+            }
+        }
+        Route file{PageId::Preview, service.idForSource(source)}; file.path = "docs/README.md";
+        window.navigate(file); settle(service);
+        QCOMPARE(page->findChild<PreviewTextEdit *>("editor")->toPlainText(), QString("# Preview\n\nLocal **Markdown**.\n"));
+        QVERIFY(page->findChild<PreviewMarkdown *>("markdown")->isVisible());
+        window.navigate({PageId::History, file.backupId}); settle(service);
+        window.findChild<QToolButton *>("previewTab")->click(); settle(service);
+        QCOMPARE(page->rememberedPath(file.backupId), file.path);
+        QVERIFY(page->findChild<PreviewMarkdown *>("markdown")->isVisible());
+        m_theme->setMode(ThemeMode::Light);
     }
     void desktopIntegrationFilesAreOwnedAndAtomic()
     {
@@ -713,7 +757,7 @@ class Regression : public QObject
             const auto index = view->model()->index(row, 0);
             QTest::mouseClick(view->viewport(), Qt::LeftButton, {}, view->visualRect(index).center());
             QCOMPARE(qvariant_cast<Route>(routes.last().first()).backupId, index.data(BackupListModel::IdRole).toString());
-            QCOMPARE(qvariant_cast<Route>(routes.last().first()).page, PageId::History);
+            QCOMPARE(qvariant_cast<Route>(routes.last().first()).page, PageId::Preview);
         }
         auto *source = page.findChild<BackupListModel *>();
         auto items = service.trackedItems();
@@ -1578,7 +1622,7 @@ class Regression : public QObject
         window.navigate({});
         settle(f.service);
 
-        // Sidebar list item clicking navigates to PageId::History, not PageId::Conflict
+        // Opening an object lands on its local preview, including paused objects.
         auto *sidebar = window.findChild<QListView *>("sidebarList");
         QVERIFY(sidebar);
         auto *model = sidebar->model();
@@ -1590,7 +1634,7 @@ class Regression : public QObject
         settle(f.service);
 
         auto *pages = window.findChild<QStackedWidget *>("pages");
-        auto *historyPage = window.findChild<HomePageBackupPage *>();
+        auto *historyPage = window.findChild<HomePagePreviewPage *>();
         auto *conflictPage = window.findChild<HomePageConflictPage *>();
         QCOMPARE(pages->currentWidget(), historyPage);
         QVERIFY(!conflictPage->isVisible());
@@ -1608,10 +1652,10 @@ class Regression : public QObject
         QVERIFY(!badge->isVisible());
         QVERIFY(!overviewTab->isVisible());
 
-        // Returning to History shows badge again
+        // Returning from a conflict opened outside History lands on Overview.
         window.findChild<QToolButton *>("returnHistoryButton")->click();
         settle(f.service);
-        QCOMPARE(pages->currentWidget(), historyPage);
+        QCOMPARE(pages->currentWidget(), window.findChild<HomePageDashboardPage *>());
         QVERIFY(badge->isVisible());
         QVERIFY(overviewTab->isVisible());
 

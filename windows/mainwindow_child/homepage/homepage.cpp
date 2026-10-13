@@ -30,7 +30,7 @@ HomePage::HomePage(BackupService *service, QWidget *parent, BackupListModel *mod
         if (index.isValid())
         {
             const auto id = index.data(BackupListModel::IdRole).toString();
-            emit navigate({PageId::History, id});
+            emit navigate({PageId::Preview, id});
         }
     };
     connect(ui->backupList, &QListView::clicked, this, open);
