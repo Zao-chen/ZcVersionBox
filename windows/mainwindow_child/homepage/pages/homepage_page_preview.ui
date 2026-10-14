@@ -25,7 +25,7 @@
      <property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
      <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
      <widget class="QWidget" name="breadcrumbHost"><layout class="QHBoxLayout" name="breadcrumbLayout">
-      <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+      <property name="leftMargin"><number>12</number></property><property name="topMargin"><number>0</number></property>
       <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
       <property name="spacing"><number>6</number></property>
      </layout></widget>

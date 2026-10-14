@@ -292,6 +292,7 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
 {
     ui->setupUi(this);
     ui->breadcrumbLayout->setAlignment(Qt::AlignVCenter);
+    ui->breadcrumbLayout->setContentsMargins(12, 0, 0, 0);
     ui->pageLayout->setSpacing(0);
     ui->pageLayout->setStretch(ui->pageLayout->indexOf(ui->contentStack), 1);
     ui->statusLabel->setContentsMargins(0, 4, 0, 4);
