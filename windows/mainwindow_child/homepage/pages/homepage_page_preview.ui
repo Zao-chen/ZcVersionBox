@@ -59,7 +59,7 @@
     <widget class="QWidget" name="directoryPage"><layout class="QVBoxLayout" name="directoryLayout">
      <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
      <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
-     <item><widget class="QTreeView" name="files"><property name="rootIsDecorated"><bool>false</bool></property><property name="headerHidden"><bool>true</bool></property><property name="uniformRowHeights"><bool>true</bool></property><property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property><property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property><property name="contextMenuPolicy"><enum>Qt::CustomContextMenu</enum></property></widget></item>
+     <item><widget class="QTreeView" name="files"><property name="rootIsDecorated"><bool>false</bool></property><property name="headerHidden"><bool>true</bool></property><property name="uniformRowHeights"><bool>true</bool></property><property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property><property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property><property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property><property name="contextMenuPolicy"><enum>Qt::CustomContextMenu</enum></property></widget></item>
     </layout></widget>
     <widget class="PreviewTextEdit" name="editor"/>
     <widget class="PreviewMarkdown" name="markdown"/>

@@ -20,6 +20,10 @@
 #include <QKeyEvent>
 #include <QFocusEvent>
 #include <QTimer>
+#include <QStyledItemDelegate>
+#include <QPainter>
+#include <QPersistentModelIndex>
+#include <QItemSelectionModel>
 #include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 
 namespace
@@ -121,6 +125,167 @@ class BreadcrumbLabel : public QLabel
     bool m_isCurrent{false};
     std::function<void(const QString &)> m_onClick;
 };
+
+class PreviewFileDelegate : public QStyledItemDelegate
+{
+  public:
+    explicit PreviewFileDelegate(QTreeView *view, QObject *parent = nullptr)
+        : QStyledItemDelegate(parent ? parent : view), m_view(view)
+    {
+        m_view->viewport()->installEventFilter(this);
+        m_view->installEventFilter(this);
+        if (m_view->selectionModel())
+        {
+            connect(m_view->selectionModel(), &QItemSelectionModel::currentChanged, this, [this](const QModelIndex &current, const QModelIndex &previous) {
+                updateRow(previous);
+                updateRow(current);
+            });
+            connect(m_view->selectionModel(), &QItemSelectionModel::selectionChanged, this, [this](const QItemSelection &selected, const QItemSelection &deselected) {
+                for (const auto &index : selected.indexes()) updateRow(index);
+                for (const auto &index : deselected.indexes()) updateRow(index);
+            });
+        }
+        connect(m_view->verticalScrollBar(), &QScrollBar::valueChanged, this, [this] {
+            if (m_pointerInside) updateHover(m_pointerPosition);
+        });
+        if (m_view->model())
+        {
+            connect(m_view->model(), &QAbstractItemModel::modelAboutToBeReset, this, [this] {
+                m_hovered = QPersistentModelIndex{};
+            });
+            connect(m_view->model(), &QAbstractItemModel::modelReset, this, [this] {
+                QTimer::singleShot(0, this, [this] { if (m_pointerInside) updateHover(m_pointerPosition); });
+            });
+            connect(m_view->model(), &QAbstractItemModel::rowsAboutToBeRemoved, this, [this] {
+                m_hovered = QPersistentModelIndex{};
+            });
+        }
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        auto size = QStyledItemDelegate::sizeHint(option, index);
+        size.rwidth() += 16;
+        size.setHeight(UiStyle::rowHeight(40, UiStyle::font(UiStyle::FontRole::Body)));
+        return size;
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        auto opt = option;
+        initStyleOption(&opt, index);
+
+        const auto colors = UiStyle::colors();
+        painter->save();
+        painter->setClipRect(opt.rect);
+        painter->setRenderHint(QPainter::Antialiasing);
+
+        painter->fillRect(opt.rect, opt.palette.base());
+
+        const auto row = QRect(0, opt.rect.y() + 2, m_view->viewport()->width(), opt.rect.height() - 4);
+        const bool selected = m_view->selectionModel() && m_view->selectionModel()->isRowSelected(index.row(), index.parent());
+        const bool hover = m_hovered.isValid() && m_hovered.row() == index.row() && m_hovered.parent() == index.parent();
+
+        if (selected)
+        {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(colors.selected);
+            painter->drawRoundedRect(row, 6, 6);
+        }
+        else if (hover)
+        {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(colors.hover);
+            painter->drawRoundedRect(row, 6, 6);
+        }
+
+        if (UiStyle::isKeyboardNavigationActive() && m_view->hasFocus() && m_view->currentIndex().row() == index.row() && m_view->currentIndex().parent() == index.parent())
+        {
+            painter->setBrush(Qt::NoBrush);
+            painter->setPen(colors.secondary);
+            painter->drawRoundedRect(QRectF(row).adjusted(.5, .5, -.5, -.5), 6, 6);
+        }
+
+        opt.state.setFlag(QStyle::State_Selected, false);
+        opt.state.setFlag(QStyle::State_MouseOver, false);
+        opt.state.setFlag(QStyle::State_HasFocus, false);
+
+        if (index.column() == 0)
+        {
+            opt.font = UiStyle::font(UiStyle::FontRole::Body);
+            opt.palette.setColor(QPalette::Text, colors.text);
+            opt.rect = opt.rect.adjusted(8, 0, -8, 0);
+        }
+        else
+        {
+            opt.font = UiStyle::font(UiStyle::FontRole::Caption);
+            opt.palette.setColor(QPalette::Text, colors.secondary);
+            opt.rect = opt.rect.adjusted(8, 0, -8, 0);
+        }
+
+        QStyledItemDelegate::paint(painter, opt, index);
+
+        painter->restore();
+    }
+
+  protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched == m_view->viewport())
+        {
+            if (event->type() == QEvent::MouseMove)
+            {
+                updateHover(static_cast<QMouseEvent *>(event)->position().toPoint());
+            }
+            else if (event->type() == QEvent::Leave)
+            {
+                const auto previous = m_hovered;
+                m_hovered = QPersistentModelIndex{};
+                m_pointerInside = false;
+                updateRow(previous);
+            }
+        }
+        else if (watched == m_view)
+        {
+            if (event->type() == QEvent::Hide)
+            {
+                m_hovered = QPersistentModelIndex{};
+                m_pointerInside = false;
+            }
+        }
+        return QStyledItemDelegate::eventFilter(watched, event);
+    }
+
+  private:
+    QTreeView *m_view{nullptr};
+    QPersistentModelIndex m_hovered;
+    QPoint m_pointerPosition;
+    bool m_pointerInside{false};
+
+    void updateRow(const QModelIndex &index) const
+    {
+        if (index.isValid() && m_view && m_view->viewport())
+        {
+            const auto cell = m_view->visualRect(index);
+            m_view->viewport()->update(QRect(0, cell.top(), m_view->viewport()->width(), cell.height()));
+        }
+    }
+
+    void updateHover(const QPoint &position)
+    {
+        if (!m_view || !m_view->viewport()) return;
+        const auto previous = m_hovered;
+        m_pointerPosition = position;
+        m_pointerInside = m_view->viewport()->rect().contains(position);
+        const auto index = m_pointerInside ? m_view->indexAt(position) : QModelIndex{};
+        m_hovered = index.isValid() ? QPersistentModelIndex(index.siblingAtColumn(0)) : QPersistentModelIndex{};
+        if (previous != m_hovered)
+        {
+            updateRow(previous);
+            updateRow(m_hovered);
+        }
+    }
+};
 }
 HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent)
     : QWidget(parent), ui(new Ui::HomePagePreviewPage), m_service(service), m_watcher(this)
@@ -137,6 +302,9 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     UiStyle::flatView(ui->files);
     ui->files->setHeaderHidden(true);
     ui->files->setAccessibleName("本地文件列表");
+    ui->files->setSelectionBehavior(QAbstractItemView::SelectRows);
+    auto *fileDelegate = new PreviewFileDelegate(ui->files, this);
+    ui->files->setItemDelegate(fileDelegate);
     ui->files->header()->setStretchLastSection(false);
     ui->files->header()->setSectionResizeMode(0, QHeaderView::Interactive);
     ui->files->header()->setSectionResizeMode(1, QHeaderView::Stretch);
@@ -182,6 +350,7 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     connect(ui->files, &QTreeView::customContextMenuRequested, this, [this](const QPoint &point) {
         const auto index = ui->files->indexAt(point);
         if (!index.isValid()) return;
+        ui->files->setCurrentIndex(index);
         auto location = m_directory.location;
         location.path = index.siblingAtColumn(0).data(PathRole).toString();
         entryMenu(location, ui->files->viewport()->mapToGlobal(point));
