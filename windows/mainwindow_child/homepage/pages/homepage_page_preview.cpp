@@ -14,6 +14,10 @@
 #include <QPointer>
 #include <QClipboard>
 #include <QApplication>
+#include <QLabel>
+#include <QMouseEvent>
+#include <QKeyEvent>
+#include <QFocusEvent>
 #include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 
 namespace
@@ -28,11 +32,72 @@ QString relativeTime(const QDateTime &time)
     if (seconds < 86400 * 30) return QString("%1 天前").arg(seconds / 86400);
     return time.toLocalTime().toString("yyyy-MM-dd");
 }
+
+class BreadcrumbLabel : public QLabel
+{
+  public:
+    explicit BreadcrumbLabel(const QString &text, const QString &path, bool isCurrent, std::function<void(const QString &)> onClick, QWidget *parent = nullptr)
+        : QLabel(text, parent), m_path(path), m_onClick(std::move(onClick))
+    {
+        setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::TabFocus);
+        UiStyle::text(this, UiStyle::FontRole::Body, !isCurrent);
+        setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+    }
+  protected:
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && rect().contains(event->pos()) && m_onClick)
+            m_onClick(m_path);
+        QLabel::mouseReleaseEvent(event);
+    }
+    void keyPressEvent(QKeyEvent *event) override
+    {
+        if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter || event->key() == Qt::Key_Space) && m_onClick)
+        {
+            m_onClick(m_path);
+            return;
+        }
+        QLabel::keyPressEvent(event);
+    }
+    void enterEvent(QEnterEvent *event) override
+    {
+        QLabel::enterEvent(event);
+        auto f = font();
+        f.setUnderline(true);
+        setFont(f);
+    }
+    void leaveEvent(QEvent *event) override
+    {
+        QLabel::leaveEvent(event);
+        auto f = font();
+        f.setUnderline(false);
+        setFont(f);
+    }
+    void focusInEvent(QFocusEvent *event) override
+    {
+        QLabel::focusInEvent(event);
+        auto f = font();
+        f.setUnderline(true);
+        setFont(f);
+    }
+    void focusOutEvent(QFocusEvent *event) override
+    {
+        QLabel::focusOutEvent(event);
+        auto f = font();
+        f.setUnderline(false);
+        setFont(f);
+    }
+  private:
+    QString m_path;
+    std::function<void(const QString &)> m_onClick;
+};
 }
 HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent)
     : QWidget(parent), ui(new Ui::HomePagePreviewPage), m_service(service), m_watcher(this)
 {
     ui->setupUi(this);
+    ui->breadcrumbLayout->setAlignment(Qt::AlignVCenter);
     ui->pageLayout->setStretch(ui->pageLayout->indexOf(ui->contentStack), 1);
     ui->statusLabel->hide();
     m_model.setHorizontalHeaderLabels({"名称", "最近提交说明", "提交时间"});
@@ -336,17 +401,24 @@ void HomePagePreviewPage::resizeEvent(QResizeEvent *event)
 void HomePagePreviewPage::breadcrumbs()
 {
     while (auto *item = ui->breadcrumbLayout->takeAt(0)) { delete item->widget(); delete item; }
-    const auto add = [this](const QString &name, const QString &path) {
-        auto *button = new QToolButton(ui->breadcrumbHost); button->setText(name); button->setToolTip(name); button->setAutoRaise(true);
-        UiStyle::text(button, UiStyle::FontRole::Body); ui->breadcrumbLayout->addWidget(button);
-        connect(button, &QToolButton::clicked, this, [this, path] { openPath(path); });
+    const auto parts = m_path.split('/', Qt::SkipEmptyParts);
+    const auto rootName = QFileInfo(m_service->sourcePath(m_id)).fileName();
+    const auto add = [this](const QString &name, const QString &path, bool isCurrent) {
+        auto *label = new BreadcrumbLabel(name, path, isCurrent, [this](const QString &target) { openPath(target); }, ui->breadcrumbHost);
+        label->setToolTip(name);
+        label->setAccessibleName(name);
+        ui->breadcrumbLayout->addWidget(label);
     };
-    add(QFileInfo(m_service->sourcePath(m_id)).fileName(), {});
+    add(rootName, {}, parts.isEmpty());
     QString path;
-    for (const auto &part : m_path.split('/', Qt::SkipEmptyParts))
+    for (int i = 0; i < parts.size(); ++i)
     {
-        auto *separator = new QLabel("/", ui->breadcrumbHost); UiStyle::text(separator, UiStyle::FontRole::Caption, true); ui->breadcrumbLayout->addWidget(separator);
-        path += (path.isEmpty() ? "" : "/") + part; add(part, path);
+        const auto &part = parts[i];
+        auto *separator = new QLabel("/", ui->breadcrumbHost);
+        UiStyle::text(separator, UiStyle::FontRole::Caption, true);
+        ui->breadcrumbLayout->addWidget(separator);
+        path += (path.isEmpty() ? "" : "/") + part;
+        add(part, path, i == parts.size() - 1);
     }
     ui->breadcrumbLayout->addStretch();
 }

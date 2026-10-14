@@ -27,7 +27,7 @@
      <widget class="QWidget" name="breadcrumbHost"><layout class="QHBoxLayout" name="breadcrumbLayout">
       <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
       <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
-      <property name="spacing"><number>2</number></property>
+      <property name="spacing"><number>6</number></property>
      </layout></widget>
     </widget></item>
     <item><widget class="QWidget" name="actionHost"><layout class="QHBoxLayout" name="actionLayout">
