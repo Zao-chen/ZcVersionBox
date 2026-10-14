@@ -85,7 +85,11 @@ HomePageTextEdit::HomePageTextEdit(QWidget *parent)
     : QPlainTextEdit(parent), m_gutter(new TextGutter(this)), m_header(new HomePageTextHeader(this))
 {
     setLineWrapMode(QPlainTextEdit::NoWrap);
+    setFrameStyle(0);
     setFrameShape(QFrame::NoFrame);
+    setFrameShadow(QFrame::Plain);
+    setLineWidth(0);
+    setMidLineWidth(0);
     // Only the layout changes. No block formats are inserted into the document
     // or undo stack, so spacing never becomes an unsaved source modification.
     document()->setDocumentLayout(new CodeDocumentLayout(document()));
@@ -141,7 +145,7 @@ int HomePageTextEdit::gutterWidth() const
 
 void HomePageTextEdit::updateGutter()
 {
-    const int inset = CodeTextStyle::DocumentMargin;
+    const int inset = 0;
     const int headerHeight = m_header->layoutHeight(qMax(0, contentsRect().width() - 2 * inset));
     setViewportMargins(inset + gutterWidth() + CodeTextStyle::HorizontalPadding,
                        inset + headerHeight, inset + CodeTextStyle::HorizontalPadding, inset);

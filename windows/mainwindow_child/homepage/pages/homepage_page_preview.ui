@@ -61,8 +61,16 @@
      <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
      <item><widget class="QTreeView" name="files"><property name="rootIsDecorated"><bool>false</bool></property><property name="headerHidden"><bool>true</bool></property><property name="uniformRowHeights"><bool>true</bool></property><property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property><property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property><property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property><property name="contextMenuPolicy"><enum>Qt::CustomContextMenu</enum></property></widget></item>
     </layout></widget>
-    <widget class="PreviewTextEdit" name="editor"/>
-    <widget class="PreviewMarkdown" name="markdown"/>
+    <widget class="PreviewTextEdit" name="editor">
+     <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+     <property name="frameShadow"><enum>QFrame::Plain</enum></property>
+     <property name="lineWidth"><number>0</number></property>
+    </widget>
+    <widget class="PreviewMarkdown" name="markdown">
+     <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+     <property name="frameShadow"><enum>QFrame::Plain</enum></property>
+     <property name="lineWidth"><number>0</number></property>
+    </widget>
     <widget class="QScrollArea" name="imageScroll"><property name="alignment"><set>Qt::AlignCenter</set></property><property name="frameShape"><enum>QFrame::NoFrame</enum></property><widget class="QLabel" name="imageLabel"><property name="text"><string/></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></widget>
     <widget class="QLabel" name="notice"><property name="text"><string>正在读取源内容…</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="wordWrap"><bool>true</bool></property><property name="textFormat"><enum>Qt::PlainText</enum></property></widget>
    </widget></item>

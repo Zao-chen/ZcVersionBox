@@ -5,7 +5,13 @@
 
 PreviewMarkdown::PreviewMarkdown(QWidget *parent) : QTextBrowser(parent)
 {
-    setOpenLinks(false); setOpenExternalLinks(false); setFrameShape(QFrame::NoFrame);
+    setOpenLinks(false);
+    setOpenExternalLinks(false);
+    setFrameStyle(0);
+    setFrameShape(QFrame::NoFrame);
+    setFrameShadow(QFrame::Plain);
+    setLineWidth(0);
+    setMidLineWidth(0);
 }
 void PreviewMarkdown::setContent(const SourceContent &content)
 {
