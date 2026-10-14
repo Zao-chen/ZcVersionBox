@@ -18,6 +18,7 @@
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QFocusEvent>
+#include <QTimer>
 #include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 
 namespace
@@ -37,25 +38,39 @@ class BreadcrumbLabel : public QLabel
 {
   public:
     explicit BreadcrumbLabel(const QString &text, const QString &path, bool isCurrent, std::function<void(const QString &)> onClick, QWidget *parent = nullptr)
-        : QLabel(text, parent), m_path(path), m_onClick(std::move(onClick))
+        : QLabel(text, parent), m_path(path), m_isCurrent(isCurrent), m_onClick(std::move(onClick))
     {
-        setCursor(Qt::PointingHandCursor);
-        setFocusPolicy(Qt::TabFocus);
+        if (!m_isCurrent)
+        {
+            setCursor(Qt::PointingHandCursor);
+            setFocusPolicy(Qt::TabFocus);
+        }
         UiStyle::text(this, UiStyle::FontRole::Body, !isCurrent);
         setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     }
   protected:
     void mouseReleaseEvent(QMouseEvent *event) override
     {
-        if (event->button() == Qt::LeftButton && rect().contains(event->pos()) && m_onClick)
-            m_onClick(m_path);
         QLabel::mouseReleaseEvent(event);
+        if (!m_isCurrent && event->button() == Qt::LeftButton && rect().contains(event->pos()) && m_onClick)
+        {
+            const auto onClick = m_onClick;
+            const auto path = m_path;
+            QTimer::singleShot(0, [onClick, path]() {
+                onClick(path);
+            });
+        }
     }
     void keyPressEvent(QKeyEvent *event) override
     {
-        if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter || event->key() == Qt::Key_Space) && m_onClick)
+        if (!m_isCurrent && (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter || event->key() == Qt::Key_Space) && m_onClick)
         {
-            m_onClick(m_path);
+            const auto onClick = m_onClick;
+            const auto path = m_path;
+            QTimer::singleShot(0, [onClick, path]() {
+                onClick(path);
+            });
+            event->accept();
             return;
         }
         QLabel::keyPressEvent(event);
@@ -63,33 +78,46 @@ class BreadcrumbLabel : public QLabel
     void enterEvent(QEnterEvent *event) override
     {
         QLabel::enterEvent(event);
-        auto f = font();
-        f.setUnderline(true);
-        setFont(f);
+        if (!m_isCurrent)
+        {
+            auto f = font();
+            f.setUnderline(true);
+            setFont(f);
+        }
     }
     void leaveEvent(QEvent *event) override
     {
         QLabel::leaveEvent(event);
-        auto f = font();
-        f.setUnderline(false);
-        setFont(f);
+        if (!m_isCurrent)
+        {
+            auto f = font();
+            f.setUnderline(false);
+            setFont(f);
+        }
     }
     void focusInEvent(QFocusEvent *event) override
     {
         QLabel::focusInEvent(event);
-        auto f = font();
-        f.setUnderline(true);
-        setFont(f);
+        if (!m_isCurrent)
+        {
+            auto f = font();
+            f.setUnderline(true);
+            setFont(f);
+        }
     }
     void focusOutEvent(QFocusEvent *event) override
     {
         QLabel::focusOutEvent(event);
-        auto f = font();
-        f.setUnderline(false);
-        setFont(f);
+        if (!m_isCurrent)
+        {
+            auto f = font();
+            f.setUnderline(false);
+            setFont(f);
+        }
     }
   private:
     QString m_path;
+    bool m_isCurrent{false};
     std::function<void(const QString &)> m_onClick;
 };
 }
@@ -400,7 +428,12 @@ void HomePagePreviewPage::resizeEvent(QResizeEvent *event)
 }
 void HomePagePreviewPage::breadcrumbs()
 {
-    while (auto *item = ui->breadcrumbLayout->takeAt(0)) { delete item->widget(); delete item; }
+    while (auto *item = ui->breadcrumbLayout->takeAt(0))
+    {
+        if (auto *widget = item->widget())
+            widget->deleteLater();
+        delete item;
+    }
     const auto parts = m_path.split('/', Qt::SkipEmptyParts);
     const auto rootName = QFileInfo(m_service->sourcePath(m_id)).fileName();
     const auto add = [this](const QString &name, const QString &path, bool isCurrent) {
