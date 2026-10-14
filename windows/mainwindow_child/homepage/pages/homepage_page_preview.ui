@@ -7,7 +7,7 @@
    <property name="topMargin"><number>8</number></property>
    <property name="rightMargin"><number>24</number></property>
    <property name="bottomMargin"><number>16</number></property>
-   <property name="spacing"><number>12</number></property>
+   <property name="spacing"><number>4</number></property>
    <item><widget class="QWidget" name="toolbar"><layout class="QHBoxLayout" name="toolbarLayout">
     <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
     <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
@@ -21,7 +21,7 @@
      </property>
      <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
      <property name="widgetResizable"><bool>true</bool></property>
-     <property name="maximumHeight"><number>36</number></property>
+     <property name="maximumHeight"><number>32</number></property>
      <property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
      <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
      <widget class="QWidget" name="breadcrumbHost"><layout class="QHBoxLayout" name="breadcrumbLayout">

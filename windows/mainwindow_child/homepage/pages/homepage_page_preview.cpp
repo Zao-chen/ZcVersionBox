@@ -126,6 +126,7 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
 {
     ui->setupUi(this);
     ui->breadcrumbLayout->setAlignment(Qt::AlignVCenter);
+    ui->pageLayout->setSpacing(4);
     ui->pageLayout->setStretch(ui->pageLayout->indexOf(ui->contentStack), 1);
     ui->statusLabel->hide();
     m_model.setHorizontalHeaderLabels({"名称", "最近提交说明", "提交时间"});
