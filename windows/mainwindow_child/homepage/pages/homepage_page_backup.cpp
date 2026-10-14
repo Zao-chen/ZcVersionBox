@@ -505,7 +505,7 @@ class HistoryDelegate : public QStyledItemDelegate
 HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) : QWidget(parent), ui(new Ui::HomePageBackupPage), m_service(service)
 {
     ui->setupUi(this);
-    ui->pageLayout->setSpacing(0);
+    ui->pageLayout->setSpacing(4);
     ui->emptyLabel->setContentsMargins(0, 4, 0, 4);
     ui->historyScope->setMinimumContentsLength(10);
     ui->historyScope->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
