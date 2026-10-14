@@ -3,6 +3,7 @@
 #include <QSet>
 #include <QString>
 #include <QVector>
+#include <functional>
 
 enum class PageId
 {
@@ -14,7 +15,8 @@ enum class PageId
     AiSettings,
     About,
     Conflict,
-    Branches
+    Branches,
+    Preview
 };
 struct Route
 {
@@ -23,16 +25,17 @@ struct Route
     QString commit;
     QString provider;
     QString branchRef, oldCommit;
+    QString path;
     bool operator==(const Route &other) const
     {
-        return page == other.page && backupId == other.backupId && commit == other.commit && provider == other.provider && branchRef == other.branchRef && oldCommit == other.oldCommit;
+        return page == other.page && backupId == other.backupId && commit == other.commit && provider == other.provider && branchRef == other.branchRef && oldCommit == other.oldCommit && path == other.path;
     }
 };
 Q_DECLARE_METATYPE(Route)
 
 inline bool isObjectPage(PageId page)
 {
-    return page == PageId::Dashboard || page == PageId::History || page == PageId::Diff || page == PageId::Conflict || page == PageId::Branches;
+    return page == PageId::Preview || page == PageId::Dashboard || page == PageId::History || page == PageId::Diff || page == PageId::Conflict || page == PageId::Branches;
 }
 inline bool isSettingsPage(PageId page)
 {
@@ -48,6 +51,7 @@ class Navigation : public QObject
     Route previous() const { return m_index > 0 ? m_routes.at(m_index - 1) : Route{}; }
     bool canBack() const { return m_index > 0; }
     bool canForward() const { return m_index + 1 < m_routes.size(); }
+    void setTransitionGuard(std::function<void(std::function<void()>)> guard) { m_guard = std::move(guard); }
     void go(const Route &route);
     void replaceCurrent(const Route &route);
     void back();
@@ -59,6 +63,9 @@ class Navigation : public QObject
     void changed(const Route &route);
 
   private:
+    std::function<void(std::function<void()>)> m_guard;
+    bool m_guardBypassed{false};
+    bool guarded(std::function<void()> action);
     QVector<Route> m_routes;
     int m_index{0};
 };

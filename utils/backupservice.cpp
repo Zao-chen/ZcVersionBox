@@ -556,3 +556,29 @@ BackupTaskId BackupService::cancelResolution(const QString &id, const QString &s
 
 BackupTaskId BackupService::uploadBranch(const BranchRequest &r, QObject *c, Completion f)
 { return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.uploadBranch(r); }); }
+
+BackupTaskId BackupService::sourceDirectory(const QString &id, const QString &path, QObject *c, Reply<SourceDirectory> f)
+{ return d->submit<SourceDirectory>(id, c, std::move(f), [=](BackupEngine &e) { return e.sourceDirectory(id, path); }); }
+BackupTaskId BackupService::sourceContent(const QString &id, const QString &path, QObject *c, Reply<SourceContent> f)
+{ return d->submit<SourceContent>(id, c, std::move(f), [=](BackupEngine &e) { return e.sourceContent(id, path); }); }
+BackupTaskId BackupService::sourceChanges(const QString &id, const QStringList &paths, QObject *c, Reply<SourceChanges> f)
+{ return d->submit<SourceChanges>(id, c, std::move(f), [=](BackupEngine &e) { return e.sourceChanges(id, paths); }); }
+
+BackupTaskId BackupService::saveSourceFile(const SourceSaveRequest &request, QObject *c, Completion f)
+{
+    const auto id = request.location.context.id;
+    return d->mutate(id, c, [this, id, f = std::move(f)](const OperationResult &result) {
+        if (result.success) emit sourceChanged(id);
+        if (f) f(result);
+    }, [request](BackupEngine &e) { return e.saveSourceFile(request); }, false);
+}
+BackupTaskId BackupService::prepareSourceMutation(const SourceLocation &location, SourceMutationKind kind, const QString &name, QObject *c, Reply<SourceMutationRequest> f)
+{ return d->submit<SourceMutationRequest>(location.context.id, c, std::move(f), [=](BackupEngine &e) { return e.prepareSourceMutation(location, kind, name); }); }
+BackupTaskId BackupService::applySourceMutation(const SourceMutationRequest &request, QObject *c, Completion f)
+{
+    const auto id = request.location.context.id;
+    return d->mutate(id, c, [this, id, f = std::move(f)](const OperationResult &result) {
+        emit sourceChanged(id); // A failed recursive delete may have removed some entries.
+        if (f) f(result);
+    }, [request](BackupEngine &e) { return e.applySourceMutation(request); }, false);
+}

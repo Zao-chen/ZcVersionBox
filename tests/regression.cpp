@@ -1,3 +1,7 @@
+#include <QInputDialog>
+#include <QMessageBox>
+#include "windows/mainwindow_child/homepage/pages/homepage_page_preview.h"
+#include "windows/mainwindow_child/homepage/pages/homepage_preview_widgets.h"
 #include "backup_test_support.h"
 #include "utils/backupmonitor.h"
 #include "utils/gitcommand.h"
@@ -8,6 +12,7 @@
 #include "windows/mainwindow_child/homepage/pages/homepage_page_branches.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_history_graph.h"
 #include <QTabWidget>
+#include <QTreeView>
 #include <QTimer>
 #include "windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_diff.h"
@@ -204,6 +209,171 @@ class Regression : public QObject
         QCoreApplication::setApplicationName("ZcVersionBox tests");
         QCoreApplication::setApplicationVersion("0.1.0");
         m_theme = new ThemeController(nullptr, this);
+    }
+    void sourcePreviewUnsavedNavigationAndExternalEdits()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/file.txt";
+        writeFile(source, "original\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen); window.show(); window.navigate({PageId::Preview, id}); settle(service);
+        auto *page = window.findChild<HomePagePreviewPage *>();
+        auto *editor = page->findChild<PreviewTextEdit *>("editor");
+        auto *edit = page->findChild<QAction *>("editSourceAction");
+        auto *save = page->findChild<QAction *>("saveSourceAction");
+        QVERIFY(edit->isEnabled()); edit->trigger(); QVERIFY(!editor->isReadOnly());
+        editor->moveCursor(QTextCursor::End); editor->insertPlainText("edited\n");
+        QVERIFY(page->hasUnsavedChanges());
+        auto *history = window.findChild<QToolButton *>("historyTab"); history->click();
+        auto *dialog = page->findChild<QDialog *>("previewUnsavedDialog"); QVERIFY(dialog && dialog->isVisible());
+        dialog->done(QMessageBox::Cancel); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(window.findChild<QToolButton *>("previewTab")->isChecked());
+        QCOMPARE(window.findChild<QStackedWidget *>("pages")->currentWidget(), page);
+        QCOMPARE(readFile(source), QByteArray("original\n"));
+        history->click();
+        dialog = page->findChild<QDialog *>("previewUnsavedDialog"); QVERIFY(dialog); dialog->done(QMessageBox::Save);
+        settle(service); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCOMPARE(readFile(source), QByteArray("original\nedited\n"));
+        QVERIFY(!page->hasUnsavedChanges());
+        QCOMPARE(window.findChild<QStackedWidget *>("pages")->currentWidget(), window.findChild<HomePageBackupPage *>());
+        window.findChild<QToolButton *>("previewTab")->click(); settle(service);
+        edit->trigger(); editor->moveCursor(QTextCursor::End); editor->insertPlainText("keep this buffer");
+        const auto buffer = editor->toPlainText();
+        writeFile(source, "outside editor\n"); QTest::qWait(350); settle(service);
+        QCOMPARE(editor->toPlainText(), buffer);
+        save->trigger(); settle(service);
+        QCOMPARE(readFile(source), QByteArray("outside editor\n")); QVERIFY(page->hasUnsavedChanges());
+        QCOMPARE(editor->toPlainText(), buffer);
+        // Closing a non-tray window must go through the same unsaved guard.
+        window.close(); dialog = page->findChild<QDialog *>("previewUnsavedDialog"); QVERIFY(dialog);
+        dialog->done(QMessageBox::Cancel); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(window.isVisible());
+        QEvent quitEvent(QEvent::Quit); QApplication::sendEvent(qApp, &quitEvent);
+        dialog = page->findChild<QDialog *>("previewUnsavedDialog"); QVERIFY(dialog);
+        dialog->done(QMessageBox::Cancel); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        history->click(); dialog = page->findChild<QDialog *>("previewUnsavedDialog"); QVERIFY(dialog); dialog->done(QMessageBox::Discard);
+        settle(service); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(!page->hasUnsavedChanges()); QCOMPARE(readFile(source), QByteArray("outside editor\n"));
+    }
+    void sourcePreviewCreatesFilesAndConfirmsPermanentDeletion()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto root = dir.path() + "/source";
+        writeFile(root + "/existing.txt", "keep"); QVERIFY(service.addLocal(root).success);
+        const auto id = service.idForSource(root);
+        FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen); window.show(); window.navigate({PageId::Preview, id}); settle(service);
+        auto *page = window.findChild<HomePagePreviewPage *>();
+        auto *newAction = page->findChild<QAction *>("newSourceEntryAction"); QVERIFY(newAction->isEnabled());
+        QTimer::singleShot(0, [] {
+            if (auto *input = qobject_cast<QInputDialog *>(QApplication::activeModalWidget())) {
+                input->setTextValue("new.txt"); input->accept();
+            } else if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget())) {
+                if (auto *edit = dialog->findChild<QLineEdit *>()) edit->setText("new.txt");
+                dialog->accept();
+            }
+        });
+        newAction->menu()->actions().first()->trigger();
+        QVERIFY(page->hasUnsavedChanges()); QVERIFY(!QFileInfo::exists(root + "/new.txt"));
+        auto *editor = page->findChild<PreviewTextEdit *>("editor"); editor->insertPlainText("new content");
+        page->findChild<QAction *>("saveSourceAction")->trigger(); settle(service);
+        QCOMPARE(readFile(root + "/new.txt"), QByteArray("new content"));
+        QCOMPARE(page->rememberedPath(id), QString("new.txt"));
+        const auto openDelete = [&] {
+            page->findChild<QAction *>("manageSourceEntryAction")->trigger();
+            auto *menu = page->findChild<QMenu *>("sourceEntryMenu");
+            QVERIFY(menu);
+            menu->actions().last()->trigger();
+            menu->close();
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+            settle(service);
+        };
+        openDelete();
+        auto *dialog = page->findChild<QDialog *>("previewDeleteDialog"); QVERIFY(dialog && dialog->isVisible());
+        auto *label = dialog->findChild<QLabel *>(); QVERIFY(label && label->text().contains("不会移入废纸篓"));
+        writeFile(root + "/new.txt", "changed after confirmation");
+        dialog->done(QMessageBox::Yes); settle(service); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCOMPARE(readFile(root + "/new.txt"), QByteArray("changed after confirmation"));
+        openDelete(); dialog = page->findChild<QDialog *>("previewDeleteDialog"); QVERIFY(dialog);
+        dialog->done(QMessageBox::Yes); settle(service); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(!QFileInfo::exists(root + "/new.txt")); QCOMPARE(page->rememberedPath(id), QString());
+        QCOMPARE(readFile(root + "/existing.txt"), QByteArray("keep"));
+    }
+    void sourcePreviewMarkdownImagesAndLimits()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto root = dir.path() + "/docs";
+        writeFile(root + "/README.md", "# Local preview\n\n![local](image.png)\n\n![remote](https://invalid.example/image.png)\n\n<img src=\"file:///outside\">\n");
+        QImage fixture(320, 180, QImage::Format_RGB32); fixture.fill(QColor("#3b82f6")); QVERIFY(fixture.save(root + "/image.png"));
+        QVERIFY(service.addLocal(root).success);
+        const auto id = service.idForSource(root);
+        HomePagePreviewPage page(&service); page.setAttribute(Qt::WA_DontShowOnScreen); page.resize(800, 560); page.show();
+        page.setBackup(id, "README.md"); settle(service);
+        auto *markdown = page.findChild<PreviewMarkdown *>("markdown"); QVERIFY(markdown->isVisible());
+        QCOMPARE(qvariant_cast<QImage>(markdown->document()->resource(QTextDocument::ImageResource, QUrl::fromLocalFile(root + "/image.png"))).size(), fixture.size());
+        QVERIFY(!markdown->document()->resource(QTextDocument::ImageResource, QUrl("https://invalid.example/image.png")).isValid());
+        QVERIFY(!markdown->localTarget(QUrl::fromLocalFile(dir.path() + "/outside")).result.success);
+        auto *mode = page.findChild<QToolButton *>("markdownButton"); mode->click();
+        QVERIFY(page.findChild<PreviewTextEdit *>("editor")->isVisible());
+        page.deactivate(); page.setBackup(id, "README.md"); settle(service); QVERIFY(mode->isChecked());
+        page.setBackup(id, "image.png"); settle(service);
+        QVERIFY(page.findChild<QScrollArea *>("imageScroll")->isVisible());
+        page.findChild<QPushButton *>("actualButton")->click();
+        QCOMPARE(page.findChild<QLabel *>("imageLabel")->pixmap().size(), fixture.size());
+        const auto output = qEnvironmentVariable("ZC_PREVIEW_SCREENSHOTS");
+        if (!output.isEmpty()) { QDir().mkpath(output); QVERIFY(page.grab().save(output + "/preview-image.png")); }
+        QFile large(root + "/large.bin"); QVERIFY(large.open(QIODevice::WriteOnly)); QVERIFY(large.resize(SourcePreview::ImageLimit + 1)); large.close();
+        page.setBackup(id, "large.bin"); settle(service);
+        QVERIFY(page.findChild<QLabel *>("notice")->text().contains("上限"));
+        QVERIFY(!page.findChild<QAction *>("editSourceAction")->isEnabled());
+        page.deactivate();
+    }
+    void sourcePreviewNavigationAndRendering()
+    {
+        TestDirectory dir;
+        TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/示例工程";
+        writeFile(source + "/docs/README.md", "# Preview\n\nLocal **Markdown**.\n");
+        writeFile(source + "/main.cpp", "int main() {\n    return 0;\n}\n");
+        writeFile(source + "/.hidden", "hidden");
+        QVERIFY(service.addLocal(source).success);
+        FakeAi gateway;
+        SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen); window.show();
+        auto *sidebar = window.findChild<QListView *>("sidebarList");
+        emit sidebar->clicked(sidebar->model()->index(0, 0)); settle(service);
+        auto *page = window.findChild<HomePagePreviewPage *>();
+        QCOMPARE(window.findChild<QStackedWidget *>("pages")->currentWidget(), page);
+        QVERIFY(window.findChild<QToolButton *>("previewTab")->isChecked());
+        auto *files = page->findChild<QTreeView *>("files");
+        QCOMPARE(files->model()->rowCount(), 3);
+        const auto output = qEnvironmentVariable("ZC_PREVIEW_SCREENSHOTS");
+        if (!output.isEmpty()) QDir().mkpath(output);
+        for (auto theme : {ThemeMode::Light, ThemeMode::Dark})
+        {
+            m_theme->setMode(theme);
+            for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+            {
+                window.resize(size); QTest::qWait(200);
+                if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/preview-%1-%2.png").arg(theme == ThemeMode::Light ? "light" : "dark").arg(size.width())));
+            }
+        }
+        Route file{PageId::Preview, service.idForSource(source)}; file.path = "docs/README.md";
+        window.navigate(file); settle(service);
+        QCOMPARE(page->findChild<PreviewTextEdit *>("editor")->toPlainText(), QString("# Preview\n\nLocal **Markdown**.\n"));
+        QVERIFY(page->findChild<PreviewMarkdown *>("markdown")->isVisible());
+        window.navigate({PageId::History, file.backupId}); settle(service);
+        window.findChild<QToolButton *>("previewTab")->click(); settle(service);
+        QCOMPARE(page->rememberedPath(file.backupId), file.path);
+        QVERIFY(page->findChild<PreviewMarkdown *>("markdown")->isVisible());
+        m_theme->setMode(ThemeMode::Light);
     }
     void desktopIntegrationFilesAreOwnedAndAtomic()
     {
@@ -713,7 +883,7 @@ class Regression : public QObject
             const auto index = view->model()->index(row, 0);
             QTest::mouseClick(view->viewport(), Qt::LeftButton, {}, view->visualRect(index).center());
             QCOMPARE(qvariant_cast<Route>(routes.last().first()).backupId, index.data(BackupListModel::IdRole).toString());
-            QCOMPARE(qvariant_cast<Route>(routes.last().first()).page, PageId::History);
+            QCOMPARE(qvariant_cast<Route>(routes.last().first()).page, PageId::Preview);
         }
         auto *source = page.findChild<BackupListModel *>();
         auto items = service.trackedItems();
@@ -1578,7 +1748,7 @@ class Regression : public QObject
         window.navigate({});
         settle(f.service);
 
-        // Sidebar list item clicking navigates to PageId::History, not PageId::Conflict
+        // Opening an object lands on its local preview, including paused objects.
         auto *sidebar = window.findChild<QListView *>("sidebarList");
         QVERIFY(sidebar);
         auto *model = sidebar->model();
@@ -1590,7 +1760,7 @@ class Regression : public QObject
         settle(f.service);
 
         auto *pages = window.findChild<QStackedWidget *>("pages");
-        auto *historyPage = window.findChild<HomePageBackupPage *>();
+        auto *historyPage = window.findChild<HomePagePreviewPage *>();
         auto *conflictPage = window.findChild<HomePageConflictPage *>();
         QCOMPARE(pages->currentWidget(), historyPage);
         QVERIFY(!conflictPage->isVisible());
@@ -1608,10 +1778,10 @@ class Regression : public QObject
         QVERIFY(!badge->isVisible());
         QVERIFY(!overviewTab->isVisible());
 
-        // Returning to History shows badge again
+        // Returning from a conflict opened outside History lands on Overview.
         window.findChild<QToolButton *>("returnHistoryButton")->click();
         settle(f.service);
-        QCOMPARE(pages->currentWidget(), historyPage);
+        QCOMPARE(pages->currentWidget(), window.findChild<HomePageDashboardPage *>());
         QVERIFY(badge->isVisible());
         QVERIFY(overviewTab->isVisible());
 

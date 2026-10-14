@@ -1,4 +1,5 @@
 #pragma once
+#include "source_preview.h"
 #include "backup_catalog.h"
 #include "backup_dependencies.h"
 #include "backup_git.h"
@@ -28,6 +29,12 @@ class BackupEngine
     OperationResult addLocal(const QString &source);
     BackupResult<std::shared_ptr<PendingBackup>> prepareBackup(const QString &id, bool changedOnly = false, const RestoreRequest *resolution = nullptr);
     OperationResult finishBackup(std::shared_ptr<PendingBackup> pending, const QString &message, bool cancelled = false);
+    OperationResult saveSourceFile(const SourceSaveRequest &request);
+    BackupResult<SourceMutationRequest> prepareSourceMutation(const SourceLocation &location, SourceMutationKind kind, const QString &name);
+    OperationResult applySourceMutation(const SourceMutationRequest &request);
+    BackupResult<SourceDirectory> sourceDirectory(const QString &id, const QString &path);
+    BackupResult<SourceContent> sourceContent(const QString &id, const QString &path);
+    BackupResult<SourceChanges> sourceChanges(const QString &id, const QStringList &paths);
     BackupResult<BackupStats> statistics(const QString &id);
     BackupResult<QVector<Revision>> history(const QString &id);
     BackupResult<DiffData> diff(const QString &id, const QString &commit);
@@ -87,7 +94,10 @@ class BackupEngine
     QMap<QString, ImportSession> m_imports;
     QMap<QString, quint64> m_generations;
     QStringList m_previews;
+    QMap<QString, Revision> m_sourceChanges;
     std::shared_ptr<PendingBackup> m_pending;
+    BackupResult<BackupRecord> sourceRecord(const SourceLocation &location);
+    BackupResult<QMap<QString, QByteArray>> sourceSnapshot(const QString &path);
     GitRepository repository(const QString &id) const;
     BackupResult<BackupRecord> require(const QString &id, bool writing = false, bool allowPending = false);
     OperationResult attention(BackupRecord record, const QString &reason);

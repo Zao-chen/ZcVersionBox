@@ -943,6 +943,34 @@
             </widget>
            </item>
            <item>
+            <widget class="QToolButton" name="previewTab">
+             <property name="text">
+              <string>预览</string>
+             </property>
+             <property name="toolTip">
+              <string>预览</string>
+             </property>
+             <property name="accessibleName">
+              <string>预览</string>
+             </property>
+             <property name="autoRaise">
+              <bool>true</bool>
+             </property>
+             <property name="focusPolicy">
+              <enum>Qt::TabFocus</enum>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>28</width>
+               <height>32</height>
+              </size>
+             </property>
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
             <widget class="QToolButton" name="historyTab">
              <property name="text">
               <string>历史版本</string>

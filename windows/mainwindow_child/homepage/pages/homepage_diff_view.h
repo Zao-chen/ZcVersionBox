@@ -4,6 +4,7 @@
 
 class QTextBrowser;
 class QPlainTextEdit;
+class HomePageTextEdit;
 class QLabel;
 class QStackedWidget;
 class QSyntaxHighlighter;
@@ -47,7 +48,7 @@ class HomePageDiffView : public QWidget
     QWidget *m_visualPage{nullptr};
     QTextBrowser *m_visualBrowser{nullptr};
     QWidget *m_rawPage{nullptr};
-    QPlainTextEdit *m_rawEditor{nullptr};
+    HomePageTextEdit *m_rawEditor{nullptr};
     QSyntaxHighlighter *m_highlighter{nullptr};
     QWidget *m_imagePage{nullptr};
     QLabel *m_imageTitle{nullptr};

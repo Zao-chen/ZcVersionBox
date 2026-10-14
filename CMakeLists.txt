@@ -103,12 +103,14 @@ add_library(zc_services STATIC
     utils/backup_merge.h utils/backup_merge.cpp
     utils/backup_engine_resolution.cpp
     utils/backup_engine_tags.cpp utils/backup_git_tags.cpp
+    utils/source_preview.h utils/source_preview.cpp utils/backup_engine_source.cpp
     utils/backup_engine.h utils/backup_engine.cpp
     utils/aigateway.h utils/aigateway.cpp
     utils/settingsservice.h utils/settingsservice.cpp
     utils/update_service.h utils/update_service.cpp
     utils/aiconfighelper.h utils/aiconfighelper.cpp
     utils/aicommitmessagehelper.h utils/aicommitmessagehelper.cpp
+    utils/code_text_style.h utils/code_text_style.cpp
     utils/diff_parser.h utils/diff_parser.cpp)
 target_include_directories(zc_services PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(zc_services PUBLIC Qt6::Core Qt6::Gui Qt6::Network ZcAiLib::ZcAiLib)
@@ -127,6 +129,9 @@ add_library(zc_ui STATIC
     windows/mainwindow_child/homepage/homepage.h windows/mainwindow_child/homepage/homepage.cpp windows/mainwindow_child/homepage/homepage.ui
     windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h windows/mainwindow_child/homepage/pages/homepage_page_dashboard.cpp windows/mainwindow_child/homepage/pages/homepage_page_dashboard.ui
     windows/mainwindow_child/homepage/pages/homepage_page_branches.h windows/mainwindow_child/homepage/pages/homepage_page_branches.cpp windows/mainwindow_child/homepage/pages/homepage_page_branches.ui
+    windows/mainwindow_child/homepage/pages/homepage_preview_widgets.h windows/mainwindow_child/homepage/pages/homepage_preview_widgets.cpp
+    windows/mainwindow_child/homepage/pages/homepage_text_edit.h windows/mainwindow_child/homepage/pages/homepage_text_edit.cpp
+    windows/mainwindow_child/homepage/pages/homepage_page_preview.h windows/mainwindow_child/homepage/pages/homepage_page_preview.cpp windows/mainwindow_child/homepage/pages/homepage_page_preview.ui
     windows/mainwindow_child/homepage/pages/homepage_page_backup_tags.cpp
     windows/mainwindow_child/homepage/pages/homepage_history_graph.h windows/mainwindow_child/homepage/pages/homepage_history_graph.cpp
     windows/mainwindow_child/homepage/pages/homepage_page_backup.h windows/mainwindow_child/homepage/pages/homepage_page_backup.cpp windows/mainwindow_child/homepage/pages/homepage_page_backup.ui
