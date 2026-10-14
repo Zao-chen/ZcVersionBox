@@ -8,34 +8,47 @@
    <property name="rightMargin"><number>24</number></property>
    <property name="bottomMargin"><number>16</number></property>
    <property name="spacing"><number>12</number></property>
-   <item><widget class="QScrollArea" name="breadcrumbScroll">
-    <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
-    <property name="widgetResizable"><bool>true</bool></property>
-    <property name="maximumHeight"><number>48</number></property>
-    <property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
-    <widget class="QWidget" name="breadcrumbHost"><layout class="QHBoxLayout" name="breadcrumbLayout">
+   <item><widget class="QWidget" name="toolbar"><layout class="QHBoxLayout" name="toolbarLayout">
+    <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+    <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+    <property name="spacing"><number>6</number></property>
+    <item><widget class="QScrollArea" name="breadcrumbScroll">
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+       <horstretch>1</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
+     <property name="widgetResizable"><bool>true</bool></property>
+     <property name="maximumHeight"><number>36</number></property>
+     <property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+     <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+     <widget class="QWidget" name="breadcrumbHost"><layout class="QHBoxLayout" name="breadcrumbLayout">
+      <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+      <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+      <property name="spacing"><number>2</number></property>
+     </layout></widget>
+    </widget></item>
+    <item><widget class="QWidget" name="actionHost"><layout class="QHBoxLayout" name="actionLayout">
      <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
      <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
-     <property name="spacing"><number>2</number></property>
-    </layout></widget>
-   </widget></item>
-   <item><widget class="QLabel" name="statusLabel"><property name="text"><string/></property><property name="wordWrap"><bool>true</bool></property><property name="textFormat"><enum>Qt::PlainText</enum></property></widget></item>
-   <item><widget class="QWidget" name="fileHeader"><layout class="QHBoxLayout" name="fileHeaderLayout">
-    <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
-    <item><widget class="QLabel" name="fileInfo"><property name="text"><string/></property><property name="textFormat"><enum>Qt::PlainText</enum></property></widget></item>
-    <item><spacer name="fileSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property></spacer></item>
-    <item><widget class="QToolButton" name="markdownButton"><property name="text"><string>源码</string></property><property name="checkable"><bool>true</bool></property></widget></item>
+     <property name="spacing"><number>6</number></property>
+     <item><widget class="QToolButton" name="markdownButton"><property name="text"><string>源码</string></property><property name="checkable"><bool>true</bool></property></widget></item>
+    </layout></widget></item>
    </layout></widget></item>
-   <item><widget class="QPushButton" name="commitButton"><property name="text"><string>正在读取提交信息…</string></property><property name="flat"><bool>true</bool></property></widget></item>
+   <item><widget class="QLabel" name="statusLabel"><property name="text"><string/></property><property name="wordWrap"><bool>true</bool></property><property name="textFormat"><enum>Qt::PlainText</enum></property></widget></item>
    <item><widget class="QWidget" name="findBar"><layout class="QHBoxLayout" name="findLayout">
-    <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+    <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+    <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
     <item><widget class="QLineEdit" name="findEdit"><property name="placeholderText"><string>查找文件内容</string></property></widget></item>
     <item><widget class="QToolButton" name="findPrevious"><property name="text"><string>上一个</string></property></widget></item>
     <item><widget class="QToolButton" name="findNext"><property name="text"><string>下一个</string></property></widget></item>
     <item><widget class="QToolButton" name="findClose"><property name="text"><string>关闭</string></property></widget></item>
    </layout></widget></item>
    <item><widget class="QWidget" name="imageTools"><layout class="QHBoxLayout" name="imageToolsLayout">
-    <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+    <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+    <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
     <item><widget class="QPushButton" name="fitButton"><property name="text"><string>适应窗口</string></property></widget></item>
     <item><widget class="QPushButton" name="actualButton"><property name="text"><string>原始大小</string></property></widget></item>
     <item><widget class="QPushButton" name="zoomOut"><property name="text"><string>−</string></property></widget></item>
@@ -44,8 +57,9 @@
    </layout></widget></item>
    <item><widget class="QStackedWidget" name="contentStack">
     <widget class="QWidget" name="directoryPage"><layout class="QVBoxLayout" name="directoryLayout">
-     <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
-     <item><widget class="QTreeView" name="files"><property name="rootIsDecorated"><bool>false</bool></property><property name="uniformRowHeights"><bool>true</bool></property><property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property><property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property><property name="contextMenuPolicy"><enum>Qt::CustomContextMenu</enum></property></widget></item>
+     <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+     <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+     <item><widget class="QTreeView" name="files"><property name="rootIsDecorated"><bool>false</bool></property><property name="headerHidden"><bool>true</bool></property><property name="uniformRowHeights"><bool>true</bool></property><property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property><property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property><property name="contextMenuPolicy"><enum>Qt::CustomContextMenu</enum></property></widget></item>
     </layout></widget>
     <widget class="PreviewTextEdit" name="editor"/>
     <widget class="PreviewMarkdown" name="markdown"/>

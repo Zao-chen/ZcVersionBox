@@ -34,11 +34,11 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
 {
     ui->setupUi(this);
     ui->pageLayout->setStretch(ui->pageLayout->indexOf(ui->contentStack), 1);
-    ui->pageLayout->setAlignment(ui->commitButton, Qt::AlignLeft);
     ui->statusLabel->hide();
     m_model.setHorizontalHeaderLabels({"名称", "最近提交说明", "提交时间"});
     ui->files->setModel(&m_model);
     UiStyle::flatView(ui->files);
+    ui->files->setHeaderHidden(true);
     ui->files->setAccessibleName("本地文件列表");
     ui->files->header()->setStretchLastSection(false);
     ui->files->header()->setSectionResizeMode(0, QHeaderView::Interactive);
@@ -66,12 +66,16 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     m_save = UiStyle::action(this, "saveSourceAction", "保存");
     m_cancel = UiStyle::action(this, "cancelSourceEditAction", "取消");
     m_manage = UiStyle::action(this, "manageSourceEntryAction", "更多", "more");
-    for (auto *action : {m_edit, m_save, m_cancel, m_manage})
+    for (auto *action : {m_new, m_open, m_edit, m_save, m_cancel, m_manage})
     {
-        auto *button = UiStyle::toolButton(ui->fileHeader, action);
+        auto *button = UiStyle::toolButton(ui->actionHost, action);
         button->setObjectName(action->objectName() + "Button");
-        ui->fileHeaderLayout->addWidget(button);
-        connect(action, &QAction::changed, button, [button, action] { button->setVisible(action->isVisible()); });
+        if (action == m_new) button->setPopupMode(QToolButton::InstantPopup);
+        ui->actionLayout->addWidget(button);
+        connect(action, &QAction::changed, button, [button, action] {
+            button->setVisible(action->isVisible());
+            button->setEnabled(action->isEnabled());
+        });
     }
     connect(m_edit, &QAction::triggered, this, &HomePagePreviewPage::beginEdit);
     connect(m_save, &QAction::triggered, this, [this] { save(); });
@@ -102,10 +106,6 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     connect(ui->files, &QTreeView::activated, this, [this](const QModelIndex &index) {
         openPath(index.siblingAtColumn(0).data(PathRole).toString());
     });
-    connect(ui->commitButton, &QPushButton::clicked, this, [this] {
-        const auto revision = m_changes.value(m_path);
-        if (!revision.hash.isEmpty()) emit navigate({PageId::History, m_id, revision.hash});
-    });
     connect(ui->markdownButton, &QToolButton::toggled, this, &HomePagePreviewPage::showContent);
     connect(ui->markdown, &QTextBrowser::anchorClicked, this, [this](const QUrl &url) {
         if (url.toString().startsWith('#')) { ui->markdown->scrollToAnchor(url.fragment()); return; }
@@ -127,7 +127,7 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     });
     m_spinner = new oclero::qlementine::LoadingSpinner(this);
     m_spinner->setFixedSize(16, 16);
-    ui->fileHeaderLayout->insertWidget(0, m_spinner);
+    ui->actionLayout->insertWidget(0, m_spinner);
     m_refreshTimer.setSingleShot(true); m_refreshTimer.setInterval(250);
     connect(&m_refreshTimer, &QTimer::timeout, this, &HomePagePreviewPage::refresh);
     connect(&m_watcher, &BackupDirectoryWatcher::pathsChanged, this, [this] { if (m_active) m_refreshTimer.start(); });
@@ -139,14 +139,12 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     setLoading(false);
 }
 HomePagePreviewPage::~HomePagePreviewPage() { deactivate(); }
-QList<QAction *> HomePagePreviewPage::toolbarActions() const { return {m_new, m_open, m_refresh}; }
+QList<QAction *> HomePagePreviewPage::toolbarActions() const { return {m_refresh}; }
 void HomePagePreviewPage::refreshTheme()
 {
     ui->editor->refreshTheme();
     UiStyle::text(ui->files, UiStyle::FontRole::Body);
     UiStyle::text(ui->statusLabel, UiStyle::FontRole::Caption, true);
-    UiStyle::text(ui->fileInfo, UiStyle::FontRole::Caption, true);
-    UiStyle::text(ui->commitButton, UiStyle::FontRole::Caption, true);
     for (auto *action : {m_open, m_refresh, m_new, m_edit, m_manage}) action->setIcon(UiStyle::icon(action->property("iconName").toString()));
     for (int row = 0; row < m_model.rowCount(); ++row)
         m_model.item(row)->setIcon(UiStyle::icon(m_directory.children.value(row).directory ? "folder" : "file"));
@@ -216,8 +214,8 @@ void HomePagePreviewPage::refresh()
     const auto request = ++m_request;
     ++m_changesRequest;
     setLoading(true); m_valid = false; m_content = {}; m_changes.clear(); m_changesHead.clear();
-    ui->fileHeader->show(); ui->fileInfo->setText("本地最新内容"); ui->statusLabel->clear(); ui->statusLabel->hide();
-    ui->imageTools->hide(); ui->markdownButton->hide(); ui->commitButton->hide();
+    ui->statusLabel->clear(); ui->statusLabel->hide();
+    ui->imageTools->hide(); ui->markdownButton->hide();
     ui->notice->setText("正在读取源内容…"); ui->contentStack->setCurrentWidget(ui->notice);
     breadcrumbs();
     m_tasks.append(m_service->sourceDirectory(m_id, m_path, this, [this, request](const BackupResult<SourceDirectory> &reply) {
@@ -229,8 +227,6 @@ void HomePagePreviewPage::refresh()
         auto watched = QStringList{QFileInfo(absolute).absolutePath()};
         if (m_directory.entry.directory) watched.append(absolute);
         watched.removeDuplicates(); m_watcher.addPaths(watched);
-        ui->commitButton->show();
-        ui->commitButton->setText("正在读取提交信息…"); ui->commitButton->setEnabled(false);
         loadChanges();
         if (m_directory.entry.directory)
         {
@@ -242,14 +238,12 @@ void HomePagePreviewPage::refresh()
                 name->setSizeHint(QSize(0, UiStyle::rowHeight(40, ui->files->font())));
                 m_model.appendRow({name, new QStandardItem(entry.link ? "链接不支持预览" : "正在读取…"), new QStandardItem(entry.link ? "—" : "")});
             }
-            ui->fileInfo->setText(QString("本地最新内容 · %1 个项目").arg(m_directory.children.size()));
             if (m_directory.children.isEmpty()) { ui->notice->setText("此文件夹为空"); ui->contentStack->setCurrentWidget(ui->notice); }
             else ui->contentStack->setCurrentWidget(ui->directoryPage);
             setLoading(false); restoreScroll();
         }
         else
         {
-            ui->fileInfo->setText(QString("本地最新内容 · %1").arg(formatBytes(m_directory.entry.size)));
             m_tasks.append(m_service->sourceContent(m_id, m_path, this, [this, request](const BackupResult<SourceContent> &content) {
                 if (!m_active || request != m_request) return;
                 if (!content.result.success) { ui->notice->setText(content.result.message); setLoading(false); return; }
@@ -273,7 +267,6 @@ void HomePagePreviewPage::loadChanges(int offset)
         if (!m_active || request != m_request || changesRequest != m_changesRequest) return;
         if (!reply.result.success)
         {
-            ui->commitButton->setText("提交信息暂不可用"); ui->commitButton->setEnabled(false);
             for (int row = 0; row < m_model.rowCount(); ++row)
                 if (!m_changes.contains(m_model.item(row)->data(PathRole).toString())) m_model.item(row, 1)->setText("暂不可用");
             return;
@@ -286,11 +279,6 @@ void HomePagePreviewPage::loadChanges(int offset)
 }
 void HomePagePreviewPage::updateChanges()
 {
-    const auto revision = m_changes.value(m_path);
-    const auto caption = revision.hash.isEmpty() ? QString("暂无备份记录") : revision.message + "  ·  " + relativeTime(revision.committedAt);
-    ui->commitButton->setText(ui->commitButton->fontMetrics().elidedText(caption, Qt::ElideRight, qMax(120, width() - 80)));
-    ui->commitButton->setToolTip(revision.committedAt.toLocalTime().toString("yyyy-MM-dd HH:mm:ss"));
-    ui->commitButton->setEnabled(!revision.hash.isEmpty());
     for (int row = 0; row < m_model.rowCount(); ++row)
     {
         const auto path = m_model.item(row)->data(PathRole).toString();
@@ -379,15 +367,18 @@ void HomePagePreviewPage::updateActions()
     const auto original = m_content.location.context;
     const bool contextMatches = !m_editing || (context.ref == original.ref && context.version == original.version && context.generation == original.generation);
     const bool ready = m_active && m_valid && !m_loading && !m_saving && !m_mutating;
+    const bool isDir = m_directory.entry.directory;
+    m_new->setVisible(isDir && !m_editing);
+    m_new->setEnabled(ready && tracking && isDir && !m_editing);
+    m_open->setVisible(!m_editing);
     m_open->setEnabled(ready && !m_newFile);
     m_refresh->setEnabled(m_active && !m_loading && !m_saving && !m_mutating);
-    m_new->setEnabled(ready && tracking && m_directory.entry.directory && !m_editing);
-    m_edit->setVisible(!m_directory.entry.directory && !m_editing);
+    m_edit->setVisible(!isDir && !m_editing);
     m_edit->setEnabled(ready && tracking && m_content.editable);
     m_save->setVisible(m_editing); m_cancel->setVisible(m_editing);
     m_save->setEnabled(ready && tracking && contextMatches && hasUnsavedChanges());
     m_cancel->setEnabled(!m_saving && !m_mutating);
-    m_manage->setVisible(!m_directory.entry.directory && !m_editing && !m_path.isEmpty());
+    m_manage->setVisible(!isDir && !m_editing && !m_path.isEmpty());
     m_manage->setEnabled(ready && tracking && m_directory.location.rootDirectory);
     ui->editor->setReadOnly(!m_editing || m_saving || m_mutating);
 }
@@ -457,10 +448,9 @@ void HomePagePreviewPage::createEntry(bool directory)
     m_editing = m_newFile = true;
     m_directory.entry.directory = false;
     ui->editor->clear(); ui->editor->document()->setModified(false);
-    ui->commitButton->hide(); ui->markdownButton->hide(); ui->imageTools->hide();
-    ui->fileInfo->setText("新文件 · " + name);
+    ui->markdownButton->hide(); ui->imageTools->hide();
     ui->contentStack->setCurrentWidget(ui->editor);
-    status("首次保存后创建文件"); updateActions(); ui->editor->setFocus();
+    status("新文件 · " + name + "；首次保存后创建文件"); updateActions(); ui->editor->setFocus();
 }
 void HomePagePreviewPage::entryMenu(const SourceLocation &location, const QPoint &position)
 {
