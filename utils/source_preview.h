@@ -55,7 +55,7 @@ struct SourceSaveRequest
     QString text;
     bool create{false};
 };
-enum class SourceMutationKind { CreateDirectory, Rename, Delete };
+enum class SourceMutationKind { MakeDirectory, Rename, Delete };
 struct SourceMutationRequest
 {
     SourceLocation location;

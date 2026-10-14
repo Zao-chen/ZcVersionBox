@@ -449,7 +449,7 @@ void HomePagePreviewPage::createEntry(bool directory)
     const auto name = QInputDialog::getText(this, directory ? "新建文件夹" : "新建文件", "名称", QLineEdit::Normal, directory ? QString() : "untitled.txt", &ok);
     if (!ok) return;
     if (!validSourceEntryName(name)) { emit notification(OperationResult::fail("名称无效", "请输入单个名称，不要包含路径或保留名称。")); return; }
-    if (directory) { mutateEntry(location, SourceMutationKind::CreateDirectory, name); return; }
+    if (directory) { mutateEntry(location, SourceMutationKind::MakeDirectory, name); return; }
     auto target = location; target.path = target.path.isEmpty() ? name : target.path + '/' + name;
     const auto checked = sourcePreviewPath(target, false);
     if (!checked.result.success || QFileInfo::exists(checked.value)) { emit notification(OperationResult::fail("无法新建文件", "路径无效或同名项目已存在。")); return; }
@@ -493,7 +493,7 @@ void HomePagePreviewPage::mutateEntry(const SourceLocation &location, SourceMuta
         const auto apply = [this, request] {
             m_service->applySourceMutation(request, this, [this, request](const OperationResult &result) {
                 m_mutating = false; emit notification(result);
-                if (result.success && m_path == request.location.path && request.kind != SourceMutationKind::CreateDirectory)
+                if (result.success && m_path == request.location.path && request.kind != SourceMutationKind::MakeDirectory)
                 {
                     auto parent = request.location.path.section('/', 0, -2);
                     if (!request.location.path.contains('/')) parent.clear();

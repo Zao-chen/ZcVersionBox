@@ -311,8 +311,8 @@ class BackupCoreRegression : public QObject
         };
         const auto apply = [&](const SourceMutationRequest &request) { return awaitBackup<OperationResult>([&](auto f) { service.applySourceMutation(request, &service, f); }); };
         QVERIFY(!prepare(where({}), SourceMutationKind::Delete).result.success);
-        QVERIFY(!prepare(where({}), SourceMutationKind::CreateDirectory, "../escape").result.success);
-        auto created = prepare(where({}), SourceMutationKind::CreateDirectory, "new folder"); CHECK_OK(created.result); CHECK_OK(apply(created.value));
+        QVERIFY(!prepare(where({}), SourceMutationKind::MakeDirectory, "../escape").result.success);
+        auto created = prepare(where({}), SourceMutationKind::MakeDirectory, "new folder"); CHECK_OK(created.result); CHECK_OK(apply(created.value));
         QVERIFY(QFileInfo(root + "/new folder").isDir()); QVERIFY(!apply(created.value).success);
         auto target = where({}); target.path = "new folder/new.txt";
         SourceSaveRequest newFile{target, {}, "created\n", true};

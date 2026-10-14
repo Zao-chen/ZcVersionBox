@@ -216,14 +216,14 @@ BackupResult<SourceMutationRequest> BackupEngine::prepareSourceMutation(const So
 {
     const auto record = sourceRecord(where);
     if (!record.result.success) return {record.result};
-    if (!where.rootDirectory || (where.path.isEmpty() && kind != SourceMutationKind::CreateDirectory))
+    if (!where.rootDirectory || (where.path.isEmpty() && kind != SourceMutationKind::MakeDirectory))
         return {OperationResult::fail("不能修改追踪根目录", "文件管理仅限追踪文件夹内部。")};
     const auto resolved = sourcePreviewPath(where);
     if (!resolved.result.success) return {resolved.result};
     if (kind != SourceMutationKind::Delete && !validSourceEntryName(name))
         return {OperationResult::fail("名称无效", "请输入单个文件或文件夹名称，不要包含路径或保留名称。")};
     SourceMutationRequest request{where, kind, name, {}};
-    if (kind == SourceMutationKind::CreateDirectory)
+    if (kind == SourceMutationKind::MakeDirectory)
     {
         if (!QFileInfo(resolved.value).isDir()) return {OperationResult::fail("不是目录", {})};
         request.snapshot.insert("parent", sourcePreviewIdentity(resolved.value));
@@ -236,7 +236,7 @@ BackupResult<SourceMutationRequest> BackupEngine::prepareSourceMutation(const So
     }
     if (kind != SourceMutationKind::Delete)
     {
-        const auto parent = kind == SourceMutationKind::CreateDirectory ? resolved.value : QFileInfo(resolved.value).absolutePath();
+        const auto parent = kind == SourceMutationKind::MakeDirectory ? resolved.value : QFileInfo(resolved.value).absolutePath();
         if (BackupFiles::exists(QDir(parent).filePath(name))) return {OperationResult::fail("同名项目已存在", name)};
     }
     return {OperationResult::ok({}), request};
@@ -251,7 +251,7 @@ OperationResult BackupEngine::applySourceMutation(const SourceMutationRequest &r
     if (!resolved.result.success) return resolved.result;
     const auto path = resolved.value;
     if (m_cancel && m_cancel->load()) return OperationResult::cancel("操作已取消");
-    if (request.kind == SourceMutationKind::CreateDirectory)
+    if (request.kind == SourceMutationKind::MakeDirectory)
         return QDir(path).mkdir(request.name) ? OperationResult::ok("文件夹已创建") : OperationResult::fail("创建失败", "请检查权限或同名项目。");
     if (request.kind == SourceMutationKind::Rename)
     {
