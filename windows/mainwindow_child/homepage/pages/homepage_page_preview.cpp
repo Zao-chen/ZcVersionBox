@@ -127,9 +127,11 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
 {
     ui->setupUi(this);
     ui->breadcrumbLayout->setAlignment(Qt::AlignVCenter);
-    ui->pageLayout->setSpacing(4);
+    ui->pageLayout->setSpacing(0);
     ui->pageLayout->setStretch(ui->pageLayout->indexOf(ui->contentStack), 1);
+    ui->statusLabel->setContentsMargins(0, 4, 0, 4);
     ui->statusLabel->hide();
+    ui->markdownButton->setMinimumSize(28, 28);
     m_model.setHorizontalHeaderLabels({"名称", "最近提交说明", "提交时间"});
     ui->files->setModel(&m_model);
     UiStyle::flatView(ui->files);
@@ -165,6 +167,7 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     {
         auto *button = UiStyle::toolButton(ui->actionHost, action);
         button->setObjectName(action->objectName() + "Button");
+        button->setMinimumSize(28, 28);
         if (action == m_new) button->setPopupMode(QToolButton::InstantPopup);
         ui->actionLayout->addWidget(button);
         connect(action, &QAction::changed, button, [button, action] {
