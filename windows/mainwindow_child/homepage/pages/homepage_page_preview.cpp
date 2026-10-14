@@ -1,6 +1,7 @@
 #include "homepage_page_preview.h"
 #include "ui_homepage_page_preview.h"
 #include "windows/mainwindow_presentation.h"
+#include "windows/mainwindow_dialog.h"
 #include <QAction>
 #include <QDir>
 #include <QFileInfo>
@@ -10,7 +11,7 @@
 #include <QShortcut>
 #include <QMenu>
 #include <QMessageBox>
-#include <QInputDialog>
+#include <QPushButton>
 #include <QPointer>
 #include <QClipboard>
 #include <QApplication>
@@ -504,22 +505,42 @@ void HomePagePreviewPage::requestLeave(std::function<void()> continuation)
 {
     if (m_prompt || m_saving || m_mutating) return;
     if (!hasUnsavedChanges()) { m_editing = false; updateActions(); continuation(); return; }
-    auto *dialog = new QMessageBox(QMessageBox::Question, "保存修改", "文件有尚未保存的修改。", QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel, this);
-    dialog->setObjectName("previewUnsavedDialog"); dialog->setTextFormat(Qt::PlainText);
-    dialog->setInformativeText(m_newFile ? m_content.location.path : m_directory.entry.name);
-    dialog->button(QMessageBox::Save)->setText("保存"); dialog->button(QMessageBox::Discard)->setText("放弃"); dialog->button(QMessageBox::Cancel)->setText("取消");
+    auto *dialog = new UiDialog::Dialog(this, QStringLiteral("previewUnsavedDialog"), QStringLiteral("保存修改"));
+    dialog->setMinimumWidth(460);
+    auto *body = new QLabel("文件有尚未保存的修改。\n\n" + (m_newFile ? m_content.location.path : m_directory.entry.name), dialog);
+    body->setTextFormat(Qt::PlainText);
+    body->setWordWrap(true);
+    UiStyle::text(body);
+    dialog->contentLayout()->addWidget(body);
+
+    auto *buttons = dialog->buttonBox(QDialogButtonBox::Save | QDialogButtonBox::Discard | QDialogButtonBox::Cancel);
+    buttons->button(QDialogButtonBox::Save)->setText("保存");
+    buttons->button(QDialogButtonBox::Discard)->setText("放弃");
+    buttons->button(QDialogButtonBox::Cancel)->setText("取消");
+    buttons->button(QDialogButtonBox::Save)->setDefault(true);
+
+    auto *footer = dialog->footerLayout();
     if (!m_service->contains(m_id))
     {
-        dialog->button(QMessageBox::Save)->setEnabled(false);
-        auto *copy = dialog->addButton("复制编辑内容", QMessageBox::ActionRole);
-        connect(copy, &QAbstractButton::clicked, this, [this] { QApplication::clipboard()->setText(ui->editor->toPlainText()); });
+        buttons->button(QDialogButtonBox::Save)->setEnabled(false);
+        auto *copy = new QPushButton("复制编辑内容", dialog);
+        copy->setAutoDefault(false);
+        connect(copy, &QPushButton::clicked, this, [this] { QApplication::clipboard()->setText(ui->editor->toPlainText()); });
+        footer->addWidget(copy);
     }
-    dialog->setDefaultButton(QMessageBox::Save); dialog->setEscapeButton(QMessageBox::Cancel);
-    dialog->setAttribute(Qt::WA_DeleteOnClose); m_prompt = true;
+    footer->addStretch();
+    footer->addWidget(buttons);
+    dialog->prepareAsync();
+    m_prompt = true;
+    connect(buttons, &QDialogButtonBox::clicked, dialog, [dialog, buttons](QAbstractButton *button) {
+        if (button == buttons->button(QDialogButtonBox::Save)) dialog->done(QMessageBox::Save);
+        else if (button == buttons->button(QDialogButtonBox::Discard)) dialog->done(QMessageBox::Discard);
+        else dialog->done(QMessageBox::Cancel);
+    });
     connect(dialog, &QDialog::finished, this, [this, continuation = std::move(continuation)](int choice) {
         m_prompt = false;
-        if (choice == QMessageBox::Save) save(continuation);
-        else if (choice == QMessageBox::Discard) { discard(); continuation(); }
+        if (choice == QMessageBox::Save || choice == static_cast<int>(QDialogButtonBox::Save)) save(continuation);
+        else if (choice == QMessageBox::Discard || choice == static_cast<int>(QDialogButtonBox::Discard)) { discard(); continuation(); }
     });
     dialog->open();
 }
@@ -543,8 +564,8 @@ void HomePagePreviewPage::createEntry(bool directory)
     if (!m_new->isEnabled()) return;
     const auto location = m_directory.location;
     bool ok = false;
-    const auto name = QInputDialog::getText(this, directory ? "新建文件夹" : "新建文件", "名称", QLineEdit::Normal, directory ? QString() : "untitled.txt", &ok);
-    if (!ok) return;
+    const auto name = UiDialog::getText(this, directory ? "新建文件夹" : "新建文件", "名称", directory ? QString() : "untitled.txt", &ok).trimmed();
+    if (!ok || name.isEmpty()) return;
     if (!validSourceEntryName(name)) { emit notification(OperationResult::fail("名称无效", "请输入单个名称，不要包含路径或保留名称。")); return; }
     if (directory) { mutateEntry(location, SourceMutationKind::MakeDirectory, name); return; }
     auto target = location; target.path = target.path.isEmpty() ? name : target.path + '/' + name;
@@ -570,8 +591,8 @@ void HomePagePreviewPage::entryMenu(const SourceLocation &location, const QPoint
     connect(rename, &QAction::triggered, this, [this, location] {
         requestLeave([this, location] {
             bool ok = false;
-            const auto name = QInputDialog::getText(this, "重命名", "新名称", QLineEdit::Normal, QFileInfo(location.path).fileName(), &ok);
-            if (ok) mutateEntry(location, SourceMutationKind::Rename, name);
+            const auto name = UiDialog::getText(this, "重命名", "新名称", QFileInfo(location.path).fileName(), &ok).trimmed();
+            if (ok && !name.isEmpty()) mutateEntry(location, SourceMutationKind::Rename, name);
         });
     });
     connect(remove, &QAction::triggered, this, [this, location] {
@@ -601,13 +622,30 @@ void HomePagePreviewPage::mutateEntry(const SourceLocation &location, SourceMuta
             });
         };
         if (request.kind != SourceMutationKind::Delete) { apply(); return; }
-        auto *dialog = new QMessageBox(QMessageBox::Warning, "永久删除", "确定永久删除此项目及其内部内容？", QMessageBox::Yes | QMessageBox::Cancel, this);
-        dialog->setObjectName("previewDeleteDialog"); dialog->setTextFormat(Qt::PlainText);
-        dialog->setInformativeText(QDir::toNativeSeparators(QDir(request.location.root).filePath(request.location.path)) + "\n\n不会移入废纸篓。未备份的修改无法从历史版本找回。");
-        dialog->button(QMessageBox::Yes)->setText("永久删除"); dialog->button(QMessageBox::Cancel)->setText("取消");
-        dialog->setDefaultButton(QMessageBox::Cancel); dialog->setAttribute(Qt::WA_DeleteOnClose);
+        auto *dialog = new UiDialog::Dialog(this, QStringLiteral("previewDeleteDialog"), QStringLiteral("永久删除"));
+        dialog->setMinimumWidth(480);
+        auto *body = new QLabel(QString("确定永久删除此项目及其内部内容？\n\n%1\n\n不会移入废纸篓。未备份的修改无法从历史版本找回。")
+            .arg(QDir::toNativeSeparators(QDir(request.location.root).filePath(request.location.path))), dialog);
+        body->setTextFormat(Qt::PlainText);
+        body->setWordWrap(true);
+        UiStyle::text(body);
+        dialog->contentLayout()->addWidget(body);
+
+        auto *buttons = dialog->buttonBox(QDialogButtonBox::Cancel);
+        auto *confirmButton = buttons->addButton("永久删除", QDialogButtonBox::AcceptRole);
+        confirmButton->setAutoDefault(false);
+        buttons->button(QDialogButtonBox::Cancel)->setText("取消");
+        buttons->button(QDialogButtonBox::Cancel)->setDefault(true);
+        buttons->button(QDialogButtonBox::Cancel)->setFocus();
+
+        auto *footer = dialog->footerLayout();
+        footer->addStretch();
+        footer->addWidget(buttons);
+        dialog->bindButtonBox(buttons);
+        dialog->prepareAsync();
         connect(dialog, &QDialog::finished, this, [this, apply](int choice) {
-            if (choice == QMessageBox::Yes) apply(); else { m_mutating = false; updateActions(); }
+            if (choice == QDialog::Accepted || choice == QMessageBox::Yes) apply();
+            else { m_mutating = false; updateActions(); }
         });
         dialog->open();
     });

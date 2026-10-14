@@ -228,13 +228,13 @@ class Regression : public QObject
         editor->moveCursor(QTextCursor::End); editor->insertPlainText("edited\n");
         QVERIFY(page->hasUnsavedChanges());
         auto *history = window.findChild<QToolButton *>("historyTab"); history->click();
-        auto *dialog = page->findChild<QMessageBox *>("previewUnsavedDialog"); QVERIFY(dialog && dialog->isVisible());
+        auto *dialog = page->findChild<QDialog *>("previewUnsavedDialog"); QVERIFY(dialog && dialog->isVisible());
         dialog->done(QMessageBox::Cancel); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QVERIFY(window.findChild<QToolButton *>("previewTab")->isChecked());
         QCOMPARE(window.findChild<QStackedWidget *>("pages")->currentWidget(), page);
         QCOMPARE(readFile(source), QByteArray("original\n"));
         history->click();
-        dialog = page->findChild<QMessageBox *>("previewUnsavedDialog"); QVERIFY(dialog); dialog->done(QMessageBox::Save);
+        dialog = page->findChild<QDialog *>("previewUnsavedDialog"); QVERIFY(dialog); dialog->done(QMessageBox::Save);
         settle(service); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QCOMPARE(readFile(source), QByteArray("original\nedited\n"));
         QVERIFY(!page->hasUnsavedChanges());
@@ -248,13 +248,13 @@ class Regression : public QObject
         QCOMPARE(readFile(source), QByteArray("outside editor\n")); QVERIFY(page->hasUnsavedChanges());
         QCOMPARE(editor->toPlainText(), buffer);
         // Closing a non-tray window must go through the same unsaved guard.
-        window.close(); dialog = page->findChild<QMessageBox *>("previewUnsavedDialog"); QVERIFY(dialog);
+        window.close(); dialog = page->findChild<QDialog *>("previewUnsavedDialog"); QVERIFY(dialog);
         dialog->done(QMessageBox::Cancel); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QVERIFY(window.isVisible());
         QEvent quitEvent(QEvent::Quit); QApplication::sendEvent(qApp, &quitEvent);
-        dialog = page->findChild<QMessageBox *>("previewUnsavedDialog"); QVERIFY(dialog);
+        dialog = page->findChild<QDialog *>("previewUnsavedDialog"); QVERIFY(dialog);
         dialog->done(QMessageBox::Cancel); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-        history->click(); dialog = page->findChild<QMessageBox *>("previewUnsavedDialog"); QVERIFY(dialog); dialog->done(QMessageBox::Discard);
+        history->click(); dialog = page->findChild<QDialog *>("previewUnsavedDialog"); QVERIFY(dialog); dialog->done(QMessageBox::Discard);
         settle(service); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QVERIFY(!page->hasUnsavedChanges()); QCOMPARE(readFile(source), QByteArray("outside editor\n"));
     }
@@ -271,8 +271,12 @@ class Regression : public QObject
         auto *page = window.findChild<HomePagePreviewPage *>();
         auto *newAction = page->findChild<QAction *>("newSourceEntryAction"); QVERIFY(newAction->isEnabled());
         QTimer::singleShot(0, [] {
-            auto *input = qobject_cast<QInputDialog *>(QApplication::activeModalWidget());
-            if (input) { input->setTextValue("new.txt"); input->accept(); }
+            if (auto *input = qobject_cast<QInputDialog *>(QApplication::activeModalWidget())) {
+                input->setTextValue("new.txt"); input->accept();
+            } else if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget())) {
+                if (auto *edit = dialog->findChild<QLineEdit *>()) edit->setText("new.txt");
+                dialog->accept();
+            }
         });
         newAction->menu()->actions().first()->trigger();
         QVERIFY(page->hasUnsavedChanges()); QVERIFY(!QFileInfo::exists(root + "/new.txt"));
@@ -290,12 +294,12 @@ class Regression : public QObject
             settle(service);
         };
         openDelete();
-        auto *dialog = page->findChild<QMessageBox *>("previewDeleteDialog"); QVERIFY(dialog && dialog->isVisible());
-        QVERIFY(dialog->informativeText().contains("不会移入废纸篓"));
+        auto *dialog = page->findChild<QDialog *>("previewDeleteDialog"); QVERIFY(dialog && dialog->isVisible());
+        auto *label = dialog->findChild<QLabel *>(); QVERIFY(label && label->text().contains("不会移入废纸篓"));
         writeFile(root + "/new.txt", "changed after confirmation");
         dialog->done(QMessageBox::Yes); settle(service); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QCOMPARE(readFile(root + "/new.txt"), QByteArray("changed after confirmation"));
-        openDelete(); dialog = page->findChild<QMessageBox *>("previewDeleteDialog"); QVERIFY(dialog);
+        openDelete(); dialog = page->findChild<QDialog *>("previewDeleteDialog"); QVERIFY(dialog);
         dialog->done(QMessageBox::Yes); settle(service); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QVERIFY(!QFileInfo::exists(root + "/new.txt")); QCOMPARE(page->rememberedPath(id), QString());
         QCOMPARE(readFile(root + "/existing.txt"), QByteArray("keep"));
