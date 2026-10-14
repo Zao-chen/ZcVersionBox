@@ -358,8 +358,12 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     }
     connect(m_edit, &QAction::triggered, this, &HomePagePreviewPage::beginEdit);
     connect(m_save, &QAction::triggered, this, [this] { save(); });
-    connect(m_cancel, &QAction::triggered, this, [this] { requestLeave([this] { discard(); refresh(); }); });
-    connect(m_manage, &QAction::triggered, this, [this] { entryMenu(m_content.location, QCursor::pos()); });
+    connect(m_manage, &QAction::triggered, this, [this] {
+        auto *btn = ui->actionHost->findChild<QToolButton *>("manageSourceEntryActionButton");
+        const QPoint pos = (btn && btn->isVisible()) ? btn->mapToGlobal(QPoint(0, btn->height())) : QCursor::pos();
+        const auto location = m_directory.entry.directory ? m_directory.location : (m_content.location.path.isEmpty() ? m_directory.location : m_content.location);
+        entryMenu(location, pos);
+    });
     connect(ui->files, &QTreeView::customContextMenuRequested, this, [this](const QPoint &point) {
         const auto index = ui->files->indexAt(point);
         if (!index.isValid()) return;
@@ -683,7 +687,7 @@ void HomePagePreviewPage::updateActions()
     m_save->setVisible(m_editing); m_cancel->setVisible(m_editing);
     m_save->setEnabled(ready && tracking && contextMatches && hasUnsavedChanges());
     m_cancel->setEnabled(!m_saving && !m_mutating);
-    m_manage->setVisible(!isDir && !m_editing && !m_path.isEmpty());
+    m_manage->setVisible(!m_editing && !m_path.isEmpty());
     m_manage->setEnabled(ready && tracking && m_directory.location.rootDirectory);
     ui->editor->setReadOnly(!m_editing || m_saving || m_mutating);
 }
