@@ -576,11 +576,24 @@ void HomePagePreviewPage::showContent()
     const auto name = m_directory.entry.name.toLower();
     const bool markdown = m_content.textual && (name.endsWith(".md") || name.endsWith(".markdown"));
     ui->markdownButton->setVisible(markdown && !m_editing);
-    status(m_statusText.isEmpty() ? m_content.notice : m_statusText);
     ui->imageTools->setVisible(!m_content.image.isNull());
-    if (m_content.textual) ui->contentStack->setCurrentWidget(markdown && !m_editing && !ui->markdownButton->isChecked() ? static_cast<QWidget *>(ui->markdown) : ui->editor);
-    else if (!m_content.image.isNull()) { ui->contentStack->setCurrentWidget(ui->imageScroll); showImage(); }
-    else { ui->notice->setText(m_content.notice); ui->contentStack->setCurrentWidget(ui->notice); }
+    if (m_content.textual)
+    {
+        status(m_statusText.isEmpty() ? m_content.notice : m_statusText);
+        ui->contentStack->setCurrentWidget(markdown && !m_editing && !ui->markdownButton->isChecked() ? static_cast<QWidget *>(ui->markdown) : ui->editor);
+    }
+    else if (!m_content.image.isNull())
+    {
+        status(m_statusText);
+        ui->contentStack->setCurrentWidget(ui->imageScroll);
+        showImage();
+    }
+    else
+    {
+        status(m_statusText);
+        ui->notice->setText(m_content.notice);
+        ui->contentStack->setCurrentWidget(ui->notice);
+    }
 }
 void HomePagePreviewPage::showImage()
 {
