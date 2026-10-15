@@ -16,9 +16,10 @@ HomePageCollaborationPage::HomePageCollaborationPage(BackupService *service, QWi
     : QWidget(parent), ui(new Ui::HomePageCollaborationPage), m_service(service)
 {
     ui->setupUi(this);
-    UiStyle::text(ui->title, UiStyle::FontRole::Object);
-    for (auto *label : {ui->stateLabel, ui->automaticTitle, ui->remoteTitle}) UiStyle::text(label, UiStyle::FontRole::Body);
-    for (auto *label : {ui->intro, ui->summary, ui->lastSync, ui->automaticHint, ui->joinHint, ui->detailsText}) UiStyle::text(label, UiStyle::FontRole::Caption, true);
+    for (auto *label : {ui->stateLabel, ui->automaticTitle, ui->remoteTitle}) UiStyle::text(label, UiStyle::FontRole::Section);
+    for (auto *label : {ui->summary, ui->lastSync, ui->automaticHint, ui->joinHint, ui->detailsText}) UiStyle::text(label, UiStyle::FontRole::Caption, true);
+    UiStyle::text(ui->remoteUrl, UiStyle::FontRole::Body);
+    UiStyle::text(ui->detailsButton, UiStyle::FontRole::Caption, true);
     ui->syncButton->setProperty("primary", true);
     ui->syncButton->setIcon(UiStyle::icon("refresh"));
     ui->copyButton->setIcon(UiStyle::icon("copy"));
@@ -31,7 +32,7 @@ HomePageCollaborationPage::HomePageCollaborationPage(BackupService *service, QWi
     ui->detailsLayout->removeWidget(ui->detailsContent);
     m_details = new oclero::qlementine::Expander(this); m_details->setContent(ui->detailsContent); ui->detailsLayout->addWidget(m_details);
     connect(ui->detailsButton, &QToolButton::toggled, this, [this](bool expanded) {
-        m_details->setExpanded(expanded); ui->detailsButton->setText(expanded ? "收起同步详情" : "查看同步详情"); ui->detailsButton->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
+        m_details->setExpanded(expanded); ui->detailsButton->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
     });
     connect(service, &BackupService::syncStatusChanged, this, [this](const QString &id) { if (m_active && id == m_id) refresh(); });
     connect(service, &BackupService::repositoryChanged, this, [this](const QString &id) { if (m_active && id == m_id) refresh(); });
@@ -129,8 +130,8 @@ void HomePageCollaborationPage::refresh()
     QString title, summary;
     switch (status.state)
     {
-    case SyncState::Disconnected: title = "尚未连接共享仓库"; summary = "填写下方的共享仓库地址，开始协作。"; break;
-    case SyncState::Waiting: title = status.automatic ? "等待同步" : "手动同步"; summary = "同步会接收协作者更新，并发送全部方案的已保存版本。"; break;
+    case SyncState::Disconnected: title = "尚未连接共享仓库"; summary = "连接共享仓库，与他人同步文件。"; break;
+    case SyncState::Waiting: title = status.automatic ? "等待同步" : "手动同步"; break;
     case SyncState::Running:
         title = "正在同步";
         switch (status.phase)
@@ -142,18 +143,20 @@ void HomePageCollaborationPage::refresh()
         case SyncPhase::Uploading: summary = "正在发送全部方案与里程碑…"; break;
         case SyncPhase::Idle: summary = "正在等待任务执行…"; break;
         } break;
-    case SyncState::Synced: title = "已同步"; summary = "全部方案的已保存历史与里程碑已同步。"; break;
-    case SyncState::NeedsResolution: title = "需要处理差异"; summary = "双方修改了同一处内容。处理完成后自动继续全量同步。"; break;
-    case SyncState::NeedsBranch: title = "需要处理另一个方案"; summary = QString("“%1”包含双方的更新，处理后再一起发送全部方案。").arg(status.branchRef.mid(11)); break;
-    case SyncState::NeedsTags: title = "需要处理里程碑"; summary = "存在不同的同名里程碑，请在历史版本中选择要保留的标记。"; break;
-    case SyncState::RetryLater: title = status.message.isEmpty() ? "暂未完成同步" : status.message; summary = status.automatic ? "本地版本已保留，将稍后自动重试。也可以立即重试。" : "本地版本已保留，可在检查连接或文件状态后重试。"; break;
-    case SyncState::NeedsAttention: title = status.message.isEmpty() ? "同步需要检查" : status.message; summary = "请查看同步详情，检查共享仓库的地址、访问权限或备份状态。"; break;
-    case SyncState::Editing: title = "等待保存编辑"; summary = "文件有未保存的编辑，保存或放弃后继续同步。"; break;
+    case SyncState::Synced: title = "已同步"; break;
+    case SyncState::NeedsResolution: title = "需要处理差异"; summary = "双方改动有重叠，处理后继续同步。"; break;
+    case SyncState::NeedsBranch: title = "需要处理另一个方案"; summary = QString("请先处理方案“%1”，再同步全部方案。").arg(status.branchRef.mid(11)); break;
+    case SyncState::NeedsTags: title = "需要处理里程碑"; summary = "请在历史版本中处理同名里程碑。"; break;
+    case SyncState::RetryLater: title = status.message.isEmpty() ? "暂未完成同步" : status.message; summary = status.automatic ? "本地版本已保留，稍后自动重试。" : "本地版本已保留，请稍后重试。"; break;
+    case SyncState::NeedsAttention: title = status.message.isEmpty() ? "同步需要检查" : status.message; summary = "展开同步详情，检查连接或访问权限。"; break;
+    case SyncState::Editing: title = "等待保存编辑"; summary = "保存或放弃编辑后继续。"; break;
     }
-    if (state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending) { title = "需要处理差异"; summary = "已有差异等待处理，当前对象的自动备份和同步暂停。处理后继续。"; }
-    if (state == BackupSyncState::NeedsAttention) { title = "需要检查备份"; summary = "自动写入已暂停，请检查备份状态后继续。"; }
+    if (state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending) { title = "需要处理差异"; summary = "处理期间自动备份暂停，完成后继续。"; }
+    if (state == BackupSyncState::NeedsAttention) { title = "需要检查备份"; summary = "自动写入已暂停，请先检查备份。"; }
     ui->stateLabel->setText(title); ui->summary->setText(summary);
-    ui->lastSync->setText(status.lastSuccess.isValid() ? "最近成功同步：" + status.lastSuccess.toLocalTime().toString("yyyy-MM-dd HH:mm:ss") : "尚未完成首次同步");
+    ui->summary->setVisible(!summary.isEmpty());
+    ui->lastSync->setText(status.lastSuccess.isValid() ? "最近同步：" + status.lastSuccess.toLocalTime().toString("yyyy-MM-dd HH:mm:ss") : "尚未同步");
+    ui->lastSync->setVisible(connected);
     ui->syncButton->setText(state == BackupSyncState::NeedsAttention ? "重新检查" : state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending ? "处理差异" : status.state == SyncState::NeedsBranch ? "切换方案并处理" : status.state == SyncState::NeedsTags ? "处理里程碑" : running ? "同步中…" : "立即同步");
     ui->syncButton->setAccessibleName(ui->syncButton->text() == "立即同步" ? "立即同步全部方案" : ui->syncButton->text());
     ui->syncButton->setEnabled(connected && !running && !m_connecting);
@@ -169,13 +172,13 @@ void HomePageCollaborationPage::refresh()
     if (!status.detail.isEmpty()) details.append(status.detail);
     if (state == BackupSyncState::NeedsAttention)
         for (const auto &item : m_service->trackedItems()) if (item.id == m_id && !item.stateDetail.isEmpty()) details.append(item.stateDetail);
-    ui->detailsText->setText(details.isEmpty() ? "同步完成后，这里会显示所有方案的处理结果。" : details.join('\n'));
+    ui->detailsText->setText(details.isEmpty() ? "暂无同步记录。" : details.join('\n'));
 }
 void HomePageCollaborationPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     const bool narrow = width() < 640;
-    ui->contentLayout->setContentsMargins(narrow ? 16 : 24, 16, narrow ? 16 : 24, 24);
+    ui->contentLayout->setContentsMargins(narrow ? 16 : 24, 12, narrow ? 16 : 24, 8);
     ui->addressRow->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     ui->statusRow->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
 }
