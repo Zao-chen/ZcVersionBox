@@ -86,6 +86,7 @@ add_library(zc_services STATIC
     utils/linuxintegration.h utils/linuxintegration.cpp
     utils/gitcommand.h utils/gitcommand.cpp
     utils/backupservice.h utils/backupservice.cpp
+    utils/syncscheduler.h utils/syncscheduler.cpp
     utils/backupmonitor.h utils/backupmonitor.cpp
     utils/backupmonitor_types.h
     utils/backupmonitor_scheduler.h utils/backupmonitor_scheduler.cpp

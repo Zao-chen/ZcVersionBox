@@ -42,6 +42,7 @@ class BackupService::Private
     QMap<QString, BackupTaskId> syncJobs;
     QMap<QString, QVector<SyncObserver>> syncObservers;
     QMap<QString, SyncStatus> syncStatuses;
+    QSet<QString> locallyDirty;
     QMap<QString, std::shared_ptr<std::atomic_bool>> editGuards;
     quint64 observationSequence{0};
     QMap<QString, quint64> observationVersions;
@@ -155,11 +156,14 @@ class BackupService::Private
             if (!cache.contains(it.key())) it = syncStatuses.erase(it); else ++it;
         for (const auto &r : cache)
         {
-            if (!syncJobs.contains(r.id) && (!syncStatuses.contains(r.id) || syncStatuses[r.id] != r.sync))
-            { syncStatuses[r.id] = r.sync; emit owner->syncStatusChanged(r.id); }
-            if ((!active || !active->synchronization) && previous.contains(r.id) &&
-                (previous[r.id].lastCommit != r.lastCommit || previous[r.id].branchVersion != r.branchVersion || previous[r.id].tagRevision != r.tagRevision))
-                emit owner->localVersionsChanged(r.id);
+            const bool localChange = (!active || !active->synchronization || active->id != r.id) && previous.contains(r.id) &&
+                (previous[r.id].lastCommit != r.lastCommit || previous[r.id].branchVersion != r.branchVersion || previous[r.id].tagRevision != r.tagRevision);
+            if (localChange) locallyDirty.insert(r.id);
+            auto status = r.sync;
+            if (locallyDirty.contains(r.id) && status.state == SyncState::Synced) status.state = SyncState::Waiting;
+            if (!syncJobs.contains(r.id) && (!syncStatuses.contains(r.id) || syncStatuses[r.id] != status))
+            { syncStatuses[r.id] = status; emit owner->syncStatusChanged(r.id); }
+            if (localChange) emit owner->localVersionsChanged(r.id);
         }
         bool changed = previous.size() != cache.size();
         for (const auto &id : observationVersions.keys())
@@ -472,9 +476,13 @@ BackupTaskId BackupService::synchronize(const QString &id, bool push, QObject *c
     return d->mutate(id, c, std::move(f), [id, push](BackupEngine &e)
                      { return e.synchronize(id, push); });
 }
+bool BackupService::isSynchronizing(const QString &id) const { return d->syncJobs.contains(id); }
 SyncStatus BackupService::syncStatus(const QString &id) const
 {
-    return d->syncStatuses.value(id, d->cache.value(id).sync);
+    auto status = d->syncStatuses.value(id, d->cache.value(id).sync);
+    if (isSyncEditing(id) && (status.state == SyncState::Waiting || status.state == SyncState::Synced)) status.state = SyncState::Editing;
+    if (!isSyncEditing(id) && status.state == SyncState::Editing) status.state = SyncState::Waiting;
+    return status;
 }
 bool BackupService::isSyncEditing(const QString &id) const { const auto guard = d->editGuards.value(id); return guard && guard->load(); }
 void BackupService::setSyncEditing(const QString &id, bool editing)
@@ -482,6 +490,7 @@ void BackupService::setSyncEditing(const QString &id, bool editing)
     if (id.isEmpty() || isSyncEditing(id) == editing) return;
     if (!d->editGuards.contains(id)) d->editGuards[id] = std::make_shared<std::atomic_bool>(false);
     d->editGuards[id]->store(editing);
+    emit syncStatusChanged(id);
     emit syncEditingChanged(id);
 }
 void BackupService::cancelSync(const QString &id)
@@ -512,6 +521,7 @@ BackupTaskId BackupService::synchronize(const QString &id, SyncRequestOptions op
             output.value.status.state = output.result.cancelled ? SyncState::Waiting : SyncState::NeedsAttention;
             output.value.status.detail = output.result.message;
         }
+        if (output.value.status.state == SyncState::Synced) d->locallyDirty.remove(id);
         if (contains(id)) { d->syncStatuses[id] = output.value.status; emit syncStatusChanged(id); }
         const auto observers = d->syncObservers.take(id);
         for (const auto &observer : observers) if (observer.context && observer.callback) observer.callback(output);

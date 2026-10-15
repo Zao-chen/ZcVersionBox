@@ -2,6 +2,7 @@
 #include "utils/backup_engine.h"
 #include "utils/backup_merge.h"
 #include "utils/backupmonitor.h"
+#include "utils/syncscheduler.h"
 #include "utils/backupmonitor_catalog.h"
 #include "utils/backupmonitor_scheduler.h"
 #include "utils/diff_parser.h"
@@ -307,6 +308,70 @@ class BackupCoreRegression : public QObject
         QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
         error.clear(); CHECK_OK(f.service->syncAll(f.id).result);
         QCOMPARE(runGit(f.remote, {"show", "main:source.txt"}).bytes, QByteArray("offline edit\n"));
+    }
+
+    void automaticSyncDebouncesPollsAndDoesNotLoop()
+    {
+        RemoteFixture f; qint64 now = 0;
+        SyncScheduler scheduler(f.service.get(), nullptr, {}, [&] { return now; });
+        QSignalSpy requested(&scheduler, &SyncScheduler::syncRequested);
+        QSignalSpy notices(&scheduler, &SyncScheduler::notification);
+        scheduler.start(); scheduler.tick(); settle(*f.service);
+        QCOMPARE(requested.count(), 1); QCOMPARE(notices.count(), 0);
+        now = 100; writeFile(f.source, "first\n"); CHECK_OK(f.service->backup(f.id));
+        now = 500; writeFile(f.source, "second\n"); CHECK_OK(f.service->backup(f.id));
+        now = 3499; scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 1);
+        now = 3500; scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 2);
+        QCOMPARE(runGit(f.remote, {"show", "main:source.txt"}).bytes, QByteArray("second\n"));
+        now = 33499; scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 2);
+        now = 33500; scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 3);
+        scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 3); QCOMPARE(notices.count(), 0);
+        scheduler.stop(); QCOMPARE(scheduler.state(), SyncScheduler::State::Stopped);
+        now += 100000; scheduler.tick(); QCOMPARE(requested.count(), 3);
+    }
+
+    void automaticSyncBackoffAndEditing()
+    {
+        bool offline = false;
+        BackupDependencies dependencies;
+        dependencies.git = [&](const QString &path, const QStringList &args, const GitOptions &options) {
+            if (offline && args.contains("fetch")) { GitResult r; r.started = r.finished = true; r.exitCode = 128; r.error = "Could not resolve host"; return r; }
+            return runGit(path, args, options);
+        };
+        RemoteFixture f(dependencies); qint64 now = 0;
+        SyncScheduler scheduler(f.service.get(), nullptr, {}, [&] { return now; });
+        QSignalSpy requested(&scheduler, &SyncScheduler::syncRequested), notices(&scheduler, &SyncScheduler::notification);
+        f.service->setSyncEditing(f.id, true);
+        scheduler.start(); scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 0);
+        f.service->setSyncEditing(f.id, false);
+        now = 3000; offline = true; scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 1);
+        now = 17999; scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 1);
+        now = 18000; scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 2); QCOMPARE(notices.count(), 1);
+        now = 47999; scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 2);
+        offline = false; now = 48000; scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 3);
+        QCOMPARE(f.service->syncStatus(f.id).state, SyncState::Synced);
+        CHECK_OK(awaitBackup<OperationResult>([&](auto done) { f.service->setAutoSync(f.id, false, this, done); }));
+        now += 100000; scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 3);
+        CHECK_OK(f.service->syncAll(f.id).result); // Manual sync still works while the switch is off.
+        QVERIFY(!f.service->syncStatus(f.id).automatic);
+        scheduler.stop(); scheduler.start(); scheduler.tick(); settle(*f.service); QCOMPARE(requested.count(), 3);
+    }
+
+    void automaticSyncStopKeepsManualWorkAndRestarts()
+    {
+        RemoteFixture f; qint64 now = 0;
+        SyncScheduler scheduler(f.service.get(), nullptr, {}, [&] { return now; });
+        QSignalSpy requested(&scheduler, &SyncScheduler::syncRequested);
+        scheduler.start(); scheduler.tick();
+        scheduler.stop(); scheduler.start(); settle(*f.service);
+        QCOMPARE(scheduler.state(), SyncScheduler::State::Running);
+        scheduler.tick(); settle(*f.service); QVERIFY(requested.count() >= 2);
+        writeFile(f.source, "manual survives\n");
+        std::optional<BackupResult<SyncResult>> manual;
+        f.service->BackupService::synchronize(f.id, SyncRequestOptions{}, this, [&](const BackupResult<SyncResult> &r) { manual = r; });
+        scheduler.stop(); settle(*f.service);
+        QVERIFY(manual.has_value()); CHECK_OK(manual->result);
+        QCOMPARE(runGit(f.remote, {"show", "main:source.txt"}).bytes, QByteArray("manual survives\n"));
     }
 
     void sourcePreviewReadsLocalContentAndMappedCommits()

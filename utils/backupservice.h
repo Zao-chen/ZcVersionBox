@@ -62,6 +62,7 @@ class BackupService : public QObject
     BackupTaskId synchronize(const QString &id, SyncRequestOptions options, QObject *context, Reply<SyncResult> callback = {});
     BackupTaskId setAutoSync(const QString &id, bool enabled, QObject *context, Completion callback = {});
     SyncStatus syncStatus(const QString &id) const;
+    bool isSynchronizing(const QString &id) const;
     void setSyncEditing(const QString &id, bool editing);
     bool isSyncEditing(const QString &id) const;
     void cancelSync(const QString &id);
@@ -101,7 +102,6 @@ class BackupService : public QObject
     void syncStatusChanged(const QString &id);
     void localVersionsChanged(const QString &id);
     void syncEditingChanged(const QString &id);
-    void syncContinuationRequested(const QString &id);
     void ready();
     void reloadFinished(const OperationResult &result);
     void trackedItemsChanged();
