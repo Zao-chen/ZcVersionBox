@@ -20,7 +20,9 @@ HomePageCollaborationPage::HomePageCollaborationPage(BackupService *service, QWi
     UiStyle::text(ui->remoteUrl, UiStyle::FontRole::Body);
     ui->syncButton->setProperty("primary", true);
     ui->syncButton->setIcon(UiStyle::icon("refresh"));
+    ui->connectButton->setIcon(UiStyle::icon("link"));
     ui->copyButton->setIcon(UiStyle::icon("copy"));
+    ui->disconnectButton->setIcon(UiStyle::icon("unlink"));
     m_spinner = new oclero::qlementine::LoadingSpinner(this);
     ui->statusTextRow->insertWidget(0, m_spinner);
     m_automatic = new oclero::qlementine::Switch(this);
@@ -31,14 +33,14 @@ HomePageCollaborationPage::HomePageCollaborationPage(BackupService *service, QWi
     connect(service, &BackupService::repositoryChanged, this, [this](const QString &id) { if (m_active && id == m_id) refresh(); });
     connect(service, &BackupService::repositoryInvalidated, this, [this](const QString &id) { if (id == m_id) { ++m_context; m_connecting = false; refresh(); } });
     connect(ui->syncButton, &QPushButton::clicked, this, &HomePageCollaborationPage::synchronize);
-    connect(ui->connectButton, &QPushButton::clicked, this, &HomePageCollaborationPage::connectRemote);
+    connect(ui->connectButton, &QToolButton::clicked, this, &HomePageCollaborationPage::connectRemote);
     connect(ui->remoteUrl, &QLineEdit::textEdited, this, [this] { refresh(); });
     connect(ui->remoteUrl, &QLineEdit::returnPressed, this, &HomePageCollaborationPage::connectRemote);
-    connect(ui->copyButton, &QPushButton::clicked, this, [this] {
+    connect(ui->copyButton, &QToolButton::clicked, this, [this] {
         QApplication::clipboard()->setText(m_service->syncStatus(m_id).remoteUrl);
         emit notification(OperationResult::ok("协作地址已复制", "协作者可通过“从云端导入”加入。"));
     });
-    connect(ui->disconnectButton, &QPushButton::clicked, this, [this] {
+    connect(ui->disconnectButton, &QToolButton::clicked, this, [this] {
         const auto id = m_id; const auto generation = m_generation, context = m_context;
         const QPointer<HomePageCollaborationPage> guard(this);
         if (!confirmAction(this, "断开后停止云端同步，本地文件和版本历史仍然保留。", "断开共享仓库") || !guard || !current(id, generation, context)) return;
@@ -158,7 +160,10 @@ void HomePageCollaborationPage::refresh()
     m_automatic->setEnabled(connected && !m_connecting);
     if (!ui->remoteUrl->isModified()) ui->remoteUrl->setText(status.remoteUrl);
     ui->remoteUrl->setEnabled(!m_connecting);
-    ui->connectButton->setText(m_connecting ? "连接中…" : connected ? "保存并连接" : "连接");
+    const auto connectText = m_connecting ? "连接中…" : connected ? "保存并连接" : "连接";
+    ui->connectButton->setText(connectText);
+    ui->connectButton->setToolTip(connectText);
+    ui->connectButton->setAccessibleName(connectText);
     ui->connectButton->setEnabled(!m_connecting && !ui->remoteUrl->text().trimmed().isEmpty() && ui->remoteUrl->text().trimmed() != status.remoteUrl);
     ui->copyButton->setEnabled(connected); ui->disconnectButton->setEnabled(connected && !m_connecting);
 }
@@ -167,7 +172,6 @@ void HomePageCollaborationPage::resizeEvent(QResizeEvent *event)
     QWidget::resizeEvent(event);
     const bool narrow = width() < 640;
     ui->contentLayout->setContentsMargins(narrow ? 16 : 24, 12, narrow ? 16 : 24, 8);
-    ui->addressRow->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     ui->statusRow->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     ui->statusRow->setSpacing(narrow ? 8 : 24);
 }

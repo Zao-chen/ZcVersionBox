@@ -177,7 +177,7 @@ struct ResolutionFixture
         }
     }
 };
-bool answerConfirmation(QPushButton *button, BackupService &service, const std::function<void(QDialog *)> &answer)
+bool answerConfirmation(QAbstractButton *button, BackupService &service, const std::function<void(QDialog *)> &answer)
 {
     bool shown = false;
     QTimer timer;
@@ -2875,7 +2875,7 @@ class Regression : public QObject
         window.setAttribute(Qt::WA_DontShowOnScreen); window.resize(1080, 740); window.show();
         window.navigate({PageId::Collaboration, firstId}); settle(service);
         auto *page = window.findChild<HomePageCollaborationPage *>(); QVERIFY(page);
-        auto *url = page->findChild<QLineEdit *>("remoteUrl"); auto *connectButton = page->findChild<QPushButton *>("connectButton");
+        auto *url = page->findChild<QLineEdit *>("remoteUrl"); auto *connectButton = page->findChild<QAbstractButton *>("connectButton");
         const auto enterAddress = [&] { url->setText(remote); url->setModified(true); emit url->textEdited(remote); };
         enterAddress(); settle(service); QVERIFY(service.syncStatus(firstId).remoteUrl.isEmpty());
         bool navigated = false;
@@ -2887,7 +2887,7 @@ class Regression : public QObject
         window.navigate({PageId::Collaboration, firstId}); settle(service);
         enterAddress(); connectButton->click(); settle(service);
         QCOMPARE(service.syncStatus(firstId).remoteUrl, remote); QVERIFY(service.syncStatus(firstId).automatic);
-        page->findChild<QPushButton *>("copyButton")->click(); QCOMPARE(QApplication::clipboard()->text(), remote);
+        page->findChild<QAbstractButton *>("copyButton")->click(); QCOMPARE(QApplication::clipboard()->text(), remote);
         page->findChild<QPushButton *>("syncButton")->click(); settle(service);
         QCOMPARE(service.syncStatus(firstId).state, SyncState::Synced);
         const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS");
@@ -2906,7 +2906,7 @@ class Regression : public QObject
                 }
             }
         }
-        QVERIFY(answerConfirmation(page->findChild<QPushButton *>("disconnectButton"), service, [](QDialog *dialog) { dialog->accept(); }));
+        QVERIFY(answerConfirmation(page->findChild<QAbstractButton *>("disconnectButton"), service, [](QDialog *dialog) { dialog->accept(); }));
         QVERIFY(service.syncStatus(firstId).remoteUrl.isEmpty()); QVERIFY(!page->findChild<QPushButton *>("syncButton")->isEnabled());
         QCOMPARE(readFile(first), QByteArray("first\n"));
     }
