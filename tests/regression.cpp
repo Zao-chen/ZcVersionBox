@@ -2581,6 +2581,10 @@ class Regression : public QObject
         table->selectRow(0);
         QSignalSpy notifications(branches, &HomePageBranchesPage::notification);
         bool shown = false, menuReleased = false, switchShown = false, timedOut = false;
+        // Creation, history refreshes and switching share this budget. Git process
+        // startup on Windows runners can take the workflow beyond ten seconds.
+        // Match awaitBackup/settle while retaining a bounded modal-dialog watchdog.
+        constexpr int workflowTimeoutMs = 30000;
         QTimer responder;
         responder.setInterval(10);
         connect(&responder, &QTimer::timeout, &window, [&] {
@@ -2611,7 +2615,7 @@ class Regression : public QObject
             if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget())) dialog->reject();
             if (menu) menu->close();
         });
-        responder.start(); watchdog.start(10000);
+        responder.start(); watchdog.start(workflowTimeoutMs);
         if (direct)
         {
             QTest::mouseClick(table->viewport(), Qt::LeftButton, {}, historyActionPoint(table, 1, 3));
@@ -2633,12 +2637,13 @@ class Regression : public QObject
             QTest::mouseClick(menu, Qt::LeftButton, {}, point);
             QVERIFY(create->property("qlementine_flashing").toBool());
         }
-        QTRY_COMPARE_WITH_TIMEOUT(requested.count(), 1, 11000);
+        QTRY_COMPARE_WITH_TIMEOUT(requested.count(), 1, workflowTimeoutMs + 1000);
         QCOMPARE(requested.first().at(1).toString(), base);
-        QTRY_VERIFY_WITH_TIMEOUT(shown || timedOut, 11000);
-        if (acceptCreate) QTRY_VERIFY_WITH_TIMEOUT(notifications.count() >= (switchAfter ? 2 : 1) || timedOut, 11000);
+        QTRY_VERIFY_WITH_TIMEOUT(shown || timedOut, workflowTimeoutMs + 1000);
+        if (acceptCreate) QTRY_VERIFY_WITH_TIMEOUT(notifications.count() >= (switchAfter ? 2 : 1) || timedOut, workflowTimeoutMs + 1000);
         watchdog.stop(); responder.stop(); settle(service);
-        QVERIFY(!timedOut);
+        QVERIFY2(!timedOut, qPrintable(QString("Branch workflow timed out: create dialog=%1, switch dialog=%2, notifications=%3")
+            .arg(shown).arg(switchShown).arg(notifications.count())));
         QVERIFY(shown);
         QVERIFY2(menuReleased, "The menu must finish dispatching and be released before the modal dialog opens");
         QVERIFY(!menu);
