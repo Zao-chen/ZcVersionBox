@@ -8,7 +8,6 @@
 #include <QResizeEvent>
 #include <QScrollBar>
 #include <QSignalBlocker>
-#include <oclero/qlementine/widgets/Expander.hpp>
 #include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 #include <oclero/qlementine/widgets/Switch.hpp>
 
@@ -17,9 +16,8 @@ HomePageCollaborationPage::HomePageCollaborationPage(BackupService *service, QWi
 {
     ui->setupUi(this);
     for (auto *label : {ui->stateLabel, ui->automaticTitle, ui->remoteTitle}) UiStyle::text(label, UiStyle::FontRole::Section);
-    for (auto *label : {ui->summary, ui->lastSync, ui->automaticHint, ui->joinHint, ui->detailsText}) UiStyle::text(label, UiStyle::FontRole::Caption, true);
+    for (auto *label : {ui->summary, ui->lastSync, ui->automaticHint}) UiStyle::text(label, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->remoteUrl, UiStyle::FontRole::Body);
-    UiStyle::text(ui->detailsButton, UiStyle::FontRole::Caption, true);
     ui->syncButton->setProperty("primary", true);
     ui->syncButton->setIcon(UiStyle::icon("refresh"));
     ui->copyButton->setIcon(UiStyle::icon("copy"));
@@ -29,11 +27,6 @@ HomePageCollaborationPage::HomePageCollaborationPage(BackupService *service, QWi
     m_automatic->setObjectName("automaticSyncSwitch"); m_automatic->setAccessibleName("自动同步"); m_automatic->setFocusPolicy(Qt::TabFocus);
     m_automatic->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     ui->automaticRow->addWidget(m_automatic, 0, Qt::AlignVCenter);
-    ui->detailsLayout->removeWidget(ui->detailsContent);
-    m_details = new oclero::qlementine::Expander(this); m_details->setContent(ui->detailsContent); ui->detailsLayout->addWidget(m_details);
-    connect(ui->detailsButton, &QToolButton::toggled, this, [this](bool expanded) {
-        m_details->setExpanded(expanded); ui->detailsButton->setArrowType(expanded ? Qt::DownArrow : Qt::RightArrow);
-    });
     connect(service, &BackupService::syncStatusChanged, this, [this](const QString &id) { if (m_active && id == m_id) refresh(); });
     connect(service, &BackupService::repositoryChanged, this, [this](const QString &id) { if (m_active && id == m_id) refresh(); });
     connect(service, &BackupService::repositoryInvalidated, this, [this](const QString &id) { if (id == m_id) { ++m_context; m_connecting = false; refresh(); } });
@@ -148,7 +141,7 @@ void HomePageCollaborationPage::refresh()
     case SyncState::NeedsBranch: title = "需要处理另一个方案"; summary = QString("请先处理方案“%1”，再同步全部方案。").arg(status.branchRef.mid(11)); break;
     case SyncState::NeedsTags: title = "需要处理里程碑"; summary = "请在历史版本中处理同名里程碑。"; break;
     case SyncState::RetryLater: title = status.message.isEmpty() ? "暂未完成同步" : status.message; summary = status.automatic ? "本地版本已保留，稍后自动重试。" : "本地版本已保留，请稍后重试。"; break;
-    case SyncState::NeedsAttention: title = status.message.isEmpty() ? "同步需要检查" : status.message; summary = "展开同步详情，检查连接或访问权限。"; break;
+    case SyncState::NeedsAttention: title = status.message.isEmpty() ? "同步需要检查" : status.message; summary = "检查连接或访问权限。"; break;
     case SyncState::Editing: title = "等待保存编辑"; summary = "保存或放弃编辑后继续。"; break;
     }
     if (state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending) { title = "需要处理差异"; summary = "处理期间自动备份暂停，完成后继续。"; }
@@ -168,11 +161,6 @@ void HomePageCollaborationPage::refresh()
     ui->connectButton->setText(m_connecting ? "连接中…" : connected ? "保存并连接" : "连接");
     ui->connectButton->setEnabled(!m_connecting && !ui->remoteUrl->text().trimmed().isEmpty() && ui->remoteUrl->text().trimmed() != status.remoteUrl);
     ui->copyButton->setEnabled(connected); ui->disconnectButton->setEnabled(connected && !m_connecting);
-    QStringList details = status.branches;
-    if (!status.detail.isEmpty()) details.append(status.detail);
-    if (state == BackupSyncState::NeedsAttention)
-        for (const auto &item : m_service->trackedItems()) if (item.id == m_id && !item.stateDetail.isEmpty()) details.append(item.stateDetail);
-    ui->detailsText->setText(details.isEmpty() ? "暂无同步记录。" : details.join('\n'));
 }
 void HomePageCollaborationPage::resizeEvent(QResizeEvent *event)
 {

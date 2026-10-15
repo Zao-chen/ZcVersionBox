@@ -103,7 +103,7 @@ BackupResult<SyncResult> BackupEngine::synchronize(const QString &id, const Sync
             case TransferFailure::Network: notice.message = "暂时无法连接共享仓库。本地版本已保留，稍后可以继续同步。"; break;
             case TransferFailure::Authentication: notice.message = "无法访问共享仓库，请检查登录凭据和仓库访问权限后重试。"; break;
             case TransferFailure::Changed: notice.message = "协作者仍在更新。本地版本已保留，稍后重新整理双方的更新。"; break;
-            default: notice.message = "共享仓库未能完成本次操作，请展开同步详情查看原因。"; break;
+            default: notice.message = "共享仓库未能完成本次操作，请检查连接或访问权限。"; break;
             }
         }
         return finish(notice, state);

@@ -37,11 +37,6 @@
         <item><widget class="QPushButton" name="disconnectButton"><property name="text"><string>断开连接</string></property><property name="minimumSize"><size><width>0</width><height>32</height></size></property><property name="autoDefault"><bool>false</bool></property></widget></item>
         <item><spacer name="remoteSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
        </layout></item>
-       <item><widget class="QLabel" name="joinHint"><property name="wordWrap"><bool>true</bool></property><property name="text"><string>协作者可通过“从云端导入”加入。</string></property><property name="toolTip"><string>先在仓库平台授予访问权限，再将地址发给协作者。连接后默认开启自动同步。</string></property></widget></item>
-      </layout></item>
-      <item><layout class="QVBoxLayout" name="detailsLayout"><property name="spacing"><number>8</number></property>
-       <item><widget class="QToolButton" name="detailsButton"><property name="text"><string>同步详情</string></property><property name="checkable"><bool>true</bool></property><property name="autoRaise"><bool>true</bool></property><property name="toolButtonStyle"><enum>Qt::ToolButtonTextBesideIcon</enum></property><property name="arrowType"><enum>Qt::RightArrow</enum></property></widget></item>
-       <item><widget class="QWidget" name="detailsContent"><layout class="QVBoxLayout" name="detailsContentLayout"><property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><item><widget class="QLabel" name="detailsText"><property name="wordWrap"><bool>true</bool></property><property name="textFormat"><enum>Qt::PlainText</enum></property><property name="textInteractionFlags"><set>Qt::TextSelectableByMouse</set></property></widget></item></layout></widget></item>
       </layout></item>
       <item><spacer name="bottomSpace"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
      </layout>

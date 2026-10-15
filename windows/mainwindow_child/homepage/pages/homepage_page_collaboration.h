@@ -4,7 +4,7 @@
 #include <QWidget>
 #include <memory>
 namespace Ui { class HomePageCollaborationPage; }
-namespace oclero::qlementine { class Switch; class Expander; class LoadingSpinner; }
+namespace oclero::qlementine { class Switch; class LoadingSpinner; }
 class HomePageCollaborationPage : public QWidget
 {
     Q_OBJECT
@@ -25,7 +25,6 @@ class HomePageCollaborationPage : public QWidget
     std::unique_ptr<Ui::HomePageCollaborationPage> ui;
     BackupService *m_service;
     oclero::qlementine::Switch *m_automatic;
-    oclero::qlementine::Expander *m_details;
     oclero::qlementine::LoadingSpinner *m_spinner;
     QString m_id;
     quint64 m_generation{0}, m_context{0};
