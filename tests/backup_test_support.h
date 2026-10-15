@@ -239,11 +239,17 @@ class TestBackupService : public BackupService
         return awaitBackup<OperationResult>([&](auto f)
                                             { BackupService::removeRemote(id, this, f); });
     }
+    BackupResult<SyncResult> syncAll(const QString &id, SyncRequestOptions options = {})
+    {
+        return awaitBackup<BackupResult<SyncResult>>([&](auto f) { BackupService::synchronize(id, options, this, f); });
+    }
     using BackupService::synchronize;
+    BackupTaskId synchronize(const QString &id, bool push, QObject *context, Completion callback = {})
+    { return BackupService::transferSavedVersions(id, push, context, std::move(callback)); }
     OperationResult synchronize(const QString &id, bool push)
     {
         return awaitBackup<OperationResult>([&](auto f)
-                                            { BackupService::synchronize(id, push, this, f); });
+                                            { BackupService::transferSavedVersions(id, push, this, f); });
     }
     OperationResult removeBackup(const QString &id)
     {

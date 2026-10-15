@@ -18,7 +18,7 @@ class HomePageBranchesPage : public QWidget
     ~HomePageBranchesPage() override;
     void setBackup(const QString &id, const QString &branchRef);
     void refresh();
-    void requestSwitch(const QString &id, const QString &ref);
+    void requestSwitch(const QString &id, const QString &ref, std::function<void()> continuation = {});
     void createFrom(const QString &id, const QString &commit = {});
     QList<QAction *> toolbarActions() const;
   signals:

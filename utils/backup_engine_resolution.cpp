@@ -34,7 +34,7 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareBranchMerge(const Branc
     if (request.ref == request.context.ref) return {OperationResult::info("已是当前方案", {}), {}};
     return prepareResolution(request.context.id, false, request.ref, request.expectedHead);
 }
-BackupResult<SyncResolutionSession> BackupEngine::prepareResolution(const QString &id, bool restart, QString mergeRef, QString mergeHead)
+BackupResult<SyncResolutionSession> BackupEngine::prepareResolution(const QString &id, bool restart, QString mergeRef, QString mergeHead, bool fetched)
 {
     auto checked = require(id);
     if (!checked.result.success) return {checked.result};
@@ -51,7 +51,7 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareResolution(const QStrin
         }
     }
     QString tagWarning;
-    if (mergeRef.isEmpty() && checked.value.state == BackupSyncState::Tracking)
+    if (!fetched && mergeRef.isEmpty() && checked.value.state == BackupSyncState::Tracking)
     {
         const auto &record = checked.value;
         const auto fetched = fetchBranches({id, record.branchRef, record.lastCommit, record.generation, record.branchVersion});
@@ -59,7 +59,7 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareResolution(const QStrin
         checked = require(id);
         if (!checked.result.success) return {checked.result};
     }
-    if (mergeRef.isEmpty() && checked.value.state != BackupSyncState::NeedsAttention)
+    if (!fetched && mergeRef.isEmpty() && checked.value.state != BackupSyncState::NeedsAttention)
     {
         const auto tags = syncTags(id, false);
         if (!tags.success) return {tags};
@@ -92,7 +92,7 @@ BackupResult<SyncResolutionSession> BackupEngine::prepareResolution(const QStrin
     auto saved = m_catalog.save(record);
     if (!saved.success) return {saved};
     BackupMerge merge(root, m_dependencies, m_cancel);
-    const auto created = merge.create(before, m_catalog.repoPath(id), mergeRef.isEmpty() ? (before.state == BackupSyncState::RemotePending ? before.pendingCommit : QString()) : mergeHead, mergeRef);
+    const auto created = merge.create(before, m_catalog.repoPath(id), mergeRef.isEmpty() ? (before.state == BackupSyncState::RemotePending ? before.pendingCommit : mergeHead) : mergeHead, mergeRef);
     if (!created.success)
     {
         const auto reset = m_catalog.save(before);
@@ -226,10 +226,11 @@ OperationResult BackupEngine::applySync(const PreparedSyncApply &request)
     result = replacement.verifyInstalled(); if (!result.success) return stopped(result);
     if (live.branchRef().value != before.branchRef || live.head().value != request.commit || !live.clean().success) return stopped(OperationResult::fail("应用已暂停", "仓库在应用期间发生变化"));
     record.lastCommit = request.commit; record.fingerprint = fingerprint; record.state = BackupSyncState::Tracking;
+    if (!merge.session().mergeRef.isEmpty()) record.syncContinuation = false;
     record.pendingCommit.clear(); record.resolutionSession.clear(); record.resolutionHead.clear(); record.stateDetail.clear(); record.operation.clear(); record.recoveryPaths.clear();
     result = m_catalog.save(record);
     if (!result.success) { replacement.preserve(); return result; }
-    auto completed = OperationResult::ok("同步差异已处理", "已应用并保存版本，自动备份已恢复。云端上传可另行操作。");
+    auto completed = OperationResult::ok("同步差异已处理", "已应用并保存版本，自动备份已恢复。");
     const auto cleaned = replacement.finish(); if (!cleaned.success) completed.warning = cleaned.message;
     const auto removed = m_dependencies.files->remove(resolutionPath(before)); if (!removed.success) completed.warning += removed.message;
     return completed;
@@ -269,6 +270,7 @@ OperationResult BackupEngine::cancelResolution(const QString &id, const QString 
     if (record.state == BackupSyncState::Tracking) { record.pendingCommit.clear(); record.stateDetail.clear(); }
     else { record.pendingCommit = record.resolutionHead; record.stateDetail = "已拉取的版本仍待应用到源位置。"; }
     record.resolutionSession.clear(); record.resolutionHead.clear(); record.recoveryPaths.clear();
+    record.syncContinuation = false; record.sync.state = SyncState::Waiting; record.sync.detail.clear(); record.sync.branchRef.clear();
     const auto saved = m_catalog.save(record); if (!saved.success) return saved;
     const auto removed = m_dependencies.files->remove(root);
     auto result = OperationResult::ok("处理已取消", "源文件保持原样。");

@@ -2,6 +2,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_branches.h"
+#include "windows/mainwindow_child/homepage/pages/homepage_page_collaboration.h"
 #include <QComboBox>
 #include "utils/update_service.h"
 #include "windows/mainwindow_child/aboutpage/aboutpage.h"
@@ -47,7 +48,7 @@ class NotificationDot final : public QWidget
 public:
     explicit NotificationDot(QWidget *parent = nullptr) : QWidget(parent)
     {
-        setObjectName("overviewNotificationBadge");
+        setObjectName("collaborationNotificationBadge");
         setAttribute(Qt::WA_TransparentForMouseEvents);
         setFocusPolicy(Qt::NoFocus);
         setFixedSize(7, 7);
@@ -204,8 +205,8 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     ui->sidebar->installEventFilter(this);
     ui->header->installEventFilter(this);
     ui->contextTitle->installEventFilter(this);
-    m_overviewBadge = new NotificationDot(ui->overviewTab);
-    ui->overviewTab->installEventFilter(this);
+    m_collaborationBadge = new NotificationDot(ui->collaborationTab);
+    ui->collaborationTab->installEventFilter(this);
     m_aboutBadge = new NotificationDot(ui->aboutTab);
     m_aboutBadge->setObjectName("aboutNotificationBadge");
     ui->aboutTab->installEventFilter(this);
@@ -291,9 +292,11 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         ui->previewTab->setChecked(m_route.page == PageId::Preview);
         ui->historyTab->setChecked(m_route.page == PageId::History);
         ui->overviewTab->setChecked(m_route.page == PageId::Dashboard);
+        ui->collaborationTab->setChecked(m_route.page == PageId::Collaboration);
         syncSidebarSelection();
     });
     m_dashboard = new HomePageDashboardPage(backups, this);
+    m_collaboration = new HomePageCollaborationPage(backups, this);
     m_history = new HomePageBackupPage(backups, this);
     m_diff = new HomePageDiffPage(backups, settings, gateway, this);
     m_conflict = new HomePageConflictPage(backups, this);
@@ -315,7 +318,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
                 navigate({PageId::About});
                 m_about->showAvailableUpdate();
             }); });
-    for (QWidget *page : QList<QWidget *>{m_list, m_preview, m_dashboard, m_history, m_diff, m_conflict, m_branches, m_general, m_ai, m_about})
+    for (QWidget *page : QList<QWidget *>{m_list, m_preview, m_dashboard, m_collaboration, m_history, m_diff, m_conflict, m_branches, m_general, m_ai, m_about})
         ui->pages->addWidget(page);
     const auto wire = [this](auto *page)
     {
@@ -329,7 +332,21 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     wire(m_diff);
     wire(m_conflict);
     wire(m_branches);
+    wire(m_collaboration);
     connect(m_branches, &HomePageBranchesPage::replaceRoute, &m_navigation, &Navigation::replaceCurrent);
+    connect(m_collaboration, &HomePageCollaborationPage::switchRequested, this, [this](const QString &id, const QString &ref) {
+        const auto generation = m_backups->repositoryGeneration(id);
+        m_preview->requestLeave([this, id, ref, generation] {
+            m_branches->requestSwitch(id, ref, [this, id, generation] {
+                if (!m_backups->contains(id) || m_backups->repositoryGeneration(id) != generation) return;
+                m_backups->synchronize(id, SyncRequestOptions{}, this, [this, id](const BackupResult<SyncResult> &reply) {
+                    notify(reply.result);
+                    if (m_route.page == PageId::Collaboration && m_route.backupId == id && reply.value.status.state == SyncState::NeedsResolution)
+                        navigate({PageId::Conflict, id});
+                });
+            });
+        });
+    });
     connect(m_history, &HomePageBackupPage::branchRequested, this, [this](const QString &ref)
     {
         if (ref.isEmpty()) return;
@@ -382,7 +399,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
             if (m_navigation.canBack() && (m_navigation.previous().page == PageId::History || m_navigation.previous().page == PageId::Branches))
                 m_navigation.back();
             else
-                navigate({PageId::Dashboard, m_route.backupId});
+                navigate({PageId::Collaboration, m_route.backupId});
         }
         else
         {
@@ -415,13 +432,13 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
             if (m_navigation.canBack() && (m_navigation.previous().page == PageId::History || m_navigation.previous().page == PageId::Branches))
                 m_navigation.back();
             else
-                navigate({PageId::Dashboard, m_route.backupId});
+                navigate({PageId::Collaboration, m_route.backupId});
         } });
     connect(ui->settingsSearch, &QLineEdit::textChanged, this, &MainWindow::updateSettingsSearch);
     connect(ui->clearSettingsSearchButton, &QPushButton::clicked, ui->settingsSearch, &QLineEdit::clear);
     connect(ui->collapseButton, &QToolButton::clicked, this, &MainWindow::toggleSidebar);
     const QList<QPair<QToolButton *, PageId>> tabs{
-        {ui->previewTab, PageId::Preview}, {ui->historyTab, PageId::History}, {ui->overviewTab, PageId::Dashboard}, {ui->generalTab, PageId::GeneralSettings}, {ui->aiTab, PageId::AiSettings}, {ui->aboutTab, PageId::About}};
+        {ui->previewTab, PageId::Preview}, {ui->historyTab, PageId::History}, {ui->overviewTab, PageId::Dashboard}, {ui->collaborationTab, PageId::Collaboration}, {ui->generalTab, PageId::GeneralSettings}, {ui->aiTab, PageId::AiSettings}, {ui->aboutTab, PageId::About}};
     for (const auto &tab : tabs)
     {
         auto *button = tab.first;
@@ -448,6 +465,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         m_conflict->refreshTheme();
         updateHeaderLayout(); });
     connect(backups, &BackupService::trackedItemsChanged, this, &MainWindow::syncBackups);
+    connect(backups, &BackupService::syncStatusChanged, this, [this] { updateConflictBadge(); });
     connect(backups, &BackupService::repositoryChanged, this, [this](const QString &id)
             {
         if (id == m_route.backupId)
@@ -655,8 +673,8 @@ void MainWindow::updateIcons()
     }
     m_actions->refreshIcons();
     ui->sidebarList->viewport()->update();
-    if (m_overviewBadge)
-        m_overviewBadge->update();
+    if (m_collaborationBadge)
+        m_collaborationBadge->update();
     if (m_aboutBadge)
         m_aboutBadge->update();
 }
@@ -720,6 +738,8 @@ void MainWindow::displayRoute(const Route &route)
         m_history->deactivate();
     if (m_route.page == PageId::Dashboard)
         m_dashboard->deactivate();
+    if (m_route.page == PageId::Collaboration)
+        m_collaboration->deactivate();
     if (m_route.page == PageId::Diff)
         m_diff->deactivate();
     if (m_route.page == PageId::Conflict)
@@ -798,6 +818,10 @@ void MainWindow::displayRoute(const Route &route)
         m_preview->setBackup(route.backupId, route.path);
         actions = m_preview->toolbarActions();
         break;
+    case PageId::Collaboration:
+        page = m_collaboration;
+        m_collaboration->setBackup(route.backupId);
+        break;
     case PageId::Dashboard:
         page = m_dashboard;
         m_dashboard->setBackup(route.backupId);
@@ -853,7 +877,7 @@ void MainWindow::displayRoute(const Route &route)
     {
         const bool fromHistory = (m_navigation.canBack() && m_navigation.previous().page == PageId::History);
         const bool fromBranches = (m_navigation.canBack() && m_navigation.previous().page == PageId::Branches);
-        const QString text = fromHistory ? "返回历史版本" : fromBranches ? "返回方案" : "返回概览";
+        const QString text = fromHistory ? "返回历史版本" : fromBranches ? "返回方案" : "返回多人协作";
         ui->returnHistoryButton->setText(text);
         ui->returnHistoryButton->setToolTip(text + " (Esc)");
         ui->returnHistoryButton->setAccessibleName(text);
@@ -868,10 +892,12 @@ void MainWindow::displayRoute(const Route &route)
     ui->previewTab->setVisible(!isStandalone && isObject);
     ui->historyTab->setVisible(!isStandalone && isObject);
     ui->overviewTab->setVisible(!isStandalone && isObject);
+    ui->collaborationTab->setVisible(!isStandalone && isObject);
     updateBranchSelector();
     ui->previewTab->setChecked(route.page == PageId::Preview);
     ui->historyTab->setChecked(route.page == PageId::History);
     ui->overviewTab->setChecked(route.page == PageId::Dashboard);
+    ui->collaborationTab->setChecked(route.page == PageId::Collaboration);
     ui->generalTab->setChecked(route.page == PageId::GeneralSettings);
     ui->aiTab->setChecked(route.page == PageId::AiSettings);
     ui->aboutTab->setChecked(route.page == PageId::About);
@@ -917,10 +943,10 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     if ((watched == ui->header || watched == ui->contextTitle) && event->type() == QEvent::Resize)
         updateHeaderLayout();
 
-    if (watched == ui->overviewTab && (event->type() == QEvent::Resize || event->type() == QEvent::Move) && m_overviewBadge)
+    if (watched == ui->collaborationTab && (event->type() == QEvent::Resize || event->type() == QEvent::Move) && m_collaborationBadge)
     {
-        m_overviewBadge->move(ui->overviewTab->width() - m_overviewBadge->width() - 3, 3);
-        m_overviewBadge->raise();
+        m_collaborationBadge->move(ui->collaborationTab->width() - m_collaborationBadge->width() - 3, 3);
+        m_collaborationBadge->raise();
     }
     if (watched == ui->aboutTab && (event->type() == QEvent::Resize || event->type() == QEvent::Move) && m_aboutBadge)
     {
@@ -976,19 +1002,21 @@ void MainWindow::updateConflictBadge()
 {
     const bool isObject = isObjectPage(m_route.page);
     const auto state = isObject ? m_backups->syncState(m_route.backupId) : BackupSyncState::Tracking;
-    const bool hasConflict = isObject && (state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending);
+    const auto sync = m_backups->syncStatus(m_route.backupId).state;
+    const bool hasConflict = isObject && (state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending ||
+        sync == SyncState::NeedsBranch || sync == SyncState::NeedsTags || sync == SyncState::NeedsAttention);
     const bool isStandalone = (m_route.page == PageId::Diff || m_route.page == PageId::Conflict || m_route.page == PageId::Branches);
     const bool badgeVisible = hasConflict && !isStandalone;
-    if (m_overviewBadge)
+    if (m_collaborationBadge)
     {
-        m_overviewBadge->setVisible(badgeVisible);
+        m_collaborationBadge->setVisible(badgeVisible);
         if (badgeVisible)
         {
-            m_overviewBadge->move(ui->overviewTab->width() - m_overviewBadge->width() - 3, 3);
-            m_overviewBadge->raise();
+            m_collaborationBadge->move(ui->collaborationTab->width() - m_collaborationBadge->width() - 3, 3);
+            m_collaborationBadge->raise();
         }
     }
-    ui->overviewTab->setToolTip(hasConflict ? "概览 (存在同步差异，请继续处理)" : "概览");
+    ui->collaborationTab->setToolTip(hasConflict ? "多人协作 (存在待处理事项)" : "多人协作");
 }
 void MainWindow::updateUpdateBadge()
 {

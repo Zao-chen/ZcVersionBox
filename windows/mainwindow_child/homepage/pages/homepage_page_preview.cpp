@@ -377,6 +377,7 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     connect(saveShortcut, &QShortcut::activated, this, [this] { if (m_editing) save(); });
     connect(ui->editor->document(), &QTextDocument::modificationChanged, this, &HomePagePreviewPage::updateActions);
     connect(service, &BackupService::busyChanged, this, &HomePagePreviewPage::updateActions);
+    connect(service, &BackupService::syncStatusChanged, this, [this](const QString &id) { if (id == m_id) updateActions(); });
     connect(service, &BackupService::sourceChanged, this, [this](const QString &id) { if (id == m_id && m_active) m_refreshTimer.start(); });
     connect(ui->files, &QTreeView::clicked, this, [this](const QModelIndex &index) {
         const auto path = index.siblingAtColumn(0).data(PathRole).toString();
@@ -422,7 +423,7 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     refreshTheme();
     setLoading(false);
 }
-HomePagePreviewPage::~HomePagePreviewPage() { deactivate(); }
+HomePagePreviewPage::~HomePagePreviewPage() { m_service->setSyncEditing(m_id, false); deactivate(); }
 QList<QAction *> HomePagePreviewPage::toolbarActions() const { return {m_refresh}; }
 void HomePagePreviewPage::refreshTheme()
 {
@@ -460,6 +461,7 @@ void HomePagePreviewPage::setBackup(const QString &id, const QString &path)
     }
     rememberScroll();
     m_editing = m_newFile = false; m_statusText.clear(); ui->editor->setReadOnly(true);
+    m_service->setSyncEditing(m_id, false);
     m_id = id; m_path = path; m_paths[id] = path; m_active = true;
     m_valid = false; m_fit = true; m_zoom = 1;
     ui->findBar->hide(); ui->markdownButton->setChecked(m_rawModes.value(m_id + QChar(0x1f) + m_path));
@@ -671,11 +673,12 @@ bool HomePagePreviewPage::hasUnsavedChanges() const
 void HomePagePreviewPage::updateActions()
 {
     if (!m_edit) return;
+    m_service->setSyncEditing(m_id, hasUnsavedChanges() || m_saving || m_mutating);
     const bool tracking = m_service->contains(m_id) && m_service->syncState(m_id) == BackupSyncState::Tracking;
     const auto context = m_service->branchContext(m_id);
     const auto original = m_content.location.context;
     const bool contextMatches = !m_editing || (context.ref == original.ref && context.version == original.version && context.generation == original.generation);
-    const bool ready = m_active && m_valid && !m_loading && !m_saving && !m_mutating;
+    const bool ready = m_active && m_valid && !m_loading && !m_saving && !m_mutating && !m_service->isSynchronizing(m_id);
     const bool isDir = m_directory.entry.directory;
     m_new->setVisible(isDir && !m_editing);
     m_new->setEnabled(ready && tracking && isDir && !m_editing);
@@ -689,7 +692,7 @@ void HomePagePreviewPage::updateActions()
     m_cancel->setEnabled(!m_saving && !m_mutating);
     m_manage->setVisible(!m_editing && !m_path.isEmpty());
     m_manage->setEnabled(ready && tracking && m_directory.location.rootDirectory);
-    ui->editor->setReadOnly(!m_editing || m_saving || m_mutating);
+    ui->editor->setReadOnly(!m_editing || m_saving || m_mutating || m_service->isSynchronizing(m_id));
 }
 void HomePagePreviewPage::beginEdit()
 {

@@ -51,7 +51,9 @@ class BackupEngine
     OperationResult editMessage(const QString &id, const QString &commit, const QString &message);
     OperationResult setRemote(const QString &id, const QString &url);
     OperationResult removeRemote(const QString &id);
-    OperationResult synchronize(const QString &id, bool push);
+    BackupResult<SyncResult> synchronize(const QString &id, const SyncRequestOptions &options,
+        const std::function<void(SyncPhase)> &progress = {}, const std::function<bool()> &editing = {});
+    OperationResult setAutoSync(const QString &id, bool enabled);
     BackupResult<SyncResolutionSession> prepareSyncResolution(const QString &id, bool restart = false);
     BackupResult<SyncResolutionSession> syncResolution(const QString &id);
     BackupResult<SyncResolutionSession> chooseSyncResolution(const QString &id, const QString &sessionId, quint64 revision, const QString &path, int hunk, ConflictChoice choice);
@@ -82,6 +84,8 @@ class BackupEngine
     OperationResult cancelResolution(const QString &id, const QString &session);
 
   private:
+    friend class BackupService;
+    OperationResult transferSavedVersions(const QString &id, bool push);
     struct ImportSession
     {
         std::shared_ptr<QTemporaryDir> directory;
@@ -110,7 +114,7 @@ class BackupEngine
     OperationResult commitTagChanges(BackupRecord record, const QVector<TagRefChange> &changes);
     OperationResult syncTags(const QString &id, bool push);
     OperationResult recoverTags(BackupRecord record);
-    BackupResult<SyncResolutionSession> prepareResolution(const QString &id, bool restart, QString mergeRef = {}, QString mergeHead = {});
+    BackupResult<SyncResolutionSession> prepareResolution(const QString &id, bool restart, QString mergeRef = {}, QString mergeHead = {}, bool fetched = false);
     QString resolutionPath(const BackupRecord &record) const;
     BackupResult<BackupRecord> requireBranch(const BranchContext &context);
     OperationResult checkBranchTarget(const BranchRequest &request, bool remote = false);

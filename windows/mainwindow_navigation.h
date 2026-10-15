@@ -16,7 +16,8 @@ enum class PageId
     About,
     Conflict,
     Branches,
-    Preview
+    Preview,
+    Collaboration
 };
 struct Route
 {
@@ -35,7 +36,7 @@ Q_DECLARE_METATYPE(Route)
 
 inline bool isObjectPage(PageId page)
 {
-    return page == PageId::Preview || page == PageId::Dashboard || page == PageId::History || page == PageId::Diff || page == PageId::Conflict || page == PageId::Branches;
+    return page == PageId::Collaboration || page == PageId::Preview || page == PageId::Dashboard || page == PageId::History || page == PageId::Diff || page == PageId::Conflict || page == PageId::Branches;
 }
 inline bool isSettingsPage(PageId page)
 {

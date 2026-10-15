@@ -22,6 +22,7 @@ class BackupService::Private
         quint64 generation, branchVersion;
         BackupTaskPriority priority{BackupTaskPriority::Foreground};
         QPointer<QObject> context;
+        bool synchronization{false}, branchBound{true};
         std::shared_ptr<std::atomic_bool> cancelled{std::make_shared<std::atomic_bool>(false)};
         std::function<void(const std::shared_ptr<Job> &)> start;
     };
@@ -37,6 +38,12 @@ class BackupService::Private
     QQueue<JobPtr> foregroundQueue, backgroundQueue;
     JobPtr active;
     BackupTaskId sequence{0};
+    struct SyncObserver { QPointer<QObject> context; Reply<SyncResult> callback; };
+    QMap<QString, BackupTaskId> syncJobs;
+    QMap<QString, QVector<SyncObserver>> syncObservers;
+    QMap<QString, SyncStatus> syncStatuses;
+    QSet<QString> locallyDirty;
+    QMap<QString, std::shared_ptr<std::atomic_bool>> editGuards;
     quint64 observationSequence{0};
     QMap<QString, quint64> observationVersions;
     int foregroundStreak{0}, reloadCount{0};
@@ -119,7 +126,7 @@ class BackupService::Private
             const auto records = engine->records();
             auto found = std::find_if(records.cbegin(), records.cend(), [&](const BackupRecord &r)
                                       { return r.id == job->id; });
-            if (found == records.cend() || found->generation != job->generation || found->branchVersion != job->branchVersion)
+            if (found == records.cend() || found->generation != job->generation || (job->branchBound && found->branchVersion != job->branchVersion))
                 return OperationResult::cancel("操作已取消", "追踪对象或工作方案已变化，请刷新后再试");
         }
         return result;
@@ -144,6 +151,19 @@ class BackupService::Private
                 r.stateDetail = "上次操作未完整确认，自动备份已暂停。保留副本：" + r.recoveryPaths.join("、");
             }
             cache.insert(r.id, r);
+        }
+        for (auto it = syncStatuses.begin(); it != syncStatuses.end();)
+            if (!cache.contains(it.key())) it = syncStatuses.erase(it); else ++it;
+        for (const auto &r : cache)
+        {
+            const bool localChange = (!active || !active->synchronization || active->id != r.id) && previous.contains(r.id) &&
+                (previous[r.id].lastCommit != r.lastCommit || previous[r.id].branchVersion != r.branchVersion || previous[r.id].tagRevision != r.tagRevision);
+            if (localChange) locallyDirty.insert(r.id);
+            auto status = r.sync;
+            if (locallyDirty.contains(r.id) && status.state == SyncState::Synced) status.state = SyncState::Waiting;
+            if (!syncJobs.contains(r.id) && (!syncStatuses.contains(r.id) || syncStatuses[r.id] != status))
+            { syncStatuses[r.id] = status; emit owner->syncStatusChanged(r.id); }
+            if (localChange) emit owner->localVersionsChanged(r.id);
         }
         bool changed = previous.size() != cache.size();
         for (const auto &id : observationVersions.keys())
@@ -210,6 +230,12 @@ class BackupService::Private
                     done(job, reply.result);
                     if (job->context && callback) callback(reply);
                 }, Qt::QueuedConnection); }, Qt::QueuedConnection); }, priority);
+    }
+    BackupTaskId unbound(BackupTaskId task)
+    {
+        for (auto *queue : {&foregroundQueue, &backgroundQueue})
+            for (const auto &job : *queue) if (job->task == task) job->branchBound = false;
+        return task;
     }
     BackupTaskId mutate(const QString &id, QObject *context, Completion callback,
                         std::function<OperationResult(BackupEngine &)> action, bool notify = true,
@@ -409,7 +435,15 @@ QVector<TagConflict> BackupService::tagConflicts(const QString &id) const
     return result;
 }
 BackupTaskId BackupService::resolveTagConflict(const QString &id, const TagConflict &conflict, const QString &name, QObject *c, Completion f)
-{ return d->mutate(id, c, std::move(f), [id, conflict, name](BackupEngine &e) { return e.resolveTagConflict(id, conflict, name); }); }
+{
+    const QPointer<QObject> receiver(c ? c : this);
+    return d->mutate(id, this, [this, id, receiver, f = std::move(f)](const OperationResult &result)
+    {
+        if (receiver && f) f(result);
+        if (result.success && tagConflicts(id).isEmpty() && d->cache.value(id).syncContinuation)
+            synchronize(id, {SyncTrigger::Continuation, BackupTaskPriority::Foreground}, this);
+    }, [id, conflict, name](BackupEngine &e) { return e.resolveTagConflict(id, conflict, name); });
+}
 BackupTaskId BackupService::prepareRebuild(const QString &id, QObject *c, Reply<PreparedRebuild> f)
 { return d->submit<PreparedRebuild>(id, c, std::move(f), [id](BackupEngine &e) { return e.prepareRebuild(id); }); }
 BackupTaskId BackupService::rebuild(const PreparedRebuild &r, QObject *c, Completion f)
@@ -427,23 +461,101 @@ BackupTaskId BackupService::editMessage(const QString &id, const QString &commit
 }
 BackupTaskId BackupService::setRemote(const QString &id, const QString &url, QObject *c, Completion f)
 {
-    return d->mutate(id, c, std::move(f), [id, url](BackupEngine &e)
-                     { return e.setRemote(id, url); });
+    cancelSync(id);
+    return d->unbound(d->mutate(id, c, std::move(f), [id, url](BackupEngine &e)
+                     { return e.setRemote(id, url); }));
 }
 BackupTaskId BackupService::removeRemote(const QString &id, QObject *c, Completion f)
 {
-    return d->mutate(id, c, std::move(f), [id](BackupEngine &e)
-                     { return e.removeRemote(id); });
+    cancelSync(id);
+    return d->unbound(d->mutate(id, c, std::move(f), [id](BackupEngine &e)
+                     { return e.removeRemote(id); }));
 }
-BackupTaskId BackupService::synchronize(const QString &id, bool push, QObject *c, Completion f)
+BackupTaskId BackupService::transferSavedVersions(const QString &id, bool push, QObject *c, Completion f)
 {
     return d->mutate(id, c, std::move(f), [id, push](BackupEngine &e)
-                     { return e.synchronize(id, push); });
+                     { return e.transferSavedVersions(id, push); });
+}
+bool BackupService::isSynchronizing(const QString &id) const { return d->syncJobs.contains(id); }
+SyncStatus BackupService::syncStatus(const QString &id) const
+{
+    auto status = d->syncStatuses.value(id, d->cache.value(id).sync);
+    if (isSyncEditing(id) && (status.state == SyncState::Waiting || status.state == SyncState::Synced)) status.state = SyncState::Editing;
+    if (!isSyncEditing(id) && status.state == SyncState::Editing) status.state = SyncState::Waiting;
+    return status;
+}
+bool BackupService::isSyncEditing(const QString &id) const { const auto guard = d->editGuards.value(id); return guard && guard->load(); }
+void BackupService::setSyncEditing(const QString &id, bool editing)
+{
+    if (id.isEmpty() || isSyncEditing(id) == editing) return;
+    if (!d->editGuards.contains(id)) d->editGuards[id] = std::make_shared<std::atomic_bool>(false);
+    d->editGuards[id]->store(editing);
+    emit syncStatusChanged(id);
+    emit syncEditingChanged(id);
+}
+void BackupService::cancelSync(const QString &id)
+{
+    if (d->syncJobs.contains(id)) cancel(d->syncJobs.value(id));
+}
+BackupTaskId BackupService::setAutoSync(const QString &id, bool enabled, QObject *c, Completion f)
+{
+    if (!enabled) cancelSync(id);
+    return d->unbound(d->mutate(id, c, std::move(f), [id, enabled](BackupEngine &e) { return e.setAutoSync(id, enabled); }));
+}
+BackupTaskId BackupService::synchronize(const QString &id, SyncRequestOptions options, QObject *c, Reply<SyncResult> f)
+{
+    d->syncObservers[id].append({c ? c : this, std::move(f)});
+    if (d->syncJobs.contains(id)) return d->syncJobs.value(id);
+    auto status = syncStatus(id);
+    status.state = isSyncEditing(id) ? SyncState::Editing : SyncState::Waiting;
+    d->syncStatuses[id] = status;
+    if (!d->editGuards.contains(id)) d->editGuards[id] = std::make_shared<std::atomic_bool>(false);
+    const auto editing = d->editGuards.value(id);
+    const auto task = d->submit<SyncResult>(id, this, [this, id](const BackupResult<SyncResult> &reply)
+    {
+        d->syncJobs.remove(id);
+        auto output = reply;
+        if (output.value.status.remoteUrl.isEmpty() && !output.result.success)
+        {
+            output.value.status = d->cache.value(id).sync;
+            output.value.status.state = output.result.cancelled ? SyncState::Waiting : output.result.retryable ? SyncState::RetryLater : SyncState::NeedsAttention;
+            output.value.status.message = output.result.title;
+            output.value.status.detail = output.result.message;
+        }
+        if (output.value.status.state == SyncState::Synced) d->locallyDirty.remove(id);
+        if (contains(id)) { d->syncStatuses[id] = output.value.status; emit syncStatusChanged(id); }
+        const auto observers = d->syncObservers.take(id);
+        for (const auto &observer : observers) if (observer.context && observer.callback) observer.callback(output);
+    }, [this, id, options, editing](BackupEngine &e) -> BackupResult<SyncResult>
+    {
+        if (editing->load())
+        {
+            SyncStatus status;
+            for (const auto &r : e.records()) if (r.id == id) status = r.sync;
+            status.state = SyncState::Editing; status.detail = "文件有未保存的编辑，保存或放弃后继续同步。";
+            return {OperationResult::info("等待保存编辑", status.detail), {status}};
+        }
+        return e.synchronize(id, options, [this, id](SyncPhase phase)
+        {
+            QMetaObject::invokeMethod(this, [this, id, phase]
+            {
+                if (!d->syncJobs.contains(id) || !contains(id)) return;
+                auto &status = d->syncStatuses[id]; status.state = SyncState::Running; status.phase = phase;
+                emit syncStatusChanged(id);
+            }, Qt::QueuedConnection);
+        }, [editing] { return editing->load(); });
+    }, true, options.priority);
+    d->syncJobs[id] = task;
+    for (auto *queue : {&d->foregroundQueue, &d->backgroundQueue})
+        for (const auto &job : *queue) if (job->task == task) job->synchronization = true;
+    emit syncStatusChanged(id);
+    return task;
 }
 BackupTaskId BackupService::removeBackup(const QString &id, QObject *c, Completion f)
 {
-    return d->mutate(id, c, std::move(f), [id](BackupEngine &e)
-                     { return e.removeBackup(id); });
+    cancelSync(id);
+    return d->unbound(d->mutate(id, c, std::move(f), [id](BackupEngine &e)
+                     { return e.removeBackup(id); }));
 }
 BackupTaskId BackupService::rebuild(const QString &id, QObject *c, Completion f)
 {
@@ -510,7 +622,13 @@ BackupTaskId BackupService::prepareSyncApply(const QString &id, const QString &s
 }
 BackupTaskId BackupService::applySync(const PreparedSyncApply &request, QObject *c, Completion f)
 {
-    return d->mutate(request.id, c, std::move(f), [request](BackupEngine &e) { return e.applySync(request); });
+    const QPointer<QObject> receiver(c ? c : this);
+    return d->mutate(request.id, this, [this, id = request.id, receiver, f = std::move(f)](const OperationResult &result)
+    {
+        if (receiver && f) f(result);
+        if (result.success && d->cache.value(id).syncContinuation)
+            synchronize(id, {SyncTrigger::Continuation, BackupTaskPriority::Foreground}, this);
+    }, [request](BackupEngine &e) { return e.applySync(request); });
 }
 BackupTaskId BackupService::syncContent(const QString &id, const QString &session, const QString &path, ConflictSide side, QObject *c, Reply<ConflictContent> f)
 {
@@ -551,8 +669,14 @@ BackupTaskId BackupService::switchBranch(const PreparedBranchSwitch &r, QObject 
 
 BackupTaskId BackupService::prepareBranchMerge(const BranchRequest &r, QObject *c, Reply<SyncResolutionSession> f)
 { return d->submit<SyncResolutionSession>(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.prepareBranchMerge(r); }); }
-BackupTaskId BackupService::cancelResolution(const QString &id, const QString &session, QObject *c, Completion f)
-{ return d->mutate(id, c, std::move(f), [=](BackupEngine &e) { return e.cancelResolution(id, session); }); }
+BackupTaskId BackupService::cancelResolution(const QString &id, const QString &session, QObject *c, Completion f, bool disableAutomatic)
+{
+    return d->mutate(id, c, std::move(f), [=](BackupEngine &e) {
+        const auto result = e.cancelResolution(id, session);
+        if (result.success && disableAutomatic) return e.setAutoSync(id, false);
+        return result;
+    });
+}
 
 BackupTaskId BackupService::uploadBranch(const BranchRequest &r, QObject *c, Completion f)
 { return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.uploadBranch(r); }); }

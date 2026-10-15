@@ -140,10 +140,16 @@ OperationResult BackupEngine::fetchBranches(const BranchContext &context)
     const auto checked = requireBranch(context); if (!checked.result.success) return checked.result;
     const auto git = repository(context.id);
     const auto remote = git.remoteName(); if (!remote.result.success) return remote.result;
+    const auto beforeRefs = git.run({"for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes/"});
+    if (!beforeRefs.success()) return GitRepository::outcome(beforeRefs);
     const auto result = GitRepository::outcome(git.run({"fetch", "--prune", "--no-tags", "--no-write-fetch-head", "--", remote.value,
         "+refs/heads/*:refs/remotes/" + remote.value + "/*"}, {}, true, 300000), "获取云端方案失败");
     if (!result.success) return result;
-    auto record = checked.value; ++record.branchVersion; record.branchesFetchedAt = QDateTime::currentDateTimeUtc();
+    const auto afterRefs = git.run({"for-each-ref", "--format=%(refname) %(objectname)", "refs/remotes/"});
+    if (!afterRefs.success()) return GitRepository::outcome(afterRefs);
+    auto record = checked.value;
+    if (beforeRefs.bytes != afterRefs.bytes) ++record.branchVersion;
+    record.branchesFetchedAt = QDateTime::currentDateTimeUtc();
     const auto saved = m_catalog.save(record);
     return saved.success ? OperationResult::ok("云端方案已更新", "源文件与当前方案保持原样。") : saved;
 }

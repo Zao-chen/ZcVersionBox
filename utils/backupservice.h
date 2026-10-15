@@ -58,7 +58,13 @@ class BackupService : public QObject
     BackupTaskId editMessage(const QString &id, const QString &commit, const QString &message, QObject *context, Completion callback = {});
     BackupTaskId setRemote(const QString &id, const QString &url, QObject *context, Completion callback = {});
     BackupTaskId removeRemote(const QString &id, QObject *context, Completion callback = {});
-    BackupTaskId synchronize(const QString &id, bool push, QObject *context, Completion callback = {});
+    BackupTaskId synchronize(const QString &id, SyncRequestOptions options, QObject *context, Reply<SyncResult> callback = {});
+    BackupTaskId setAutoSync(const QString &id, bool enabled, QObject *context, Completion callback = {});
+    SyncStatus syncStatus(const QString &id) const;
+    bool isSynchronizing(const QString &id) const;
+    void setSyncEditing(const QString &id, bool editing);
+    bool isSyncEditing(const QString &id) const;
+    void cancelSync(const QString &id);
     BackupTaskId prepareSyncResolution(const QString &id, QObject *context, Reply<SyncResolutionSession> callback, bool restart = false);
     BackupTaskId syncResolution(const QString &id, QObject *context, Reply<SyncResolutionSession> callback);
     BackupTaskId chooseSyncResolution(const QString &id, const QString &sessionId, quint64 revision, const QString &path, int hunk, ConflictChoice choice, QObject *context, Reply<SyncResolutionSession> callback);
@@ -87,11 +93,14 @@ class BackupService : public QObject
     BackupTaskId prepareBranchSwitch(const BranchRequest &request, QObject *context, Reply<PreparedBranchSwitch> callback);
     BackupTaskId switchBranch(const PreparedBranchSwitch &request, QObject *context, Completion callback);
     BackupTaskId prepareBranchMerge(const BranchRequest &request, QObject *context, Reply<SyncResolutionSession> callback);
-    BackupTaskId cancelResolution(const QString &id, const QString &session, QObject *context, Completion callback);
+    BackupTaskId cancelResolution(const QString &id, const QString &session, QObject *context, Completion callback, bool disableAutomatic = false);
     void cancel(BackupTaskId task);
 
   signals:
     void notification(const OperationResult &result);
+    void syncStatusChanged(const QString &id);
+    void localVersionsChanged(const QString &id);
+    void syncEditingChanged(const QString &id);
     void ready();
     void reloadFinished(const OperationResult &result);
     void trackedItemsChanged();
@@ -103,6 +112,8 @@ class BackupService : public QObject
     void busyChanged(bool busy);
 
   private:
+    friend class TestBackupService;
+    BackupTaskId transferSavedVersions(const QString &id, bool push, QObject *context, Completion callback = {});
     class Private;
     std::unique_ptr<Private> d;
 };

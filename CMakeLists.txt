@@ -86,6 +86,7 @@ add_library(zc_services STATIC
     utils/linuxintegration.h utils/linuxintegration.cpp
     utils/gitcommand.h utils/gitcommand.cpp
     utils/backupservice.h utils/backupservice.cpp
+    utils/syncscheduler.h utils/syncscheduler.cpp
     utils/backupmonitor.h utils/backupmonitor.cpp
     utils/backupmonitor_types.h
     utils/backupmonitor_scheduler.h utils/backupmonitor_scheduler.cpp
@@ -98,6 +99,7 @@ add_library(zc_services STATIC
     utils/backup_files.h utils/backup_files.cpp
     utils/backup_git.h utils/backup_git.cpp
     utils/backup_git_branches.cpp
+    utils/backup_engine_sync.cpp
     utils/backup_engine_branches.cpp
     utils/backup_engine_switch.cpp
     utils/backup_merge.h utils/backup_merge.cpp
@@ -127,6 +129,7 @@ add_library(zc_ui STATIC
     windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.h windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.cpp
     windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.h windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.cpp
     windows/mainwindow_child/homepage/homepage.h windows/mainwindow_child/homepage/homepage.cpp windows/mainwindow_child/homepage/homepage.ui
+    windows/mainwindow_child/homepage/pages/homepage_page_collaboration.h windows/mainwindow_child/homepage/pages/homepage_page_collaboration.cpp windows/mainwindow_child/homepage/pages/homepage_page_collaboration.ui
     windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h windows/mainwindow_child/homepage/pages/homepage_page_dashboard.cpp windows/mainwindow_child/homepage/pages/homepage_page_dashboard.ui
     windows/mainwindow_child/homepage/pages/homepage_page_branches.h windows/mainwindow_child/homepage/pages/homepage_page_branches.cpp windows/mainwindow_child/homepage/pages/homepage_page_branches.ui
     windows/mainwindow_child/homepage/pages/homepage_preview_widgets.h windows/mainwindow_child/homepage/pages/homepage_preview_widgets.cpp

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>HomePageCollaborationPage</class>
+ <widget class="QWidget" name="HomePageCollaborationPage">
+  <property name="minimumSize"><size><width>0</width><height>0</height></size></property>
+  <layout class="QVBoxLayout" name="rootLayout">
+   <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property><property name="spacing"><number>0</number></property>
+   <item><widget class="QScrollArea" name="scroll">
+    <property name="frameShape"><enum>QFrame::NoFrame</enum></property><property name="widgetResizable"><bool>true</bool></property>
+    <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property><property name="alignment"><set>Qt::AlignLeft|Qt::AlignTop</set></property>
+    <widget class="QWidget" name="content">
+     <property name="maximumSize"><size><width>808</width><height>16777215</height></size></property>
+     <layout class="QVBoxLayout" name="contentLayout">
+      <property name="leftMargin"><number>24</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>24</number></property><property name="bottomMargin"><number>8</number></property><property name="spacing"><number>32</number></property>
+      <item><layout class="QHBoxLayout" name="statusRow" stretch="1,0"><property name="spacing"><number>24</number></property>
+       <item><layout class="QVBoxLayout" name="statusLayout"><property name="spacing"><number>4</number></property>
+        <item><layout class="QHBoxLayout" name="statusTextRow"><property name="spacing"><number>8</number></property><item><widget class="QLabel" name="stateLabel"><property name="text"><string>尚未连接共享仓库</string></property></widget></item><item><spacer name="stateSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item></layout></item>
+        <item><widget class="QLabel" name="summary"><property name="wordWrap"><bool>true</bool></property><property name="textFormat"><enum>Qt::PlainText</enum></property></widget></item>
+        <item><widget class="QLabel" name="lastSync"><property name="text"><string>尚未完成首次同步</string></property></widget></item>
+       </layout></item>
+       <item alignment="Qt::AlignLeft|Qt::AlignVCenter"><widget class="QPushButton" name="syncButton"><property name="text"><string>立即同步</string></property><property name="accessibleName"><string>立即同步全部方案</string></property><property name="toolTip"><string>同步全部方案的已保存版本和里程碑</string></property><property name="minimumSize"><size><width>0</width><height>32</height></size></property><property name="autoDefault"><bool>false</bool></property></widget></item>
+      </layout></item>
+      <item><layout class="QHBoxLayout" name="automaticRow" stretch="1"><property name="spacing"><number>24</number></property>
+       <item><layout class="QVBoxLayout" name="automaticLayout"><property name="spacing"><number>4</number></property>
+        <item><widget class="QLabel" name="automaticTitle"><property name="text"><string>自动同步</string></property></widget></item>
+        <item><widget class="QLabel" name="automaticHint"><property name="wordWrap"><bool>true</bool></property><property name="text"><string>保存后自动同步，每 30 秒检查更新。</string></property><property name="toolTip"><string>保存后等待 3 秒，合并连续修改。新增、修改和删除都会同步；内容冲突时由你选择。</string></property></widget></item>
+       </layout></item>
+      </layout></item>
+      <item><layout class="QVBoxLayout" name="remoteLayout"><property name="spacing"><number>4</number></property>
+       <item><widget class="QLabel" name="remoteTitle"><property name="text"><string>共享仓库</string></property></widget></item>
+       <item><layout class="QHBoxLayout" name="addressRow"><property name="spacing"><number>6</number></property>
+        <item><widget class="QLineEdit" name="remoteUrl"><property name="placeholderText"><string>填写共享仓库地址</string></property><property name="toolTip"><string>例如 https://github.com/team/project.git</string></property><property name="accessibleName"><string>共享仓库地址</string></property><property name="minimumSize"><size><width>0</width><height>32</height></size></property></widget></item>
+        <item alignment="Qt::AlignLeft|Qt::AlignVCenter"><widget class="QToolButton" name="copyButton"><property name="text"><string>复制协作地址</string></property><property name="toolTip"><string>复制协作地址</string></property><property name="accessibleName"><string>复制协作地址</string></property><property name="autoRaise"><bool>true</bool></property><property name="focusPolicy"><enum>Qt::TabFocus</enum></property><property name="minimumSize"><size><width>28</width><height>32</height></size></property></widget></item>
+        <item alignment="Qt::AlignLeft|Qt::AlignVCenter"><widget class="QToolButton" name="connectButton"><property name="text"><string>连接</string></property><property name="toolTip"><string>连接</string></property><property name="accessibleName"><string>连接</string></property><property name="autoRaise"><bool>true</bool></property><property name="focusPolicy"><enum>Qt::TabFocus</enum></property><property name="minimumSize"><size><width>28</width><height>32</height></size></property></widget></item>
+        <item alignment="Qt::AlignLeft|Qt::AlignVCenter"><widget class="QToolButton" name="disconnectButton"><property name="text"><string>断开连接</string></property><property name="toolTip"><string>断开连接</string></property><property name="accessibleName"><string>断开连接</string></property><property name="autoRaise"><bool>true</bool></property><property name="focusPolicy"><enum>Qt::TabFocus</enum></property><property name="minimumSize"><size><width>28</width><height>32</height></size></property></widget></item>
+       </layout></item>
+      </layout></item>
+      <item><spacer name="bottomSpace"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
+     </layout>
+    </widget>
+   </widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

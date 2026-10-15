@@ -56,7 +56,7 @@ OperationResult BackupEngine::begin(std::shared_ptr<std::atomic_bool> cancellati
     if (!m_lock->tryLock(0))
     {
         m_lock.reset();
-        return OperationResult::warn("备份存储忙", "另一个应用进程正在操作备份，请稍后重试");
+        return OperationResult::retry("备份存储忙", "另一个应用进程正在操作备份，请稍后重试");
     }
     auto result = m_catalog.load();
     for (const auto &path : {root + "/items", root + "/staging"})
@@ -686,6 +686,14 @@ OperationResult BackupEngine::setRemote(const QString &id, const QString &url)
     const auto endpoint = git.tagEndpoint();
     if (!endpoint.result.success) return endpoint.result;
     record.tagEndpoint = endpoint.value; ++record.tagRevision;
+    if (record.sync.remoteUrl != url.trimmed())
+    {
+        const bool first = record.sync.remoteUrl.isEmpty();
+        record.sync.remoteUrl = url.trimmed(); record.sync.state = SyncState::Waiting;
+        record.sync.message.clear(); record.sync.detail.clear(); record.sync.branches.clear(); record.sync.branchRef.clear(); record.sync.lastSuccess = {};
+        record.syncContinuation = false;
+        if (first) record.sync.automatic = true;
+    }
     const auto saved = m_catalog.save(record);
     return saved.success ? OperationResult::ok("云端地址已保存", url.trimmed(), 2000) : saved;
 }
@@ -705,10 +713,11 @@ OperationResult BackupEngine::removeRemote(const QString &id)
             return GitRepository::outcome(removed);
     }
     auto record = r.value; record.tagEndpoint.clear(); ++record.tagRevision;
+    record.sync = {}; record.syncContinuation = false;
     const auto saved = m_catalog.save(record);
     return saved.success ? OperationResult::ok("已关闭云端同步", {}, 2000) : saved;
 }
-OperationResult BackupEngine::synchronize(const QString &id, bool push)
+OperationResult BackupEngine::transferSavedVersions(const QString &id, bool push)
 {
     auto checked = require(id, true, push);
     if (!checked.result.success)
@@ -969,7 +978,7 @@ OperationResult BackupEngine::rebuild(const PreparedRebuild &request)
     {
         // An empty expected ref only permits creating an absent remote branch.
         // It never authorizes overwriting a branch that could not be read offline.
-        auto pushed = synchronize(id, true);
+        auto pushed = transferSavedVersions(id, true);
         if (!pushed.success) result.warning = "本地重建已完成，云端尚未完成：" + pushed.title + "。" + pushed.message;
         else { result.message += "，云端已同步"; result.warning = pushed.warning; }
     }
@@ -1079,6 +1088,8 @@ OperationResult BackupEngine::finishImport(const QString &session, const QString
     const auto importedHead = git.head();
     if (!importedHead.result.success)
         return importedHead.result;
+    r.sync.remoteUrl = git.run({"remote", "get-url", git.remoteName().value}).output.trimmed();
+    r.sync.state = SyncState::Waiting;
     r.lastCommit = importedHead.value;
     r.branchRef = git.branchRef().value;
     const auto importedEndpoint = git.tagEndpoint(); const auto importedTags = git.tagRefs();

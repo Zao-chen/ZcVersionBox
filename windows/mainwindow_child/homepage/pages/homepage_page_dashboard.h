@@ -7,11 +7,6 @@ namespace Ui
 {
 class HomePageDashboardPage;
 }
-namespace oclero::qlementine
-{
-class Switch;
-class Expander;
-} // namespace oclero::qlementine
 class QAction;
 class QLabel;
 class QPushButton;
@@ -37,7 +32,6 @@ class HomePageDashboardPage : public QWidget
     {
         quint64 generation{0};
         int scroll{0};
-        bool expanded{false};
     };
     std::unique_ptr<Ui::HomePageDashboardPage> ui;
     BackupService *m_service;
@@ -46,13 +40,10 @@ class HomePageDashboardPage : public QWidget
     quint64 m_contextGeneration{0}, m_requestGeneration{0};
     bool m_active{false};
     QHash<QString, ViewState> m_states;
-    oclero::qlementine::Switch *m_remoteSwitch;
-    oclero::qlementine::Expander *m_expander;
     QAction *m_refresh;
     QLabel *m_syncState, *m_syncDetail;
     QPushButton *m_continueResolution, *m_recheck;
     QWidget *m_syncPanel{nullptr};
-    void remoteToggled(bool checked);
     void rememberState();
     void updateActions();
     bool isCurrent(const QString &id, quint64 generation, quint64 context) const;

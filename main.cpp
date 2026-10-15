@@ -1,4 +1,5 @@
 #include "utils/backupmonitor.h"
+#include "utils/syncscheduler.h"
 #include "windows/mainwindow.h"
 #include <QApplication>
 #include <QSystemTrayIcon>
@@ -86,10 +87,13 @@ int main(int argc, char *argv[])
 #endif
     ThemeController theme(&settings, &app);
     BackupMonitor monitor(&backups, &app);
+    SyncScheduler syncScheduler(&backups, &app);
     MainWindow window(&backups, &settings, &gateway, &theme);
     QObject::connect(&backups, &BackupService::notification, &window, &MainWindow::notify);
     QObject::connect(&monitor, &BackupMonitor::notification, &window, &MainWindow::notify);
+    QObject::connect(&syncScheduler, &SyncScheduler::notification, &window, &MainWindow::notify);
     monitor.start();
+    syncScheduler.start();
     window.show();
     window.startAutomaticUpdateCheck();
 #ifdef Q_OS_MACOS

@@ -89,13 +89,13 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
     connect(cancel, &QPushButton::clicked, this, [this] {
         const auto ctx = context(); const auto session = m_session.id;
         const QPointer<HomePageConflictPage> guard(this);
-        if (m_busy || session.isEmpty() || !confirmAction(this, "取消本次处理？已有选择将清除，源文件保持原样。", "取消处理") || !guard || !current(ctx)) return;
+        if (m_busy || session.isEmpty() || !confirmAction(this, m_cloudSession ? "取消本次同步并关闭自动同步？已有选择将清除，源文件保持原样，本地自动备份恢复。" : "取消本次处理？已有选择将清除，源文件保持原样。", "取消处理") || !guard || !current(ctx)) return;
         m_busy = true; updateActions();
         m_service->cancelResolution(ctx.id, session, this, [this, ctx](const OperationResult &r) {
             if (!current(ctx)) return;
             m_busy = false; emit notification(r);
             if (r.success) emit navigate(returnRoute()); else updateActions();
-        });
+        }, m_cloudSession);
     });
     connect(ui->reanalyzeButton, &QPushButton::clicked, this, [this]
     {
@@ -174,7 +174,7 @@ void HomePageConflictPage::setBackup(const QString &id, const QString &returnBra
 }
 Route HomePageConflictPage::returnRoute() const
 {
-    Route route{m_returnBranchRef.isEmpty() ? PageId::History : PageId::Branches, m_id};
+    Route route{m_returnBranchRef.isEmpty() ? (m_cloudSession ? PageId::Collaboration : PageId::History) : PageId::Branches, m_id};
     route.branchRef = m_returnBranchRef;
     return route;
 }
@@ -219,6 +219,7 @@ void HomePageConflictPage::load(bool restart, bool resumePreview)
 void HomePageConflictPage::acceptSession(const SyncResolutionSession &session, bool restorePosition, bool resumePreview)
 {
     m_session = session;
+    m_cloudSession = session.mergeRef.isEmpty();
     ui->pageTitle->setText(session.mergeRef.isEmpty() ? QStringLiteral("处理同步差异") : QString("合并 %1 → %2").arg(session.remoteLabel, session.localLabel));
     ui->localContent->setAccessibleName(session.localLabel);
     ui->remoteContent->setAccessibleName(session.remoteLabel);
@@ -481,7 +482,7 @@ void HomePageConflictPage::showResult()
         modified += change.status == "M";
         deleted += change.status == "D";
     }
-    ui->previewSummary->setText(QString("新增 %1 · 修改 %2 · 删除 %3\n包含自动合并的改动。确认后更新源位置并保存本地版本，上传仍需单独操作。").arg(added).arg(modified).arg(deleted));
+    ui->previewSummary->setText(QString("新增 %1 · 修改 %2 · 删除 %3\n包含自动合并的改动。%4").arg(added).arg(modified).arg(deleted).arg(m_cloudSession ? "确认后更新本机文件，并继续全量同步。" : "确认后更新源位置，并保存到正在使用的方案。"));
     const auto row = ui->files->currentIndex().row();
     const bool valid = row >= 0 && row < m_previewFiles.size();
     const auto change = m_previewFiles.value(row);
@@ -583,8 +584,8 @@ void HomePageConflictPage::apply()
     int deletions = 0;
     for (const auto &change : prepared.changes) deletions += change.status == "D";
     const auto source = m_service->sourcePath(m_id);
-    const auto question = QString("对象：%1\n源位置：%2\n\n最终结果包含 %3 个删除文件（含仅影响备份仓库的改动）。应用后保存本地版本并恢复自动备份。云端上传需另行操作。")
-                              .arg(QFileInfo(source).fileName(), QDir::toNativeSeparators(source)).arg(deletions);
+    const auto question = QString("对象：%1\n源位置：%2\n\n最终结果包含 %3 个删除文件（含仅影响备份仓库的改动）。应用后保存本地版本并恢复自动备份。%4")
+                              .arg(QFileInfo(source).fileName(), QDir::toNativeSeparators(source)).arg(deletions).arg(m_cloudSession ? "随后继续全量同步。" : "");
     const QPointer<HomePageConflictPage> guard(this);
     if (!confirmAction(this, question, "应用并保存版本") || !guard) return;
     if (!current(ctx) || m_prepared.commit != prepared.commit || m_session.revision != prepared.revision || m_session.id != prepared.sessionId) return;
@@ -611,7 +612,11 @@ void HomePageConflictPage::updateActions()
 {
     const bool valid = m_active && !m_session.id.isEmpty();
     const bool editable = valid && !m_busy && !m_session.stale;
-    if (auto *cancel = findChild<QPushButton *>("cancelResolutionButton")) cancel->setEnabled(valid && !m_busy);
+    if (auto *cancel = findChild<QPushButton *>("cancelResolutionButton"))
+    {
+        cancel->setEnabled(valid && !m_busy);
+        cancel->setText(m_cloudSession ? "取消本次并关闭自动同步" : "取消本次处理");
+    }
     const bool question = !m_session.files.isEmpty();
     ui->progressLabel->setText(valid ? QString("已处理 %1 / %2 处").arg(m_session.total() - m_session.remaining()).arg(m_session.total()) : QString());
     ui->reanalyzeButton->setVisible(m_session.stale);
