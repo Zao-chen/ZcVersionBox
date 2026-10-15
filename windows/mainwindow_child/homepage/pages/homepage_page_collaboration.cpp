@@ -181,4 +181,5 @@ void HomePageCollaborationPage::resizeEvent(QResizeEvent *event)
     ui->contentLayout->setContentsMargins(narrow ? 16 : 24, 12, narrow ? 16 : 24, 8);
     ui->addressRow->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     ui->statusRow->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
+    ui->statusRow->setSpacing(narrow ? 8 : 24);
 }
