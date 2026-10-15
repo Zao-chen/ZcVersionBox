@@ -91,7 +91,7 @@
              <number>0</number>
             </property>
             <property name="spacing">
-             <number>12</number>
+             <number>16</number>
             </property>
             <item>
              <layout class="QHBoxLayout" name="objectHeaderLayout">
@@ -171,7 +171,7 @@
             <item>
              <layout class="QVBoxLayout" name="pathsLayout">
               <property name="spacing">
-               <number>16</number>
+               <number>32</number>
               </property>
             <item>
              <layout class="QVBoxLayout" name="sourceLayout">
@@ -188,7 +188,7 @@
                <number>0</number>
               </property>
               <property name="spacing">
-               <number>6</number>
+               <number>4</number>
               </property>
               <item>
                <widget class="QLabel" name="sourceLabel">
@@ -291,6 +291,8 @@
                 </item>
                </layout>
               </item>
+             </layout>
+            </item>
             <item>
              <layout class="QVBoxLayout" name="repositoryLayout">
               <property name="leftMargin">
@@ -306,7 +308,7 @@
                <number>0</number>
               </property>
               <property name="spacing">
-               <number>6</number>
+               <number>4</number>
               </property>
               <item>
                <widget class="QLabel" name="repositoryLabel">
@@ -409,8 +411,6 @@
                 </item>
                </layout>
               </item>
-             </layout>
-            </item>
              </layout>
             </item>
            </layout>
