@@ -4,14 +4,14 @@
  <widget class="QWidget" name="HomePagePreviewPage">
   <layout class="QVBoxLayout" name="pageLayout">
    <property name="leftMargin"><number>24</number></property>
-   <property name="topMargin"><number>24</number></property>
+   <property name="topMargin"><number>8</number></property>
    <property name="rightMargin"><number>24</number></property>
-   <property name="bottomMargin"><number>32</number></property>
-   <property name="spacing"><number>16</number></property>
+   <property name="bottomMargin"><number>16</number></property>
+   <property name="spacing"><number>0</number></property>
    <item><widget class="QWidget" name="toolbar"><layout class="QHBoxLayout" name="toolbarLayout">
-    <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>8</number></property>
-    <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>8</number></property>
-    <property name="spacing"><number>12</number></property>
+    <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+    <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+    <property name="spacing"><number>6</number></property>
     <item><widget class="QScrollArea" name="breadcrumbScroll">
      <property name="sizePolicy">
       <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
@@ -21,7 +21,7 @@
      </property>
      <property name="frameShape"><enum>QFrame::NoFrame</enum></property>
      <property name="widgetResizable"><bool>true</bool></property>
-     <property name="maximumHeight"><number>32</number></property>
+     <property name="maximumHeight"><number>28</number></property>
      <property name="verticalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
      <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
      <widget class="QWidget" name="breadcrumbHost"><layout class="QHBoxLayout" name="breadcrumbLayout">
@@ -33,7 +33,7 @@
     <item><widget class="QWidget" name="actionHost"><layout class="QHBoxLayout" name="actionLayout">
      <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
      <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
-     <property name="spacing"><number>8</number></property>
+     <property name="spacing"><number>6</number></property>
      <item><widget class="QToolButton" name="markdownButton"><property name="text"><string>源码</string></property><property name="checkable"><bool>true</bool></property></widget></item>
     </layout></widget></item>
    </layout></widget></item>

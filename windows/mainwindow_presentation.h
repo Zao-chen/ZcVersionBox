@@ -3,7 +3,6 @@
 #include <QColor>
 #include <QFont>
 #include <QIcon>
-#include <QMargins>
 #include <QPointer>
 #include <QTimer>
 #include <QWidget>
@@ -53,8 +52,6 @@ void flatView(QAbstractItemView *view);
 QAction *action(QObject *owner, const QString &name, const QString &label, const QString &iconName = {});
 QToolButton *toolButton(QWidget *parent, QAction *action, bool iconOnly = false);
 int rowHeight(int minimum, const QFont &font, bool twoLines = false);
-// Reading pages share the settings inset; workspaces leave more room for their views.
-QMargins pageMargins(int width, bool reading = false);
 bool isKeyboardNavigationActive();
 void setKeyboardNavigationActive(bool active);
 } // namespace UiStyle

@@ -36,7 +36,7 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
     : QWidget(parent), ui(new Ui::HomePageConflictPage), m_service(service)
 {
     ui->setupUi(this);
-    UiStyle::text(ui->pageTitle, UiStyle::FontRole::Page);
+    UiStyle::text(ui->pageTitle, UiStyle::FontRole::Object);
     for (auto *label : {ui->progressLabel, ui->resultScope, ui->selectionLabel})
         UiStyle::text(label, UiStyle::FontRole::Caption, true);
     for (auto *editor : {ui->localContent, ui->remoteContent, ui->resultContent})
@@ -664,14 +664,15 @@ void HomePageConflictPage::updateLayout()
     ui->sidesLayout->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     ui->filesPane->setMaximumHeight(narrow ? 100 : QWIDGETSIZE_MAX);
     ui->filesPane->setMinimumWidth(narrow ? 0 : 160);
-    ui->filesLayout->setContentsMargins(0, 0, narrow ? 0 : 12, narrow ? 8 : 0);
-    ui->scrollLayout->setContentsMargins(narrow ? 0 : 12, narrow ? 8 : 0, 0, 0);
+    ui->filesLayout->setContentsMargins(0, 0, narrow ? 0 : 8, 0);
+    ui->scrollLayout->setContentsMargins(narrow ? 0 : 8, 0, 0, 0);
     if (ui->splitter->orientation() != orientation)
     {
         ui->splitter->setOrientation(orientation);
         ui->splitter->setSizes(narrow ? QList<int>{88, 500} : QList<int>{180, 560});
     }
-    ui->pageLayout->setContentsMargins(UiStyle::pageMargins(width()));
+    const int margin = narrow ? 16 : 24;
+    ui->pageLayout->setContentsMargins(margin, 12, margin, 16);
     QTimer::singleShot(0, this, [this]
     {
         // The list's viewport shrinks after the splitter/layout update.

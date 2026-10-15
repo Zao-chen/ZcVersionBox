@@ -166,7 +166,7 @@ class PreviewFileDelegate : public QStyledItemDelegate
     {
         auto size = QStyledItemDelegate::sizeHint(option, index);
         size.rwidth() += 16;
-        size.setHeight(UiStyle::rowHeight(48, UiStyle::font(UiStyle::FontRole::Body)));
+        size.setHeight(UiStyle::rowHeight(40, UiStyle::font(UiStyle::FontRole::Body)));
         return size;
     }
 
@@ -293,11 +293,11 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     ui->setupUi(this);
     ui->breadcrumbLayout->setAlignment(Qt::AlignVCenter);
     ui->breadcrumbLayout->setContentsMargins(12, 0, 0, 0);
-    ui->pageLayout->setSpacing(16);
+    ui->pageLayout->setSpacing(0);
     ui->pageLayout->setStretch(ui->pageLayout->indexOf(ui->contentStack), 1);
     ui->statusLabel->setContentsMargins(0, 4, 0, 4);
     ui->statusLabel->hide();
-    ui->markdownButton->setMinimumSize(28, 32);
+    ui->markdownButton->setMinimumSize(28, 28);
     m_model.setHorizontalHeaderLabels({"名称", "最近提交说明", "提交时间"});
     ui->files->setModel(&m_model);
     UiStyle::flatView(ui->files);
@@ -626,7 +626,8 @@ void HomePagePreviewPage::find(bool previous)
 void HomePagePreviewPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-    ui->pageLayout->setContentsMargins(UiStyle::pageMargins(width()));
+    const auto margin = width() < 640 ? 16 : 24;
+    ui->pageLayout->setContentsMargins(margin, 8, margin, 16);
     ui->files->setColumnWidth(0, qBound(120, width() / 3, 300));
     showImage();
     if (m_valid) updateChanges();

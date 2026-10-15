@@ -348,8 +348,6 @@ void HomePageDiffPage::updateResponsiveLayout()
 {
     const bool compact = width() < 640;
     const auto orientation = compact ? Qt::Vertical : Qt::Horizontal;
-    ui->filesLayout->setContentsMargins(0, 0, compact ? 0 : 12, compact ? 12 : 0);
-    ui->editorLayout->setContentsMargins(compact ? 0 : 12, compact ? 12 : 0, 0, 0);
 
     ui->filesPane->setMinimumWidth(compact ? 0 : 180);
     ui->filesPane->setMinimumHeight(compact ? 120 : 0);
@@ -374,7 +372,8 @@ void HomePageDiffPage::updateResponsiveLayout()
 void HomePageDiffPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-    ui->pageLayout->setContentsMargins(UiStyle::pageMargins(width()));
+    const auto margin = width() < 640 ? 12 : 20;
+    ui->pageLayout->setContentsMargins(margin, 8, margin, 12);
     updateResponsiveLayout();
 }
 

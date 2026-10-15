@@ -7,25 +7,25 @@
     <number>24</number>
    </property>
    <property name="topMargin">
-    <number>24</number>
+    <number>8</number>
    </property>
    <property name="rightMargin">
     <number>24</number>
    </property>
    <property name="bottomMargin">
-    <number>32</number>
+    <number>16</number>
    </property>
    <property name="spacing">
-    <number>16</number>
+    <number>4</number>
    </property>
    <item>
     <widget class="QWidget" name="filterBar">
      <layout class="QHBoxLayout" name="filterLayout">
       <property name="leftMargin"><number>0</number></property>
-      <property name="topMargin"><number>8</number></property>
+      <property name="topMargin"><number>0</number></property>
       <property name="rightMargin"><number>0</number></property>
-      <property name="bottomMargin"><number>8</number></property>
-      <property name="spacing"><number>12</number></property>
+      <property name="bottomMargin"><number>0</number></property>
+      <property name="spacing"><number>8</number></property>
       <item><widget class="QComboBox" name="historyScope"><property name="maximumSize"><size><width>220</width><height>16777215</height></size></property></widget></item>
       <item><widget class="QLabel" name="milestoneFilterLabel"><property name="text"><string>只看里程碑版本</string></property></widget></item>
       <item><spacer name="filterSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>

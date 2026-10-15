@@ -13,10 +13,10 @@
     <number>24</number>
    </property>
    <property name="bottomMargin">
-    <number>32</number>
+    <number>24</number>
    </property>
    <property name="spacing">
-    <number>24</number>
+    <number>16</number>
    </property>
    <item>
     <layout class="QHBoxLayout" name="listHeader" stretch="0,1,0">
