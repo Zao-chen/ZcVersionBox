@@ -29,6 +29,7 @@ HomePageCollaborationPage::HomePageCollaborationPage(BackupService *service, QWi
     m_automatic->setObjectName("automaticSyncSwitch"); m_automatic->setAccessibleName("自动同步"); m_automatic->setFocusPolicy(Qt::TabFocus);
     m_automatic->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     ui->automaticRow->addWidget(m_automatic, 0, Qt::AlignVCenter);
+    ui->automaticRow->setStretch(0, 1);
     ui->detailsLayout->removeWidget(ui->detailsContent);
     m_details = new oclero::qlementine::Expander(this); m_details->setContent(ui->detailsContent); ui->detailsLayout->addWidget(m_details);
     connect(ui->detailsButton, &QToolButton::toggled, this, [this](bool expanded) {
@@ -178,7 +179,7 @@ void HomePageCollaborationPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     const bool narrow = width() < 640;
-    ui->contentLayout->setContentsMargins(narrow ? 16 : 24, 12, narrow ? 16 : 24, 8);
+    ui->contentLayout->setContentsMargins(UiStyle::pageMargins(width(), true));
     ui->addressRow->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     ui->statusRow->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
 }

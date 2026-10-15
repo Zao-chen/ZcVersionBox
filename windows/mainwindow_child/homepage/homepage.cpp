@@ -72,7 +72,6 @@ void HomePage::updateEmptyState()
 void HomePage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-    const auto margin = width() < 640 ? 16 : 24;
-    ui->pageLayout->setContentsMargins(margin, 12, margin, 16);
+    ui->pageLayout->setContentsMargins(UiStyle::pageMargins(width()));
     ui->filter->setFixedWidth(width() < 640 ? 200 : 260);
 }

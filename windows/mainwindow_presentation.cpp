@@ -406,6 +406,12 @@ int rowHeight(int minimum, const QFont &font, bool twoLines)
 {
     return qMax(minimum, QFontMetrics(font).height() * (twoLines ? 2 : 1) + (twoLines ? 16 : 12));
 }
+QMargins pageMargins(int width, bool reading)
+{
+    const bool compact = width < 640;
+    const int side = compact ? 16 : 24;
+    return {side, reading && !compact ? 64 : 24, side, 32};
+}
 bool isKeyboardNavigationActive()
 {
     return s_keyboardNavigationActive;

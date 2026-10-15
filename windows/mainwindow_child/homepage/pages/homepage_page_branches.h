@@ -25,6 +25,8 @@ class HomePageBranchesPage : public QWidget
     void navigate(const Route &route);
     void replaceRoute(const Route &route);
     void notification(const OperationResult &result);
+  protected:
+    void resizeEvent(QResizeEvent *event) override;
   private:
     std::unique_ptr<Ui::HomePageBranchesPage> ui;
     BackupService *m_service;

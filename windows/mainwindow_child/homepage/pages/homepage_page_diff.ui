@@ -12,19 +12,19 @@
   </property>
   <layout class="QVBoxLayout" name="pageLayout">
    <property name="spacing">
-    <number>0</number>
+    <number>16</number>
    </property>
    <property name="leftMargin">
-    <number>20</number>
+    <number>24</number>
    </property>
    <property name="topMargin">
-    <number>12</number>
+    <number>24</number>
    </property>
    <property name="rightMargin">
-    <number>20</number>
+    <number>24</number>
    </property>
    <property name="bottomMargin">
-    <number>12</number>
+    <number>32</number>
    </property>
    <item>
     <widget class="QSplitter" name="splitter">
@@ -49,13 +49,13 @@
         <number>0</number>
        </property>
        <property name="rightMargin">
-        <number>8</number>
+        <number>12</number>
        </property>
        <property name="bottomMargin">
         <number>0</number>
        </property>
        <property name="spacing">
-        <number>8</number>
+        <number>16</number>
        </property>
        <item>
         <layout class="QHBoxLayout" name="filesHeaderLayout">
@@ -117,7 +117,7 @@
       </property>
       <layout class="QVBoxLayout" name="editorLayout">
        <property name="leftMargin">
-        <number>8</number>
+        <number>12</number>
        </property>
        <property name="topMargin">
         <number>0</number>
@@ -129,7 +129,7 @@
         <number>0</number>
        </property>
        <property name="spacing">
-        <number>8</number>
+        <number>16</number>
        </property>
        <item>
         <widget class="QFrame" name="editorToolbar">

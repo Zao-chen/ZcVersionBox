@@ -29,19 +29,21 @@
      <property name="horizontalScrollBarPolicy">
       <enum>Qt::ScrollBarAlwaysOff</enum>
      </property>
+      <property name="alignment"><set>Qt::AlignHCenter|Qt::AlignTop</set></property>
      <widget class="QWidget" name="scrollContents">
+      <property name="maximumSize"><size><width>808</width><height>16777215</height></size></property>
       <layout class="QHBoxLayout" name="readingLayout" stretch="1,0">
        <property name="leftMargin">
         <number>24</number>
        </property>
        <property name="topMargin">
-        <number>12</number>
+        <number>64</number>
        </property>
        <property name="rightMargin">
         <number>24</number>
        </property>
        <property name="bottomMargin">
-        <number>8</number>
+        <number>32</number>
        </property>
        <property name="spacing">
         <number>0</number>
@@ -74,7 +76,7 @@
            <number>0</number>
           </property>
           <property name="spacing">
-           <number>16</number>
+           <number>32</number>
           </property>
           <item>
            <layout class="QVBoxLayout" name="objectLayout">
@@ -91,7 +93,7 @@
              <number>0</number>
             </property>
             <property name="spacing">
-             <number>12</number>
+             <number>24</number>
             </property>
             <item>
              <layout class="QHBoxLayout" name="objectHeaderLayout">
@@ -108,7 +110,7 @@
              <number>0</number>
             </property>
             <property name="spacing">
-             <number>6</number>
+             <number>12</number>
             </property>
             <item>
              <widget class="oclero::qlementine::Label" name="objectLabel">
@@ -171,7 +173,7 @@
             <item>
              <layout class="QVBoxLayout" name="pathsLayout">
               <property name="spacing">
-               <number>16</number>
+               <number>24</number>
               </property>
             <item>
              <layout class="QVBoxLayout" name="sourceLayout">
@@ -188,7 +190,7 @@
                <number>0</number>
               </property>
               <property name="spacing">
-               <number>6</number>
+               <number>8</number>
               </property>
               <item>
                <widget class="QLabel" name="sourceLabel">
@@ -215,7 +217,7 @@
                  <number>0</number>
                 </property>
                 <property name="spacing">
-                 <number>6</number>
+                 <number>8</number>
                 </property>
                 <item>
                  <widget class="QLineEdit" name="sourcePathEdit">
@@ -297,7 +299,7 @@
                <number>0</number>
               </property>
               <property name="topMargin">
-               <number>0</number>
+               <number>16</number>
               </property>
               <property name="rightMargin">
                <number>0</number>
@@ -306,7 +308,7 @@
                <number>0</number>
               </property>
               <property name="spacing">
-               <number>6</number>
+               <number>8</number>
               </property>
               <item>
                <widget class="QLabel" name="repositoryLabel">
@@ -333,7 +335,7 @@
                  <number>0</number>
                 </property>
                 <property name="spacing">
-                 <number>6</number>
+                 <number>8</number>
                 </property>
                 <item>
                  <widget class="QLineEdit" name="repositoryPathEdit">
@@ -450,16 +452,16 @@
           <item>
            <layout class="QHBoxLayout" name="statsLayout" stretch="1,1,1,1">
             <property name="leftMargin">
-             <number>8</number>
+             <number>0</number>
             </property>
             <property name="topMargin">
-             <number>0</number>
+             <number>16</number>
             </property>
             <property name="rightMargin">
-             <number>8</number>
+             <number>0</number>
             </property>
             <property name="bottomMargin">
-             <number>0</number>
+             <number>16</number>
             </property>
             <property name="spacing">
              <number>24</number>

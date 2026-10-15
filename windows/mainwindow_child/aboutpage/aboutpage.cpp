@@ -199,7 +199,5 @@ AboutPage::~AboutPage() = default;
 void AboutPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-    const bool compact = width() < 640;
-    const auto margin = compact ? 16 : 24;
-    ui->readingLayout->setContentsMargins(margin, compact ? 24 : 64, margin, 32);
+    ui->readingLayout->setContentsMargins(UiStyle::pageMargins(width(), true));
 }

@@ -505,7 +505,7 @@ class HistoryDelegate : public QStyledItemDelegate
 HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) : QWidget(parent), ui(new Ui::HomePageBackupPage), m_service(service)
 {
     ui->setupUi(this);
-    ui->pageLayout->setSpacing(4);
+    ui->pageLayout->setSpacing(16);
     ui->emptyLabel->setContentsMargins(0, 4, 0, 4);
     ui->historyScope->setMinimumContentsLength(10);
     ui->historyScope->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
@@ -696,8 +696,7 @@ void HomePageBackupPage::setBackup(const QString &id, const QString &commit, con
     m_id = id;
     m_branchDetail = false;
     m_includeCommonAncestors = false;
-    const int margin = width() < 640 ? 16 : 24;
-    ui->pageLayout->setContentsMargins(margin, 8, margin, 16);
+    ui->pageLayout->setContentsMargins(UiStyle::pageMargins(width()));
     ui->filterBar->setVisible(true);
     ui->historyScope->setVisible(true);
     ui->milestoneFilterLabel->setVisible(true);
@@ -1123,8 +1122,7 @@ void HomePageBackupPage::resizeEvent(QResizeEvent *event)
         ui->pageLayout->setContentsMargins(0, 0, 0, 0);
     else
     {
-        const int margin = width() < 640 ? 16 : 24;
-        ui->pageLayout->setContentsMargins(margin, 8, margin, 16);
+        ui->pageLayout->setContentsMargins(UiStyle::pageMargins(width()));
     }
     ui->table->setColumnHidden(1, width() < 760);
     ui->table->setColumnHidden(2, width() < 1050);

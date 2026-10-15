@@ -84,9 +84,7 @@ SettingPage::~SettingPage() = default;
 void SettingPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-    const bool compact = width() < 640;
-    const auto margin = compact ? 16 : 24;
-    ui->readingLayout->setContentsMargins(margin, compact ? 24 : 64, margin, 32);
+    ui->readingLayout->setContentsMargins(UiStyle::pageMargins(width(), true));
 }
 SettingPageAiPage::SettingPageAiPage(SettingsService *settings, QWidget *parent) : QWidget(parent), ui(new Ui::SettingPageAiPage), m_settings(settings)
 {
@@ -215,8 +213,7 @@ void SettingPageAiPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     const bool compact = width() < 640;
-    const auto margin = compact ? 16 : 24;
-    ui->readingLayout->setContentsMargins(margin, compact ? 24 : 64, margin, 32);
+    ui->readingLayout->setContentsMargins(UiStyle::pageMargins(width(), true));
     const QList<QPair<QBoxLayout *, QWidget *>> rows{
         {ui->providerLayout, ui->provider}, {ui->apiKeyLayout, ui->apiKey}, {ui->baseUrlLayout, ui->baseUrl}, {ui->modelLayout, ui->modelFields}};
     for (const auto &[layout, field] : rows)

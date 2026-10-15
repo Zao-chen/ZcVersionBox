@@ -11,6 +11,7 @@
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 
@@ -38,7 +39,7 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     : QWidget(parent), ui(new Ui::HomePageBranchesPage), m_service(service)
 {
     ui->setupUi(this);
-    UiStyle::text(ui->branchName, UiStyle::FontRole::Object);
+    UiStyle::text(ui->branchName, UiStyle::FontRole::Page);
     m_history = new HomePageBackupPage(service, ui->historyContainer);
     ui->historyLayout->addWidget(m_history);
     m_refresh = UiStyle::action(this, "refreshBranchesAction", "刷新", "refresh");
@@ -66,6 +67,11 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     updateActions();
 }
 HomePageBranchesPage::~HomePageBranchesPage() = default;
+void HomePageBranchesPage::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    ui->layout->setContentsMargins(UiStyle::pageMargins(width()));
+}
 QList<QAction *> HomePageBranchesPage::toolbarActions() const { return {m_refresh}; }
 QWidget *HomePageBranchesPage::dialogOwner() const { return const_cast<HomePageBranchesPage *>(this); }
 BranchRequest HomePageBranchesPage::request() const
