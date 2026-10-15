@@ -206,6 +206,109 @@ class BackupCoreRegression : public QObject
         qputenv("GIT_CONFIG_GLOBAL", (m_environment.path() + "/gitconfig").toUtf8());
         QVERIFY(runGit({}, {"--version"}).success());
     }
+    void fullSyncPublishesReceivesAndAvoidsEmptyWork()
+    {
+        int pushes = 0, candidates = 0;
+        BackupDependencies dependencies;
+        dependencies.git = [&](const QString &path, const QStringList &args, const GitOptions &options) {
+            if (args.contains("push")) ++pushes;
+            if (args.contains("clone") && args.contains("--no-checkout")) ++candidates;
+            return runGit(path, args, options);
+        };
+        TestDirectory dir; TestBackupService service(pathsIn(dir), nullptr, nullptr, dependencies);
+        const auto source = dir.path() + "/project", remote = dir.path() + "/remote.git", writer = dir.path() + "/writer";
+        QDir().mkpath(source); writeFile(source + "/keep.txt", "base\n"); writeFile(source + "/remove.txt", "remove\n");
+        CHECK_OK(service.addLocal(source)); const auto id = service.idForSource(source);
+        CHECK_OK(service.renameBranch(id, service.branchContext(id).ref, "main"));
+        CHECK_OK(service.createBranch(id, "topic"));
+        git({}, {"init", "--bare", "--initial-branch=main", remote}); CHECK_OK(service.setRemote(id, remote));
+        auto synced = service.syncAll(id); CHECK_OK(synced.result); QCOMPARE(synced.value.status.state, SyncState::Synced);
+        QCOMPARE(runGit(remote, {"rev-parse", "topic"}).output, runGit(remote, {"rev-parse", "main"}).output);
+        git({}, {"clone", remote, writer}); git(writer, {"config", "user.name", "Collaborator"}); git(writer, {"config", "user.email", "writer@test"});
+        writeFile(writer + "/project/keep.txt", "cloud\n"); QFile::remove(writer + "/project/remove.txt");
+        git(writer, {"add", "--all"}); git(writer, {"commit", "-m", "cloud main"}); git(writer, {"push"});
+        git(writer, {"checkout", "-b", "topic", "origin/topic"});
+        writeFile(writer + "/project/topic.txt", "topic\n"); git(writer, {"add", "--all"}); git(writer, {"commit", "-m", "cloud topic"}); git(writer, {"push"});
+        git(writer, {"branch", "cloud-only"}); git(writer, {"push", "origin", "cloud-only"});
+        git(writer, {"tag", "milestone"}); git(writer, {"push", "origin", "refs/tags/milestone"});
+        synced = service.syncAll(id); CHECK_OK(synced.result); QCOMPARE(synced.value.status.state, SyncState::Synced);
+        QCOMPARE(readFile(source + "/keep.txt"), QByteArray("cloud\n")); QVERIFY(!QFile::exists(source + "/remove.txt"));
+        QVERIFY(!QFile::exists(source + "/topic.txt")); QCOMPARE(service.branchContext(id).ref, QString("refs/heads/main"));
+        QCOMPARE(runGit(service.repoPath(id), {"rev-parse", "topic"}).output, runGit(remote, {"rev-parse", "topic"}).output);
+        QVERIFY(runGit(service.repoPath(id), {"rev-parse", "refs/remotes/origin/cloud-only"}).success());
+        QVERIFY(runGit(service.repoPath(id), {"rev-parse", "refs/tags/milestone"}).success());
+        const int previousPushes = pushes, previousCandidates = candidates;
+        QVERIFY(previousPushes > 0); QVERIFY(previousCandidates > 0);
+        const auto previousHead = head(service, id);
+        CHECK_OK(service.syncAll(id).result);
+        QCOMPARE(pushes, previousPushes); QCOMPARE(candidates, previousCandidates); QCOMPARE(head(service, id), previousHead);
+        writeFile(source + "/local.txt", "saved by sync\n"); CHECK_OK(service.syncAll(id).result);
+        QCOMPARE(runGit(remote, {"show", "main:project/local.txt"}).bytes, QByteArray("saved by sync\n"));
+    }
+
+    void fullSyncMergesThenResumesConflict()
+    {
+        RemoteFixture f;
+        f.commitRemote("one\ntwo\nthree\n"); CHECK_OK(f.service->syncAll(f.id).result);
+        writeFile(f.source, "local\ntwo\nthree\n");
+        f.commitRemote("one\ntwo\nremote\n");
+        auto result = f.service->syncAll(f.id); CHECK_OK(result.result); QCOMPARE(result.value.status.state, SyncState::Synced);
+        QCOMPARE(readFile(f.source), QByteArray("local\ntwo\nremote\n"));
+        git(f.writer, {"pull", "--ff-only"});
+        writeFile(f.source, "my choice\n"); const auto cloud = f.commitRemote("their choice\n");
+        result = f.service->syncAll(f.id); CHECK_OK(result.result); QCOMPARE(result.value.status.state, SyncState::NeedsResolution);
+        QCOMPARE(runGit(f.remote, {"rev-parse", "main"}).output.trimmed(), cloud);
+        const auto session = f.service->syncResolution(f.id); CHECK_OK(session.result); QVERIFY(session.value.remaining() > 0);
+        auto current = session.value;
+        for (const auto &file : session.value.files)
+            for (int hunk = 0; hunk < file.hunks.size(); ++hunk)
+            {
+                const auto selected = f.service->chooseSyncResolution(current, file.path, hunk, ConflictChoice::Local);
+                CHECK_OK(selected.result); current = selected.value;
+            }
+        const auto prepared = f.service->prepareSyncApply(current); CHECK_OK(prepared.result);
+        CHECK_OK(f.service->applySync(prepared.value)); settle(*f.service);
+        QCOMPARE(readFile(f.source), QByteArray("my choice\n"));
+        QCOMPARE(f.service->syncStatus(f.id).state, SyncState::Synced);
+        QCOMPARE(runGit(f.remote, {"rev-parse", "main"}).output.trimmed(), head(*f.service, f.id));
+    }
+
+    void fullSyncWaitsForInactiveDivergence()
+    {
+        RemoteFixture f; CHECK_OK(f.service->createBranch(f.id, "topic")); CHECK_OK(f.service->syncAll(f.id).result);
+        git(f.writer, {"fetch"}); git(f.writer, {"checkout", "-b", "topic", "origin/topic"});
+        writeFile(f.writer + "/source.txt", "remote topic\n"); git(f.writer, {"add", "--all"}); git(f.writer, {"commit", "-m", "remote topic"}); git(f.writer, {"push"});
+        const auto repo = f.service->repoPath(f.id);
+        git(repo, {"checkout", "topic"}); writeFile(repo + "/source.txt", "local topic\n"); git(repo, {"add", "--all"}); git(repo, {"commit", "-m", "local topic"}); git(repo, {"checkout", "main"});
+        const auto before = runGit(f.remote, {"rev-parse", "main"}).output;
+        writeFile(f.source, "local main\n");
+        const auto result = f.service->syncAll(f.id); CHECK_OK(result.result);
+        QCOMPARE(result.value.status.state, SyncState::NeedsBranch); QCOMPARE(result.value.status.branchRef, QString("refs/heads/topic"));
+        QCOMPARE(runGit(f.remote, {"rev-parse", "main"}).output, before);
+        QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
+        QCOMPARE(readFile(f.source), QByteArray("local main\n"));
+    }
+
+    void fullSyncNetworkFailureKeepsBackupWorking()
+    {
+        QString error;
+        BackupDependencies dependencies;
+        dependencies.git = [&](const QString &path, const QStringList &args, const GitOptions &options) {
+            if (!error.isEmpty() && args.contains("fetch")) { GitResult r; r.started = r.finished = true; r.exitCode = 128; r.error = error; return r; }
+            return runGit(path, args, options);
+        };
+        RemoteFixture f(dependencies);
+        error = "Could not resolve host: example.invalid";
+        auto result = f.service->syncAll(f.id); QVERIFY(!result.result.success); QCOMPARE(result.value.status.state, SyncState::RetryLater);
+        QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
+        writeFile(f.source, "offline edit\n"); CHECK_OK(f.service->backup(f.id));
+        error = "Authentication failed";
+        result = f.service->syncAll(f.id); QVERIFY(!result.result.success); QCOMPARE(result.value.status.state, SyncState::NeedsAttention);
+        QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
+        error.clear(); CHECK_OK(f.service->syncAll(f.id).result);
+        QCOMPARE(runGit(f.remote, {"show", "main:source.txt"}).bytes, QByteArray("offline edit\n"));
+    }
+
     void sourcePreviewReadsLocalContentAndMappedCommits()
     {
         TestDirectory dir;

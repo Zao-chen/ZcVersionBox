@@ -686,6 +686,14 @@ OperationResult BackupEngine::setRemote(const QString &id, const QString &url)
     const auto endpoint = git.tagEndpoint();
     if (!endpoint.result.success) return endpoint.result;
     record.tagEndpoint = endpoint.value; ++record.tagRevision;
+    if (record.sync.remoteUrl != url.trimmed())
+    {
+        const bool first = record.sync.remoteUrl.isEmpty();
+        record.sync.remoteUrl = url.trimmed(); record.sync.state = SyncState::Waiting;
+        record.sync.detail.clear(); record.sync.branchRef.clear(); record.sync.lastSuccess = {};
+        record.syncContinuation = false;
+        if (first) record.sync.automatic = true;
+    }
     const auto saved = m_catalog.save(record);
     return saved.success ? OperationResult::ok("云端地址已保存", url.trimmed(), 2000) : saved;
 }
@@ -705,6 +713,7 @@ OperationResult BackupEngine::removeRemote(const QString &id)
             return GitRepository::outcome(removed);
     }
     auto record = r.value; record.tagEndpoint.clear(); ++record.tagRevision;
+    record.sync = {}; record.syncContinuation = false;
     const auto saved = m_catalog.save(record);
     return saved.success ? OperationResult::ok("已关闭云端同步", {}, 2000) : saved;
 }
@@ -1079,6 +1088,8 @@ OperationResult BackupEngine::finishImport(const QString &session, const QString
     const auto importedHead = git.head();
     if (!importedHead.result.success)
         return importedHead.result;
+    r.sync.remoteUrl = git.run({"remote", "get-url", git.remoteName().value}).output.trimmed();
+    r.sync.state = SyncState::Waiting;
     r.lastCommit = importedHead.value;
     r.branchRef = git.branchRef().value;
     const auto importedEndpoint = git.tagEndpoint(); const auto importedTags = git.tagRefs();

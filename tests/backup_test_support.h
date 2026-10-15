@@ -239,6 +239,10 @@ class TestBackupService : public BackupService
         return awaitBackup<OperationResult>([&](auto f)
                                             { BackupService::removeRemote(id, this, f); });
     }
+    BackupResult<SyncResult> syncAll(const QString &id, SyncRequestOptions options = {})
+    {
+        return awaitBackup<BackupResult<SyncResult>>([&](auto f) { BackupService::synchronize(id, options, this, f); });
+    }
     using BackupService::synchronize;
     OperationResult synchronize(const QString &id, bool push)
     {

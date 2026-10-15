@@ -22,6 +22,35 @@ enum class BackupTaskPriority
     Background
 };
 
+enum class SyncTrigger { Manual, Automatic, Continuation };
+enum class SyncPhase { Idle, Saving, Fetching, Analyzing, Applying, Uploading };
+enum class SyncState { Disconnected, Waiting, Running, Synced, NeedsResolution, NeedsBranch, NeedsTags, RetryLater, NeedsAttention, Editing };
+
+struct SyncRequestOptions
+{
+    SyncTrigger trigger{SyncTrigger::Manual};
+    BackupTaskPriority priority{BackupTaskPriority::Foreground};
+};
+struct SyncStatus
+{
+    bool automatic{true};
+    SyncState state{SyncState::Disconnected};
+    SyncPhase phase{SyncPhase::Idle};
+    QString remoteUrl, detail, branchRef;
+    QStringList branches;
+    QDateTime lastSuccess;
+    bool operator==(const SyncStatus &o) const
+    {
+        return automatic == o.automatic && state == o.state && phase == o.phase && remoteUrl == o.remoteUrl &&
+            detail == o.detail && branchRef == o.branchRef && branches == o.branches && lastSuccess == o.lastSuccess;
+    }
+    bool operator!=(const SyncStatus &o) const { return !(*this == o); }
+};
+struct SyncResult
+{
+    SyncStatus status;
+};
+
 struct BackupRequestOptions
 {
     bool changedOnly{false};
@@ -102,6 +131,8 @@ struct BackupRecord
     // Upload/rebuild baselines belong to a remote branch, not to repository tags.
     QMap<QString, TagRemoteState> branchRemotes;
     QDateTime branchesFetchedAt;
+    SyncStatus sync;
+    bool syncContinuation{false};
     TrackedItem item() const;
 };
 

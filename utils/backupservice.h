@@ -59,6 +59,12 @@ class BackupService : public QObject
     BackupTaskId setRemote(const QString &id, const QString &url, QObject *context, Completion callback = {});
     BackupTaskId removeRemote(const QString &id, QObject *context, Completion callback = {});
     BackupTaskId synchronize(const QString &id, bool push, QObject *context, Completion callback = {});
+    BackupTaskId synchronize(const QString &id, SyncRequestOptions options, QObject *context, Reply<SyncResult> callback = {});
+    BackupTaskId setAutoSync(const QString &id, bool enabled, QObject *context, Completion callback = {});
+    SyncStatus syncStatus(const QString &id) const;
+    void setSyncEditing(const QString &id, bool editing);
+    bool isSyncEditing(const QString &id) const;
+    void cancelSync(const QString &id);
     BackupTaskId prepareSyncResolution(const QString &id, QObject *context, Reply<SyncResolutionSession> callback, bool restart = false);
     BackupTaskId syncResolution(const QString &id, QObject *context, Reply<SyncResolutionSession> callback);
     BackupTaskId chooseSyncResolution(const QString &id, const QString &sessionId, quint64 revision, const QString &path, int hunk, ConflictChoice choice, QObject *context, Reply<SyncResolutionSession> callback);
@@ -92,6 +98,10 @@ class BackupService : public QObject
 
   signals:
     void notification(const OperationResult &result);
+    void syncStatusChanged(const QString &id);
+    void localVersionsChanged(const QString &id);
+    void syncEditingChanged(const QString &id);
+    void syncContinuationRequested(const QString &id);
     void ready();
     void reloadFinished(const OperationResult &result);
     void trackedItemsChanged();
