@@ -9,7 +9,8 @@
 | 方案引用与身份 | 中文名称、创建/改名、同 OID 分支、外部切换、普通/强制删除、删除前并发提交的 OID 校验 |
 | 保存后切换 | 修改只提交到原方案、无变化不新增、忽略文件与源 `.git` 保留、覆盖碰撞、确认过期、源/外部分支变化及写入故障恢复 |
 | 原生合并与云端方案 | 快进、已包含、双亲提交、重启继续、取消、重命名自动合并/冲突与 Git 树对照；fetch、upstream、非当前分支上传、新名发布、远程删除 lease、端点变化与非快进拒绝 |
-| 概览统一云端入口 | 全量上传非当前方案和里程碑、保留云端独有方案与改名 upstream、任一分叉整批拒绝；全量获取与 prune、保持当前源内容、差异确认；概览实际按钮点击及方案菜单入口收敛 |
+| 多人协作统一同步 | 首次发布、全部方案与里程碑、无冲突自动应用及删除、非当前方案快进、分叉整批等待和处理后续接、重复同步不产生额外版本；显式保存连接、对象切换及过期回调 |
+| 自动同步 | 3 秒合并事件、30 秒检查、网络失败退避、编辑保护、通知去重、停止与重启、手动任务保留、其他对象继续 |
 | 方案界面 | 浏览与切换分离、真实提交关系图、浅深色和 760/1080 像素宽度、实际点击新建/切换确认及取消按钮 |
 | 多方案重建保护 | 本地多分支、云端分支、独立推送地址含其他分支、离线及确认后断网时保留原仓库 |
 | 默认文件范围 | 重构前先运行行为基线：build 单独变化不触发；其他变化触发时复制 build；隐藏文件处理、Git ignore 与副本/提交区别保持 |
@@ -20,7 +21,7 @@
 | 一万文件 | 100 个目录、10,000 个文件；真实空闲扫描次数、扫描阻塞期间 2,000 次写入、后续自动备份请求数和最大未完成请求数 |
 | 文件、目录、中文、空格、二进制 | 真实临时 Git 仓库，历史、初始 Diff、预览、源恢复与 HEAD 断言 |
 | pull 持久暂停 | 排队备份、源继续编辑、重启、修改地址、重复 pull、取消确认均不能覆盖拉取版本 |
-| 旧 pull 兼容 | 保留低层整份处理接口和已有记录；产品入口迁移到同步差异会话，固定拉取前后版本 |
+| 内部定向传输 | 既有底层故障场景保留测试入口；产品只使用强类型全量同步，未添加布尔上传/下载兼容 API |
 | 确认上下文 | 源内容、对象、仓库代次或会话版本变化时拒绝旧请求；UI 默认取消，不更新源；成功返回历史并定位结果提交 |
 | 业务弹窗外壳 | 确认、消息、文本输入、云端导入、版本选择、里程碑管理/冲突和应用更新统一使用 `UiDialog::Dialog`；验证窗口模态、按钮默认态、异步关闭、主题切换和错误回填 |
 | 同步差异核心 | 分叉、快进、未备份修改、多处混合选择、自动合并、二进制、UTF-8 检验与大小/行数降级、BOM/CRLF/末尾换行、原文标记、执行位、忽略碰撞与删除清单 |
@@ -161,10 +162,10 @@ Cocoa 测试发现 Return 在原生历史表格中被当作编辑键，现通过
 
 ### 验收步骤
 
-1. 在隔离备份对象的概览点击“获取云端更新”，确认本地未备份修改被纳入比较；没有冲突直接预览，没有更新显示已是最新。
+1. 在隔离备份对象的“多人协作”点击“立即同步”，确认本地已落盘但未备份的修改先保存；没有冲突自动应用并发送，没有变化不创建空版本。
 2. 逐处选择本地或云端，改选、上一处、下一处和文件切换均可用；未选完时预览禁用。查看二进制元信息与只读副本、删除/保留的对应一方文案。
-3. 返回概览或设置，再前进/后退、切换对象；退出并重启后继续处理，确认选择仍在，当前对象自动备份仍暂停，其他对象正常备份。
-4. 查看最终文件和新增/修改/删除清单，确认自动合并也在清单中。取消确认不写源；“应用并保存版本”后进入结果历史版本、恢复自动备份，云端上传仍需单独操作。
+3. 返回多人协作或设置，再前进/后退、切换对象；退出并重启后继续处理，确认选择仍在，当前对象自动备份仍暂停，其他对象正常备份。
+4. 查看最终文件和新增/修改/删除清单，确认自动合并也在清单中。取消确认不写源；云端会话“应用并保存版本”后返回多人协作、恢复自动备份并续接同步。本地方案的手动合并仍返回结果历史版本。
 5. 选择期间修改源文件后重新打开：旧选择可查看，应用被禁用，重新分析清空旧选择。分别验收 1080×740、760×520、浅深色和完整键盘导航；macOS Tab 遍历范围遵循系统键盘偏好。
 
 跨平台新功能尚未实际运行 Windows/Linux 构建及原生桌面验证；本次也未验证真实远程认证或网络故障。Git 2.29 兼容通过所用命令范围约束，本机执行使用已安装的 Git，不宣称已在 2.29 二进制上运行。
@@ -273,3 +274,29 @@ ctest --test-dir build -R '^(backup_core|regression)$' --parallel 2 --output-on-
 补充验证反复展开/收起、两种状态下刷新、节点跨列和焦点保持、全共享分支的双向切换，确认 HEAD 与源内容不变。应用和测试增量构建通过；同一组定向用例为 10 passed、0 failed、0 skipped（含初始化和清理），日志为 `build/tests/ancestor-node-toggle.txt`。已查看 `build/ancestor-node-toggle-screenshots/` 的浅深色、1080 / 760 宽度展开效果。本次没有执行完整回归或原生桌面测试。
 
 最终补齐全共享分支中节点到首条祖先的连线，再次执行该分组交互用例通过：3 passed、0 failed（含初始化和清理），日志为 `build/tests/ancestor-node-toggle-final.txt`。
+
+
+## 多人协作与自动同步（2026-10-15）
+
+在 `feature/collaboration-sync` 上分同步核心、自动调度、协作页面三个阶段实施。复用 macOS arm64 / Qt 6.8.3 的 `build`，通过 `cmake --build build --parallel 4` 增量编译。以下函数按影响范围分别运行，均通过；没有执行全量 CTest，也没有用正常应用运行自动回归。
+
+| 验证内容 | 实际运行的 Qt Test 函数 |
+| --- | --- |
+| 首次发布、全部方案和里程碑、无冲突更新与删除、无变化不产生副本或提交 | `fullSyncPublishesReceivesAndAvoidsEmptyWork` |
+| 双方修改合并、冲突后自动续接 | `fullSyncMergesThenResumesConflict` |
+| 非当前方案分叉、切换处理后整批发送、其他对象继续 | `fullSyncWaitsForInactiveDivergence` |
+| 网络与认证失败、本地备份继续 | `fullSyncNetworkFailureKeepsBackupWorking` |
+| 发送期间云端连续变化，限制本轮自动协调次数 | `fullSyncBoundsConcurrentCloudRetries` |
+| 整理期间源文件变化、编辑保护、重启恢复与取消 | `fullSyncDefersSourceChangesDuringAnalysis`、`fullSyncEditorGuardAndCancelSurviveRestart` |
+| 存储锁忙自动退避、捕获期间源变化后重试 | `fullSyncRetriesBusyStorageAndChangingCapture` |
+| 版本已发送但里程碑未完成、重启补齐且不产生新版本 | `fullSyncReportsAndResumesIncompleteMilestones` |
+| 里程碑冲突处理后续接、本地手动合并不续接云端任务 | `fullSyncTagChoicesContinueButLocalMergeDoesNot` |
+| 3 秒合并、30 秒轮询、去重、退避、未保存编辑及停止重启 | `automaticSyncDebouncesPollsAndDoesNotLoop`、`automaticSyncBackoffAndEditing`、`automaticSyncStopKeepsManualWorkAndRestarts` |
+| 直接受影响的合并与恢复保护 | `isolatedResolutionCombinesSeparateChanges`、`resolutionInjectedFailures`（6 个数据行）、`resolutionQueueAndPinnedSnapshot` |
+| 后台任务让行和取消范围 | `backgroundServiceTasksAreFairAndBusyDoesNotFlicker`、`monitorStopCancelsItsBackupButKeepsManualWork` |
+| 协作主操作、自动开关、连接显式保存及过期回调 | `collaborationProvidesFullSyncControls`、`collaborationConnectionUsesExplicitSaveAndRejectsStaleReply` |
+| 编辑、冲突页面、导航和标签提示 | `sourcePreviewUnsavedNavigationAndExternalEdits`、`conflictChoicesPreviewAndApply`、`conflictNavigationStalenessAndLateReplies`、`conflictNotificationBadgeAndNormalNavigation`、`stableModelsAndStaleDiff` |
+
+UI 测试使用 `QT_QPA_PLATFORM=offscreen`；通过 `ZC_TEST_SCREENSHOTS` 保存页面截图，已检查 `build/collaboration-screenshots/collaboration-final-{light,dark}-{1080,760}.png`。窄窗口没有整页横向滚动；较长页面使用纵向滚动。测试中只有预期的 offscreen 窗口提示及已有 Qt 弃用警告。
+
+测试远程为临时 bare 仓库，网络与认证错误通过注入 Git 结果验证。没有实际运行 Windows/Linux 原生构建、真实托管仓库认证或跨机器协作；这些项目按 [双端验收步骤](collaboration.md#双端验收) 人工验收。

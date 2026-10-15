@@ -47,6 +47,7 @@ BackupResult<SyncResult> BackupEngine::synchronize(const QString &id, const Sync
         auto record = *m_catalog.find(id);
         status.state = record.state == BackupSyncState::NeedsAttention ? SyncState::NeedsAttention : state;
         status.phase = SyncPhase::Idle;
+        status.message = result.title;
         status.detail = result.message;
         if (!result.warning.isEmpty()) status.detail += (status.detail.isEmpty() ? QString() : QStringLiteral("\n")) + result.warning;
         status.branchRef = branch;
@@ -89,11 +90,23 @@ BackupResult<SyncResult> BackupEngine::synchronize(const QString &id, const Sync
     const auto restoreRunner = qScopeGuard([&] { m_dependencies.git = originalRunner; });
     const auto failure = [&](const OperationResult &result) -> BackupResult<SyncResult>
     {
-        auto state = result.cancelled ? SyncState::Waiting : transfer == TransferFailure::Network || transfer == TransferFailure::Changed ? SyncState::RetryLater : SyncState::NeedsAttention;
+        auto state = result.cancelled ? SyncState::Waiting : result.retryable || transfer == TransferFailure::Network || transfer == TransferFailure::Changed ? SyncState::RetryLater : SyncState::NeedsAttention;
         const auto record = *m_catalog.find(id);
         if (!record.tagRemotes.value(record.tagEndpoint).conflicts.isEmpty()) state = SyncState::NeedsTags;
         if (record.state == BackupSyncState::ResolutionPending) state = SyncState::NeedsResolution;
-        return finish(result, state);
+        auto notice = result;
+        if (!result.cancelled && transfer != TransferFailure::None)
+        {
+            notice.warning = result.message + (result.warning.isEmpty() ? QString() : '\n' + result.warning);
+            switch (transfer)
+            {
+            case TransferFailure::Network: notice.message = "暂时无法连接共享仓库。本地版本已保留，稍后可以继续同步。"; break;
+            case TransferFailure::Authentication: notice.message = "无法访问共享仓库，请检查登录凭据和仓库访问权限后重试。"; break;
+            case TransferFailure::Changed: notice.message = "协作者仍在更新。本地版本已保留，稍后重新整理双方的更新。"; break;
+            default: notice.message = "共享仓库未能完成本次操作，请展开同步详情查看原因。"; break;
+            }
+        }
+        return finish(notice, state);
     };
     auto git = repository(id);
     const auto remote = git.remoteName();
@@ -138,15 +151,24 @@ BackupResult<SyncResult> BackupEngine::synchronize(const QString &id, const Sync
         QStringList updates;
         bool uploadNeeded = false;
         status.branches.clear();
+        QMap<QString, int> rows;
+        QSet<QString> localTargets;
+        for (const auto &branch : snapshot.value)
+            if (!branch.remoteBranch)
+            {
+                rows[branch.ref] = status.branches.size();
+                status.branches.append(branch.name + " · 等待检查");
+                localTargets.insert(branch.upstream.isEmpty() ? "refs/heads/" + branch.name : branch.remoteRef);
+            }
+        for (const auto &branch : snapshot.value)
+            if (branch.remoteBranch && branch.remote == remote.value && !localTargets.contains(branch.remoteRef))
+                status.branches.append(branch.name + " · 云端方案已获取");
         const auto worktrees = git.run({"worktree", "list", "--porcelain"});
         if (!worktrees.success()) return failure(GitRepository::outcome(worktrees));
         for (const auto &branch : snapshot.value)
         {
-            if (branch.remoteBranch)
-            {
-                status.branches.append(branch.name + " · 云端方案已获取");
-                continue;
-            }
+            if (branch.remoteBranch) continue;
+            auto &detail = status.branches[rows.value(branch.ref)];
             if (!branch.remote.isEmpty() && branch.remote != remote.value)
                 return finish(OperationResult::warn("请检查共享仓库配置", "方案“" + branch.name + "”关联了其他云端，全部方案需要使用同一共享仓库。"), SyncState::NeedsAttention);
             const auto target = branch.upstream.isEmpty() ? "refs/heads/" + branch.name : branch.remoteRef;
@@ -156,23 +178,23 @@ BackupResult<SyncResult> BackupEngine::synchronize(const QString &id, const Sync
             uploadNeeded |= branch.upstream.isEmpty();
             const auto theirs = cloud.value(target);
             if (branch.current) currentRemote = theirs;
-            if (theirs.isEmpty()) { uploadNeeded = true; status.branches.append(branch.name + " · 待首次共享"); continue; }
-            if (theirs == branch.head) { status.branches.append(branch.name + " · 版本一致"); continue; }
+            if (theirs.isEmpty()) { uploadNeeded = true; detail = branch.name + " · 待首次共享"; continue; }
+            if (theirs == branch.head) { detail = branch.name + " · 版本一致"; continue; }
             const auto remoteBehind = git.run({"merge-base", "--is-ancestor", theirs, branch.head});
-            if (remoteBehind.success()) { uploadNeeded = true; status.branches.append(branch.name + " · 有本地更新"); continue; }
+            if (remoteBehind.success()) { uploadNeeded = true; detail = branch.name + " · 有本地更新"; continue; }
             if (!remoteBehind.finished || remoteBehind.exitCode != 1) return failure(GitRepository::outcome(remoteBehind));
-            if (branch.current) { status.branches.append(branch.name + " · 正在整理双方更新"); continue; }
+            if (branch.current) { detail = branch.name + " · 正在整理双方更新"; continue; }
             const auto localBehind = git.run({"merge-base", "--is-ancestor", branch.head, theirs});
             if (!localBehind.success())
             {
                 if (!localBehind.finished || localBehind.exitCode != 1) return failure(GitRepository::outcome(localBehind));
-                status.branches.append(branch.name + " · 需要先处理双方更新");
+                detail = branch.name + " · 需要先处理双方更新";
                 return finish(OperationResult::info("需要先同步另一个方案", "方案“" + branch.name + "”包含双方的更新。请切换到该方案处理，再一起发送全部方案。"), SyncState::NeedsBranch, branch.ref);
             }
             if (worktrees.output.split('\n').contains("branch " + branch.ref))
                 return finish(OperationResult::warn("方案正在其他工作目录使用", "请先关闭或切换使用“" + branch.name + "”的其他 Git 工作目录。"), SyncState::NeedsAttention, branch.ref);
             updates.append("update " + branch.ref + ' ' + theirs + ' ' + branch.head);
-            status.branches.append(branch.name + " · 已接收云端更新");
+            detail = branch.name + " · 等待接收云端更新";
         }
         if (!updates.isEmpty())
         {
@@ -186,20 +208,41 @@ BackupResult<SyncResult> BackupEngine::synchronize(const QString &id, const Sync
             }
             record.operation.clear(); ++record.branchVersion;
             saved = m_catalog.save(record); if (!saved.success) return failure(saved);
+            for (auto &detail : status.branches)
+                if (detail.endsWith("等待接收云端更新")) detail.replace("等待接收云端更新", "已接收云端更新");
         }
         record = *m_catalog.find(id);
         if (!currentRemote.isEmpty() && currentRemote != record.lastCommit &&
             !git.run({"merge-base", "--is-ancestor", currentRemote, record.lastCommit}).success())
         {
             if (editing && editing()) return editingResult();
+            SourceFingerprint analyzedSource;
+            result = m_dependencies.files->fingerprint(record.sourcePath, record.directory, analyzedSource, false);
+            if (!result.success) return failure(result);
+            const auto changedInput = [&](const OperationResult &error) -> BackupResult<SyncResult>
+            {
+                const auto latest = *m_catalog.find(id);
+                SourceFingerprint now;
+                const auto read = m_dependencies.files->fingerprint(latest.sourcePath, latest.directory, now, false);
+                if (read.success && now != analyzedSource && latest.state != BackupSyncState::NeedsAttention)
+                {
+                    if (latest.state == BackupSyncState::ResolutionPending)
+                    {
+                        const auto cancelled = cancelResolution(id, latest.resolutionSession);
+                        if (!cancelled.success) return failure(cancelled);
+                    }
+                    return finish(OperationResult::info("文件仍在变化", "整理期间源文件有新的修改，已保留内容，稍后重新同步。"), SyncState::RetryLater);
+                }
+                return failure(error);
+            };
             const auto prepared = prepareResolution(id, false, {}, currentRemote, true);
-            if (!prepared.result.success) return failure(prepared.result);
+            if (!prepared.result.success) return changedInput(prepared.result);
             if (!prepared.value.id.isEmpty())
             {
                 if (prepared.value.remaining())
                     return finish(OperationResult::info("需要处理差异", "双方修改了同一处内容。请选择要保留的内容，完成后自动继续全量同步。"), SyncState::NeedsResolution);
                 const auto apply = prepareSyncApply(id, prepared.value.id, prepared.value.revision);
-                if (!apply.result.success) return failure(apply.result);
+                if (!apply.result.success) return changedInput(apply.result);
                 if (editing && editing())
                 {
                     const auto cancelled = cancelResolution(id, prepared.value.id);
@@ -208,7 +251,7 @@ BackupResult<SyncResult> BackupEngine::synchronize(const QString &id, const Sync
                 }
                 phase(SyncPhase::Applying);
                 result = applySync(apply.value);
-                if (!result.success) return failure(result);
+                if (!result.success) return changedInput(result);
                 uploadNeeded |= apply.value.commit != currentRemote;
             }
         }

@@ -21,6 +21,7 @@ struct OperationResult
     int duration{3000};
     NotificationLevel level{NotificationLevel::Error};
     bool cancelled{false};
+    bool retryable{false};
 
     static OperationResult ok(const QString &title, const QString &message = {}, int duration = 2500)
     {
@@ -42,6 +43,12 @@ struct OperationResult
     {
         auto result = warn(title, message);
         result.cancelled = true;
+        return result;
+    }
+    static OperationResult retry(const QString &title, const QString &message)
+    {
+        auto result = warn(title, message);
+        result.retryable = true;
         return result;
     }
 };

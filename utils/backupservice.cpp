@@ -471,10 +471,10 @@ BackupTaskId BackupService::removeRemote(const QString &id, QObject *c, Completi
     return d->unbound(d->mutate(id, c, std::move(f), [id](BackupEngine &e)
                      { return e.removeRemote(id); }));
 }
-BackupTaskId BackupService::synchronize(const QString &id, bool push, QObject *c, Completion f)
+BackupTaskId BackupService::transferSavedVersions(const QString &id, bool push, QObject *c, Completion f)
 {
     return d->mutate(id, c, std::move(f), [id, push](BackupEngine &e)
-                     { return e.synchronize(id, push); });
+                     { return e.transferSavedVersions(id, push); });
 }
 bool BackupService::isSynchronizing(const QString &id) const { return d->syncJobs.contains(id); }
 SyncStatus BackupService::syncStatus(const QString &id) const
@@ -518,7 +518,8 @@ BackupTaskId BackupService::synchronize(const QString &id, SyncRequestOptions op
         if (output.value.status.remoteUrl.isEmpty() && !output.result.success)
         {
             output.value.status = d->cache.value(id).sync;
-            output.value.status.state = output.result.cancelled ? SyncState::Waiting : SyncState::NeedsAttention;
+            output.value.status.state = output.result.cancelled ? SyncState::Waiting : output.result.retryable ? SyncState::RetryLater : SyncState::NeedsAttention;
+            output.value.status.message = output.result.title;
             output.value.status.detail = output.result.message;
         }
         if (output.value.status.state == SyncState::Synced) d->locallyDirty.remove(id);
@@ -668,8 +669,14 @@ BackupTaskId BackupService::switchBranch(const PreparedBranchSwitch &r, QObject 
 
 BackupTaskId BackupService::prepareBranchMerge(const BranchRequest &r, QObject *c, Reply<SyncResolutionSession> f)
 { return d->submit<SyncResolutionSession>(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.prepareBranchMerge(r); }); }
-BackupTaskId BackupService::cancelResolution(const QString &id, const QString &session, QObject *c, Completion f)
-{ return d->mutate(id, c, std::move(f), [=](BackupEngine &e) { return e.cancelResolution(id, session); }); }
+BackupTaskId BackupService::cancelResolution(const QString &id, const QString &session, QObject *c, Completion f, bool disableAutomatic)
+{
+    return d->mutate(id, c, std::move(f), [=](BackupEngine &e) {
+        const auto result = e.cancelResolution(id, session);
+        if (result.success && disableAutomatic) return e.setAutoSync(id, false);
+        return result;
+    });
+}
 
 BackupTaskId BackupService::uploadBranch(const BranchRequest &r, QObject *c, Completion f)
 { return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.uploadBranch(r); }); }

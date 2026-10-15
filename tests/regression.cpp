@@ -15,6 +15,7 @@
 #include <QTreeView>
 #include <QTimer>
 #include "windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h"
+#include "windows/mainwindow_child/homepage/pages/homepage_page_collaboration.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_diff.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_conflict.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.h"
@@ -226,7 +227,9 @@ class Regression : public QObject
         auto *save = page->findChild<QAction *>("saveSourceAction");
         QVERIFY(edit->isEnabled()); edit->trigger(); QVERIFY(!editor->isReadOnly());
         editor->moveCursor(QTextCursor::End); editor->insertPlainText("edited\n");
-        QVERIFY(page->hasUnsavedChanges());
+        QVERIFY(page->hasUnsavedChanges()); QVERIFY(service.isSyncEditing(id));
+        const auto blocked = service.syncAll(id); QCOMPARE(blocked.value.status.state, SyncState::Editing);
+        QCOMPARE(readFile(source), QByteArray("original\n"));
         auto *history = window.findChild<QToolButton *>("historyTab"); history->click();
         auto *dialog = page->findChild<QDialog *>("previewUnsavedDialog"); QVERIFY(dialog && dialog->isVisible());
         dialog->done(QMessageBox::Cancel); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
@@ -237,7 +240,7 @@ class Regression : public QObject
         dialog = page->findChild<QDialog *>("previewUnsavedDialog"); QVERIFY(dialog); dialog->done(QMessageBox::Save);
         settle(service); QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QCOMPARE(readFile(source), QByteArray("original\nedited\n"));
-        QVERIFY(!page->hasUnsavedChanges());
+        QVERIFY(!page->hasUnsavedChanges()); QVERIFY(!service.isSyncEditing(id));
         QCOMPARE(window.findChild<QStackedWidget *>("pages")->currentWidget(), window.findChild<HomePageBackupPage *>());
         window.findChild<QToolButton *>("previewTab")->click(); settle(service);
         edit->trigger(); editor->moveCursor(QTextCursor::End); editor->insertPlainText("keep this buffer");
@@ -1200,36 +1203,23 @@ class Regression : public QObject
         QVERIFY(service.addLocal(source).success);
         gateway.summaries[2]("deleted-context-result", {});
         QVERIFY(!diff.findChild<QPlainTextEdit *>("analysis")->toPlainText().contains("deleted-context-result"));
-        HomePageDashboardPage dashboard(&service);
-        dashboard.setBackup(id);
-        settle(service);
-        auto *expander = dashboard.findChild<oclero::qlementine::Expander *>("remoteExpander");
-        auto *toggle = dashboard.findChild<oclero::qlementine::Switch *>("remoteSwitch");
-        QVERIFY(!toggle->isChecked());
-        QVERIFY(!expander->expanded());
-        QVERIFY(!runGit(service.repoPath(id), {"remote", "get-url", "origin"}).success());
+        HomePageCollaborationPage collaboration(&service);
+        collaboration.setBackup(id);
+        auto *toggle = collaboration.findChild<oclero::qlementine::Switch *>("automaticSyncSwitch");
+        QVERIFY(toggle && !toggle->isChecked());
         const auto other = dir.path() + "/other.txt";
-        writeFile(other, "other");
-        QVERIFY(service.addLocal(other).success);
+        writeFile(other, "other"); QVERIFY(service.addLocal(other).success);
         const auto otherId = encoded(other);
         QVERIFY(service.setRemote(id, "https://example.test/first.git").success);
         QVERIFY(service.setRemote(otherId, "https://example.test/second.git").success);
-        auto *url = dashboard.findChild<QLineEdit *>("remoteUrl");
-        url->setFocus();
-        dashboard.setBackup(otherId);
-        settle(service);
+        auto *url = collaboration.findChild<QLineEdit *>("remoteUrl");
+        url->setFocus(); collaboration.setBackup(otherId); settle(service);
         QCOMPARE(url->text(), QString("https://example.test/second.git"));
         QVERIFY(toggle->isChecked());
-        QVERIFY(expander->expanded());
+        toggle->click(); settle(service);
+        QVERIFY(!toggle->isChecked()); QVERIFY(!service.syncStatus(otherId).automatic);
         QCOMPARE(runGit(service.repoPath(otherId), {"remote", "get-url", "origin"}).output.trimmed(), QString("https://example.test/second.git"));
-        QTest::keyClick(toggle, Qt::Key_Space);
-        QVERIFY(!toggle->isChecked());
-        QVERIFY(!expander->expanded());
-        settle(service);
-        QVERIFY(!runGit(service.repoPath(otherId), {"remote", "get-url", "origin"}).success());
-        QTest::keyClick(toggle, Qt::Key_Space);
-        QVERIFY(toggle->isChecked());
-        QVERIFY(expander->expanded());
+        toggle->click(); settle(service); QVERIFY(toggle->isChecked());
     }
     void importantVersionUiFlow()
     {
@@ -1670,7 +1660,7 @@ class Regression : public QObject
         QVERIFY(!QFileInfo::exists(f.source + "/remove.txt"));
         QCOMPARE(navigation.size(), 1);
         const auto route = qvariant_cast<Route>(navigation.first().first());
-        QCOMPARE(route.page, PageId::History);
+        QCOMPARE(route.page, PageId::Collaboration);
         QCOMPARE(route.commit, head(f.service, f.id));
     }
     void conflictNavigationStalenessAndLateReplies()
@@ -1681,14 +1671,14 @@ class Regression : public QObject
         MainWindow window(&f.service, &settings, &gateway, m_theme, false);
         window.setAttribute(Qt::WA_DontShowOnScreen);
         window.show();
-        window.navigate({PageId::Dashboard, f.id}); settle(f.service);
-        auto *dashboard = window.findChild<HomePageDashboardPage *>();
-        dashboard->findChild<QPushButton *>("pullButton")->click(); settle(f.service);
+        window.navigate({PageId::Collaboration, f.id}); settle(f.service);
+        auto *collaboration = window.findChild<HomePageCollaborationPage *>();
+        collaboration->findChild<QPushButton *>("syncButton")->click(); settle(f.service);
         auto *page = window.findChild<HomePageConflictPage *>();
         QVERIFY(page->isVisible());
         auto *returnHistory = window.findChild<QToolButton *>("returnHistoryButton");
         QVERIFY(returnHistory && returnHistory->isVisible());
-        QCOMPARE(returnHistory->text(), QString("返回概览"));
+        QCOMPARE(returnHistory->text(), QString("返回多人协作"));
         QVERIFY(!window.findChild<QToolButton *>("historyTab")->isVisible());
         QVERIFY(!window.findChild<QToolButton *>("overviewTab")->isVisible());
         auto *local = page->findChild<QPushButton *>("localChoice");
@@ -1712,8 +1702,8 @@ class Regression : public QObject
         window.navigate({PageId::Conflict, f.id}); settle(f.service);
         QVERIFY(page->findChild<QPushButton *>("remoteChoice")->isChecked());
         writeFile(f.source + "/使用说明.txt", "源内容在选择期间变化\n");
-        window.navigate({PageId::Dashboard, f.id}); settle(f.service);
-        auto *resume = dashboard->findChild<QPushButton *>("continueResolutionButton");
+        window.navigate({PageId::Collaboration, f.id}); settle(f.service);
+        auto *resume = collaboration->findChild<QPushButton *>("syncButton");
         QVERIFY(resume->isVisible()); resume->click(); settle(f.service);
         QVERIFY(page->findChild<QPushButton *>("reanalyzeButton")->isVisible());
         QVERIFY(!local->isEnabled());
@@ -1765,23 +1755,23 @@ class Regression : public QObject
         QCOMPARE(pages->currentWidget(), historyPage);
         QVERIFY(!conflictPage->isVisible());
 
-        auto *overviewTab = window.findChild<QToolButton *>("overviewTab");
+        auto *overviewTab = window.findChild<QToolButton *>("collaborationTab");
         QVERIFY(overviewTab && overviewTab->isVisible());
-        auto *badge = window.findChild<QWidget *>("overviewNotificationBadge");
+        auto *badge = window.findChild<QWidget *>("collaborationNotificationBadge");
         QVERIFY(badge && badge->isVisible());
-        QVERIFY(overviewTab->toolTip().contains("存在同步差异"));
+        QVERIFY(overviewTab->toolTip().contains("存在待处理事项"));
 
-        // Navigating to standalone conflict page hides overview tab and badge
+        // Navigating to standalone conflict page hides collaboration tab and badge
         window.navigate({PageId::Conflict, f.id});
         settle(f.service);
         QCOMPARE(pages->currentWidget(), conflictPage);
         QVERIFY(!badge->isVisible());
         QVERIFY(!overviewTab->isVisible());
 
-        // Returning from a conflict opened outside History lands on Overview.
+        // Returning from a conflict opened outside History lands on Collaboration.
         window.findChild<QToolButton *>("returnHistoryButton")->click();
         settle(f.service);
-        QCOMPARE(pages->currentWidget(), window.findChild<HomePageDashboardPage *>());
+        QCOMPARE(pages->currentWidget(), window.findChild<HomePageCollaborationPage *>());
         QVERIFY(badge->isVisible());
         QVERIFY(overviewTab->isVisible());
 
@@ -2792,7 +2782,7 @@ class Regression : public QObject
         QVERIFY(!qvariant_cast<OperationResult>(notifications.first().first()).success);
         QCOMPARE(head(service, id), original);
     }
-    void overviewProvidesTheOnlyCloudSyncEntry()
+    void collaborationProvidesFullSyncControls()
     {
         TestDirectory dir; TestBackupService service(pathsIn(dir));
         const auto source = dir.path() + "/document.txt";
@@ -2806,11 +2796,11 @@ class Regression : public QObject
         FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
         MainWindow window(&service, &settings, &gateway, m_theme, false);
         window.setAttribute(Qt::WA_DontShowOnScreen); window.resize(1080, 740); window.show();
-        window.navigate({PageId::Dashboard, id}); settle(service);
-        auto *overview = window.findChild<HomePageDashboardPage *>(); QVERIFY(overview && overview->isVisible());
-        auto *upload = overview->findChild<QPushButton *>("pushButton"); QVERIFY(upload && upload->isEnabled());
-        QCOMPARE(upload->accessibleName(), QString("全量上传"));
-        QSignalSpy notifications(overview, &HomePageDashboardPage::notification);
+        window.navigate({PageId::Collaboration, id}); settle(service);
+        auto *overview = window.findChild<HomePageCollaborationPage *>(); QVERIFY(overview && overview->isVisible());
+        auto *upload = overview->findChild<QPushButton *>("syncButton"); QVERIFY(upload && upload->isEnabled());
+        QCOMPARE(upload->accessibleName(), QString("立即同步全部方案"));
+        QSignalSpy notifications(overview, &HomePageCollaborationPage::notification);
         upload->click(); settle(service);
         QVERIFY(!notifications.isEmpty());
         QVERIFY(qvariant_cast<OperationResult>(notifications.last().first()).success);
@@ -2818,13 +2808,19 @@ class Regression : public QObject
         QCOMPARE(runGit(remote, {"rev-parse", "topic"}).output.trimmed(), topic.output.trimmed());
         QVERIFY(runGit(remote, {"branch", "cloud-only", "main"}).success());
         notifications.clear();
-        auto *download = overview->findChild<QPushButton *>("pullButton"); QVERIFY(download && download->isEnabled());
-        QCOMPARE(download->accessibleName(), QString("全量获取"));
+        auto *download = overview->findChild<QPushButton *>("syncButton"); QVERIFY(download && download->isEnabled());
+        QCOMPARE(download->accessibleName(), QString("立即同步全部方案"));
         download->click(); settle(service);
         QVERIFY(!notifications.isEmpty());
         QVERIFY(qvariant_cast<OperationResult>(notifications.last().first()).success);
         QVERIFY(runGit(service.repoPath(id), {"rev-parse", "refs/remotes/origin/cloud-only"}).success());
         QCOMPARE(readFile(source), QByteArray("base\n"));
+        auto *automatic = overview->findChild<oclero::qlementine::Switch *>("automaticSyncSwitch"); QVERIFY(automatic && automatic->isChecked());
+        automatic->click(); settle(service); QVERIFY(!service.syncStatus(id).automatic);
+        QCOMPARE(service.syncStatus(id).remoteUrl, remote);
+        writeFile(source, "manual update\n"); upload->click(); settle(service);
+        QCOMPARE(runGit(remote, {"show", "main:document.txt"}).bytes, QByteArray("manual update\n"));
+        automatic->click(); settle(service);
         const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS");
         if (!output.isEmpty())
         {
@@ -2839,10 +2835,13 @@ class Regression : public QObject
                     auto *scroll = overview->findChild<QScrollArea *>("scroll"); QVERIFY(scroll);
                     scroll->ensureWidgetVisible(upload);
                     QTest::qWait(30);
-                    QVERIFY(window.grab().save(output + QString("/cloud-overview-%1-%2.png").arg(theme == ThemeMode::Light ? "light" : "dark").arg(size.width())));
+                    QVERIFY(window.grab().save(output + QString("/collaboration-%1-%2.png").arg(theme == ThemeMode::Light ? "light" : "dark").arg(size.width())));
                 }
             }
         }
+        window.navigate({PageId::Dashboard, id}); settle(service);
+        QVERIFY(!window.findChild<HomePageDashboardPage *>()->findChild<QPushButton *>("pushButton"));
+        QVERIFY(!window.findChild<HomePageDashboardPage *>()->findChild<QLineEdit *>("remoteUrl"));
         window.navigate({PageId::Branches, id, {}, {}, QString("refs/heads/topic")}); settle(service);
         auto *branches = window.findChild<HomePageBranchesPage *>(); QVERIFY(branches && branches->isVisible());
         QVERIFY(!branches->findChild<QAction *>("fetchBranchesAction"));
@@ -2863,6 +2862,55 @@ class Regression : public QObject
         closer.start(); operations->click(); closer.stop();
         QCOMPARE(menuItems, QStringList({"与其他方案比较…", "合并到正在使用的方案…", "重命名…", "删除本地方案…", "仍然删除未合并方案…"}));
     }
+    void collaborationConnectionUsesExplicitSaveAndRejectsStaleReply()
+    {
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto first = dir.path() + "/first.txt", second = dir.path() + "/second.txt", remote = dir.path() + "/shared.git";
+        writeFile(first, "first\n"); writeFile(second, "second\n");
+        QVERIFY(service.addLocal(first).success); QVERIFY(service.addLocal(second).success);
+        const auto firstId = service.idForSource(first), secondId = service.idForSource(second);
+        QVERIFY(runGit({}, {"init", "--bare", remote}).success());
+        FakeAi gateway; SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        window.setAttribute(Qt::WA_DontShowOnScreen); window.resize(1080, 740); window.show();
+        window.navigate({PageId::Collaboration, firstId}); settle(service);
+        auto *page = window.findChild<HomePageCollaborationPage *>(); QVERIFY(page);
+        auto *url = page->findChild<QLineEdit *>("remoteUrl"); auto *connectButton = page->findChild<QPushButton *>("connectButton");
+        const auto enterAddress = [&] { url->setText(remote); url->setModified(true); emit url->textEdited(remote); };
+        enterAddress(); settle(service); QVERIFY(service.syncStatus(firstId).remoteUrl.isEmpty());
+        bool navigated = false;
+        const auto connection = connect(&service, &BackupService::taskStarted, &window, [&](BackupTaskId, const QString &id) {
+            if (!navigated && id.isEmpty()) { navigated = true; window.navigate({PageId::Collaboration, secondId}); }
+        });
+        connectButton->click(); settle(service); disconnect(connection);
+        QVERIFY(navigated); QVERIFY(service.syncStatus(firstId).remoteUrl.isEmpty()); QVERIFY(service.syncStatus(secondId).remoteUrl.isEmpty());
+        window.navigate({PageId::Collaboration, firstId}); settle(service);
+        enterAddress(); connectButton->click(); settle(service);
+        QCOMPARE(service.syncStatus(firstId).remoteUrl, remote); QVERIFY(service.syncStatus(firstId).automatic);
+        page->findChild<QPushButton *>("copyButton")->click(); QCOMPARE(QApplication::clipboard()->text(), remote);
+        page->findChild<QPushButton *>("syncButton")->click(); settle(service);
+        QCOMPARE(service.syncStatus(firstId).state, SyncState::Synced);
+        const auto output = qEnvironmentVariable("ZC_TEST_SCREENSHOTS");
+        if (!output.isEmpty())
+        {
+            if (auto *notice = window.findChild<NotificationBar *>()) notice->dismiss();
+            for (const auto mode : {ThemeMode::Light, ThemeMode::Dark})
+            {
+                m_theme->setMode(mode);
+                for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+                {
+                    window.resize(size); QTest::qWait(60);
+                    auto *scroll = page->findChild<QScrollArea *>("scroll");
+                    QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+                    QVERIFY(window.grab().save(output + QString("/collaboration-final-%1-%2.png").arg(mode == ThemeMode::Light ? "light" : "dark").arg(size.width())));
+                }
+            }
+        }
+        QVERIFY(answerConfirmation(page->findChild<QPushButton *>("disconnectButton"), service, [](QDialog *dialog) { dialog->accept(); }));
+        QVERIFY(service.syncStatus(firstId).remoteUrl.isEmpty()); QVERIFY(!page->findChild<QPushButton *>("syncButton")->isEnabled());
+        QCOMPARE(readFile(first), QByteArray("first\n"));
+    }
+
     void branchUiBrowsingGraphAndConfirmation()
     {
         TestDirectory dir; TestBackupService service(pathsIn(dir));
@@ -3063,7 +3111,7 @@ class Regression : public QObject
             if (!output.isEmpty() && !window.grab().save(output + "/" + name + ".png"))
                 qFatal("Cannot save screenshot");
         };
-        const QVector<Route> routes{{}, {PageId::Dashboard, id}, {PageId::History, id}, {PageId::Diff, id, head(service, id)}, {PageId::GeneralSettings}, {PageId::AiSettings}, {PageId::About}};
+        const QVector<Route> routes{{}, {PageId::Dashboard, id}, {PageId::Collaboration, id}, {PageId::History, id}, {PageId::Diff, id, head(service, id)}, {PageId::GeneralSettings}, {PageId::AiSettings}, {PageId::About}};
         for (int theme = 0; theme < 2; ++theme)
         {
             for (int i = 0; i < routes.size(); ++i)
@@ -3219,7 +3267,6 @@ class Regression : public QObject
         window.navigate({PageId::Dashboard, id});
         settle(service);
         auto *dashboard = window.findChild<HomePageDashboardPage *>();
-        dashboard->findChild<oclero::qlementine::Switch *>("remoteSwitch")->click();
         QTest::qWait(160);
         capture("compact-expanded");
         auto *sourceField = dashboard->findChild<QLineEdit *>("sourcePathEdit");

@@ -16,6 +16,7 @@ class WidgetWindowAgent;
 }
 class HomePage;
 class HomePageDashboardPage;
+class HomePageCollaborationPage;
 class HomePagePreviewPage;
 class HomePageBackupPage;
 class HomePageDiffPage;
@@ -66,6 +67,7 @@ class MainWindow : public QMainWindow
     NotificationBar *m_notifications;
     HomePage *m_list;
     HomePageDashboardPage *m_dashboard;
+    HomePageCollaborationPage *m_collaboration;
     HomePagePreviewPage *m_preview{nullptr};
     bool m_quitApproved{false};
     HomePageBackupPage *m_history;
@@ -84,7 +86,7 @@ class MainWindow : public QMainWindow
     int m_sidebarWidth{224};
     int m_sidebarTargetWidth{-1};
     QVariantAnimation *m_sidebarAnimation{nullptr};
-    QWidget *m_overviewBadge{nullptr};
+    QWidget *m_collaborationBadge{nullptr};
     QWidget *m_aboutBadge{nullptr};
     bool m_hasUnreadUpdate{false};
     void displayRoute(const Route &route);

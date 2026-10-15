@@ -189,6 +189,7 @@ OperationResult BackupCatalog::load()
         if (syncState < 0 || syncState > int(SyncState::Editing)) { invalid.append(entry.filePath()); continue; }
         r.sync.state = static_cast<SyncState>(syncState);
         if (r.sync.state == SyncState::Running || r.sync.state == SyncState::Editing) r.sync.state = SyncState::Waiting;
+        r.sync.message = sync["message"].toString();
         r.sync.detail = sync["detail"].toString();
         r.sync.branchRef = sync["branchRef"].toString();
         for (const auto &branch : sync["branches"].toArray()) r.sync.branches.append(branch.toString());
@@ -234,7 +235,7 @@ OperationResult BackupCatalog::save(const BackupRecord &r)
     obj.insert("branchUploads", tagStateJson(branchState));
     obj.insert("branchesFetchedAt", r.branchesFetchedAt.toUTC().toString(Qt::ISODateWithMs));
     obj.insert("sync", QJsonObject{{"automatic", r.sync.automatic}, {"remoteUrl", r.sync.remoteUrl},
-        {"state", int(r.sync.state)}, {"detail", r.sync.detail}, {"branchRef", r.sync.branchRef},
+        {"state", int(r.sync.state)}, {"message", r.sync.message}, {"detail", r.sync.detail}, {"branchRef", r.sync.branchRef},
         {"branches", QJsonArray::fromStringList(r.sync.branches)},
         {"lastSuccess", r.sync.lastSuccess.toUTC().toString(Qt::ISODateWithMs)}, {"continuation", r.syncContinuation}});
     if (!QDir().mkpath(itemPath(r.id)))

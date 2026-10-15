@@ -226,6 +226,7 @@ OperationResult BackupEngine::applySync(const PreparedSyncApply &request)
     result = replacement.verifyInstalled(); if (!result.success) return stopped(result);
     if (live.branchRef().value != before.branchRef || live.head().value != request.commit || !live.clean().success) return stopped(OperationResult::fail("应用已暂停", "仓库在应用期间发生变化"));
     record.lastCommit = request.commit; record.fingerprint = fingerprint; record.state = BackupSyncState::Tracking;
+    if (!merge.session().mergeRef.isEmpty()) record.syncContinuation = false;
     record.pendingCommit.clear(); record.resolutionSession.clear(); record.resolutionHead.clear(); record.stateDetail.clear(); record.operation.clear(); record.recoveryPaths.clear();
     result = m_catalog.save(record);
     if (!result.success) { replacement.preserve(); return result; }
@@ -269,6 +270,7 @@ OperationResult BackupEngine::cancelResolution(const QString &id, const QString 
     if (record.state == BackupSyncState::Tracking) { record.pendingCommit.clear(); record.stateDetail.clear(); }
     else { record.pendingCommit = record.resolutionHead; record.stateDetail = "已拉取的版本仍待应用到源位置。"; }
     record.resolutionSession.clear(); record.resolutionHead.clear(); record.recoveryPaths.clear();
+    record.syncContinuation = false; record.sync.state = SyncState::Waiting; record.sync.detail.clear(); record.sync.branchRef.clear();
     const auto saved = m_catalog.save(record); if (!saved.success) return saved;
     const auto removed = m_dependencies.files->remove(root);
     auto result = OperationResult::ok("处理已取消", "源文件保持原样。");

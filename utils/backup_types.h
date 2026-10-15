@@ -36,13 +36,13 @@ struct SyncStatus
     bool automatic{true};
     SyncState state{SyncState::Disconnected};
     SyncPhase phase{SyncPhase::Idle};
-    QString remoteUrl, detail, branchRef;
+    QString remoteUrl, message, detail, branchRef;
     QStringList branches;
     QDateTime lastSuccess;
     bool operator==(const SyncStatus &o) const
     {
         return automatic == o.automatic && state == o.state && phase == o.phase && remoteUrl == o.remoteUrl &&
-            detail == o.detail && branchRef == o.branchRef && branches == o.branches && lastSuccess == o.lastSuccess;
+            message == o.message && detail == o.detail && branchRef == o.branchRef && branches == o.branches && lastSuccess == o.lastSuccess;
     }
     bool operator!=(const SyncStatus &o) const { return !(*this == o); }
 };

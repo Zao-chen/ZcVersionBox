@@ -160,16 +160,16 @@ void HomePageBranchesPage::createFrom(const QString &id, const QString &commit)
         if (result.success && switchAfter) requestSwitch(id, "refs/heads/" + branch);
     });
 }
-void HomePageBranchesPage::requestSwitch(const QString &id, const QString &ref)
+void HomePageBranchesPage::requestSwitch(const QString &id, const QString &ref, std::function<void()> continuation)
 {
     if (m_busy || !m_service->contains(id)) return;
     m_busy = true; updateActions();
-    m_task = m_service->branches(id, this, [this, id, ref](const BackupResult<BranchSnapshot> &snapshot)
+    m_task = m_service->branches(id, this, [this, id, ref, continuation](const BackupResult<BranchSnapshot> &snapshot)
     {
         if (!snapshot.result.success) { complete(snapshot.result); return; }
         BranchRequest request; request.context = snapshot.value.context; request.ref = ref;
         for (const auto &branch : snapshot.value.branches) if (branch.ref == ref) request.expectedHead = branch.head;
-        m_task = m_service->prepareBranchSwitch(request, this, [this, id](const BackupResult<PreparedBranchSwitch> &reply)
+        m_task = m_service->prepareBranchSwitch(request, this, [this, id, continuation](const BackupResult<PreparedBranchSwitch> &reply)
         {
             if (!reply.result.success || reply.value.targetRef.isEmpty()) { complete(reply.result); return; }
             const auto prepared = reply.value;
@@ -186,7 +186,7 @@ void HomePageBranchesPage::requestSwitch(const QString &id, const QString &ref)
             const auto accepted = dialog.exec() == QDialog::Accepted;
             if (!guard) return;
             if (!accepted) { m_busy = false; m_task = 0; updateActions(); return; }
-            m_task = m_service->switchBranch(prepared, this, [this](const OperationResult &result) { complete(result); });
+            m_task = m_service->switchBranch(prepared, this, [this, continuation](const OperationResult &result) { complete(result); if (result.success && continuation) continuation(); });
         });
     });
 }

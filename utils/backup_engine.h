@@ -51,7 +51,6 @@ class BackupEngine
     OperationResult editMessage(const QString &id, const QString &commit, const QString &message);
     OperationResult setRemote(const QString &id, const QString &url);
     OperationResult removeRemote(const QString &id);
-    OperationResult synchronize(const QString &id, bool push);
     BackupResult<SyncResult> synchronize(const QString &id, const SyncRequestOptions &options,
         const std::function<void(SyncPhase)> &progress = {}, const std::function<bool()> &editing = {});
     OperationResult setAutoSync(const QString &id, bool enabled);
@@ -85,6 +84,8 @@ class BackupEngine
     OperationResult cancelResolution(const QString &id, const QString &session);
 
   private:
+    friend class BackupService;
+    OperationResult transferSavedVersions(const QString &id, bool push);
     struct ImportSession
     {
         std::shared_ptr<QTemporaryDir> directory;

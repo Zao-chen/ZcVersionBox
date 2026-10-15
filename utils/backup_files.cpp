@@ -15,6 +15,7 @@
 namespace
 {
 OperationResult failed(const QString &what, const QString &path) { return OperationResult::fail("文件操作失败", what + "：" + QDir::toNativeSeparators(path)); }
+OperationResult changing(const QString &path) { return OperationResult::retry("文件仍在变化", "源内容在读取期间发生变化，请稍后重试：" + QDir::toNativeSeparators(path)); }
 } // namespace
 bool BackupSelectionPolicy::observes(const QString &absolutePath)
 {
@@ -253,13 +254,13 @@ OperationResult BackupFiles::fingerprint(const QString &path, bool directory, So
             }
             const QFileInfo after(current);
             if (info.size() != after.size() || info.lastModified() != after.lastModified())
-                return failed("源内容正在变化，请稍后重试", current);
+                return changing(current);
             auto fingerprint = QString::number(info.size()) + '|' + QString::number(info.lastModified().toMSecsSinceEpoch()) + '|' + QString::fromLatin1(hash.result().toHex());
 #ifdef Q_OS_LINUX
             // Git records the owner's executable bit (100644 / 100755).
             // Other permission and ownership metadata are outside Git's model.
             if (info.permission(QFileDevice::ExeOwner) != after.permission(QFileDevice::ExeOwner))
-                return failed("源文件执行权限正在变化，请稍后重试", current);
+                return changing(current);
             fingerprint += info.permission(QFileDevice::ExeOwner) ? "|100755" : "|100644";
 #endif
             result.insert(relative, fingerprint);
@@ -283,7 +284,7 @@ OperationResult BackupFiles::capture(const QString &source, bool directory, cons
     result = fingerprint(source, directory, after, false);
     if (!result.success)
         return result;
-    return before == after ? OperationResult::ok({}) : failed("源内容在复制期间发生变化，请重试", source);
+    return before == after ? OperationResult::ok({}) : changing(source);
 }
 OperationResult BackupFiles::readOnly(const QString &path) const
 {

@@ -35,7 +35,7 @@ class HomePageConflictPage : public QWidget
     QString m_returnBranchRef;
     quint64 m_repository{0}, m_context{0}, m_contentRequest{0};
     int m_file{0}, m_hunk{0};
-    bool m_active{false}, m_busy{false}, m_preview{false};
+    bool m_active{false}, m_busy{false}, m_preview{false}, m_cloudSession{true};
     QString m_currentLocalText, m_currentRemoteText;
     bool m_hasLocalText{false}, m_hasRemoteText{false};
     Context context() const;

@@ -129,6 +129,7 @@ add_library(zc_ui STATIC
     windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.h windows/mainwindow_child/homepage/trackfiles/homepagechild_trackfile.cpp
     windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.h windows/mainwindow_child/homepage/pages/homepage_page_trackfiles.cpp
     windows/mainwindow_child/homepage/homepage.h windows/mainwindow_child/homepage/homepage.cpp windows/mainwindow_child/homepage/homepage.ui
+    windows/mainwindow_child/homepage/pages/homepage_page_collaboration.h windows/mainwindow_child/homepage/pages/homepage_page_collaboration.cpp windows/mainwindow_child/homepage/pages/homepage_page_collaboration.ui
     windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h windows/mainwindow_child/homepage/pages/homepage_page_dashboard.cpp windows/mainwindow_child/homepage/pages/homepage_page_dashboard.ui
     windows/mainwindow_child/homepage/pages/homepage_page_branches.h windows/mainwindow_child/homepage/pages/homepage_page_branches.cpp windows/mainwindow_child/homepage/pages/homepage_page_branches.ui
     windows/mainwindow_child/homepage/pages/homepage_preview_widgets.h windows/mainwindow_child/homepage/pages/homepage_preview_widgets.cpp
