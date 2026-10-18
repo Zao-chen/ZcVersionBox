@@ -38,6 +38,9 @@ get_filename_component(log_name "${TEST_LOG}" NAME_WE)
 execute_process(COMMAND "${TEST_EXECUTABLE}" ${TEST_FUNCTIONS}
     -o "${TEST_LOG},txt" -o "${log_dir}/${log_name}.xml,junitxml"
     RESULT_VARIABLE result TIMEOUT ${TEST_TIMEOUT})
+if(NOT "${result}" MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "Regression process failed: ${result} (timeout budget: ${TEST_TIMEOUT}s).\nText log: ${TEST_LOG}\nJUnit log: ${log_dir}/${log_name}.xml")
+endif()
 file(READ "${TEST_LOG}" output)
 message("${output}")
 if(NOT "${result}" STREQUAL "0")

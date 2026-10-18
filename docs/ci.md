@@ -57,7 +57,8 @@ GitHub Actions → Desktop CI → Run workflow：默认 `scope=standard` 使用�
 
 - Qt 安装缓存继续使用；非打包构建增加 [sccache](https://github.com/mozilla-actions/sccache-action) 编译缓存，通过 GitHub Actions cache 后端复用编译产物。每次配置仍使用干净构建目录；发布构建不启用编译缓存。
 - `ctest --parallel 2` 并行不同测试程序的独立 fixture；每组内部顺序执行，只有 `zc_tests` 使用界面和剪贴板。
-- smoke 的 UI/core 各 180 秒；standard/full 的 UI 在 Linux/macOS 为 300 秒、Windows 600 秒，core 为 600/1200 秒；更新测试 60 秒。CTest 外层预算额外留 30 秒输出诊断，超时仍使作业失败。
+- smoke 的 UI/core 各 180 秒；standard/full 的 UI 在 Linux/macOS 为 300 秒、Windows 600 秒，core 在 Linux/macOS 为 600 秒、Windows 1800 秒；更新测试 60 秒。CTest 外层预算额外留 30 秒输出诊断，超时仍使作业失败。Windows 完整核心回归在新增同步和文件管理用例后曾超过旧的 1200 秒预算，当前保留全部用例并为整组提供 30 分钟预算。
+- 测试进程超时或启动失败时，运行脚本直接报告进程结果、超时预算及日志路径，避免 Windows 在进程被终止后读取日志的权限错误掩盖原始原因；正常退出的断言失败仍输出完整文本日志。
 - 配置、编译、回归、Linux 原生桌面检查和打包步骤分开，失败可定位到具体阶段。日常不构建安装包、不运行安装升级容器。
 - Qt 同时输出文本与 JUnit XML；`scripts/ci_report.py` 在作业摘要展示数量、失败、跳过、整组时间和最慢十个用例。失败和超时仍上传日志，残缺 XML 会明确标记；测试日志保留 7 天。
 - 同一分支的新提交取消过时日常运行。最终 `CI` 作业汇总已选检查，失败或取消不会被当作成功。仓库如配置必需检查，可将稳定的 `CI` 用作合并门槛。
