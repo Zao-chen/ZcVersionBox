@@ -124,6 +124,6 @@ Git 和文件操作经 BackupService 的后台串行任务执行，以任务 ID�
 
 详细状态和文件范围见 [备份架构](docs/backup-architecture.md)，页面职责见 [UI 架构](docs/ui-architecture.md)。CTest 包含 `regression`（`zc_tests`，既有 UI 与功能）、`backup_core`（`zc_backup_tests`，文件/Git 故障及进程边界）和 `update_core`（`zc_update_tests`，更新元数据），均使用隔离测试环境。同步等待便利接口仅存在于测试支持头，不得加入生产服务。
 
-`standard/full` 的 `regression` 在 macOS/Linux 的整组超时预算为 300 秒，在 Windows 为 600 秒；`backup_core` 为 600/1200 秒。`smoke` 两组各 180 秒，`update_core` 为 60 秒，CTest 外层额外留 30 秒输出诊断。10,000 文件、2,000 次写入的压力场景保留在 `full`，其余完整 Git 故障回归纳入 Linux 日常 `standard`。全部用例及有限超时保护均保留。
+`standard/full` 的 `regression` 在 macOS/Linux 的整组超时预算为 300 秒，在 Windows 为 600 秒；`backup_core` 在 macOS/Linux 为 600 秒，在 Windows 为 1800 秒。`smoke` 两组各 180 秒，`update_core` 为 60 秒，CTest 外层额外留 30 秒输出诊断。10,000 文件、2,000 次写入的压力场景保留在 `full`，其余完整 Git 故障回归纳入 Linux 日常 `standard`。全部用例及有限超时保护均保留。
 
 测试覆盖、截图方式和平台验收见 [回归验证](docs/ui-regression.md)。回归请使用测试程序：正常应用会读取真实备份并启动监控。不要直接操作真实数据来验证失败或崩溃场景。
