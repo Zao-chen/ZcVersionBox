@@ -204,6 +204,6 @@ void HomePageDashboardPage::updateActions()
 void HomePageDashboardPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-    const auto margin = width() < 640 ? 16 : 24;
-    ui->readingLayout->setContentsMargins(margin, 12, margin, 8);
+    const bool compact = width() < 640;
+    ui->readingLayout->setContentsMargins(compact ? 28 : 36, 12, compact ? 16 : 24, 8);
 }

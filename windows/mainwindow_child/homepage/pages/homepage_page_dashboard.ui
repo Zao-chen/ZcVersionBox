@@ -30,9 +30,9 @@
       <enum>Qt::ScrollBarAlwaysOff</enum>
      </property>
      <widget class="QWidget" name="scrollContents">
-      <layout class="QHBoxLayout" name="readingLayout" stretch="1,0">
+      <layout class="QHBoxLayout" name="readingLayout">
        <property name="leftMargin">
-        <number>24</number>
+        <number>36</number>
        </property>
        <property name="topMargin">
         <number>12</number>
@@ -48,12 +48,6 @@
        </property>
        <item>
         <widget class="QWidget" name="body">
-         <property name="maximumSize">
-          <size>
-           <width>760</width>
-           <height>16777215</height>
-          </size>
-         </property>
          <property name="sizePolicy">
           <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
            <horstretch>0</horstretch>
@@ -664,19 +658,6 @@
           </item>
          </layout>
         </widget>
-       </item>
-       <item>
-        <spacer name="readingSpace">
-         <property name="orientation">
-          <enum>Qt::Horizontal</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>0</width>
-           <height>0</height>
-          </size>
-         </property>
-        </spacer>
        </item>
       </layout>
      </widget>

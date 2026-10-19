@@ -506,7 +506,7 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
 {
     ui->setupUi(this);
     ui->pageLayout->setSpacing(4);
-    ui->emptyLabel->setContentsMargins(0, 4, 0, 4);
+    ui->emptyLabel->setContentsMargins(12, 4, 0, 4);
     ui->historyScope->setMinimumContentsLength(10);
     ui->historyScope->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     ui->historyScope->setAccessibleName("历史浏览范围");
