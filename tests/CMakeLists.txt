@@ -9,7 +9,7 @@ function(zc_add_regression target source dependency)
     set_target_properties(${target} PROPERTIES WIN32_EXECUTABLE OFF MACOSX_BUNDLE OFF)
     target_link_libraries(${target} PRIVATE ${dependency} Qt6::Test)
     if(MSVC)
-        target_compile_options(${target} PRIVATE /utf-8)
+        target_compile_options(${target} PRIVATE /utf-8 /bigobj)
     endif()
     if(WIN32)
         add_custom_command(TARGET ${target} POST_BUILD
