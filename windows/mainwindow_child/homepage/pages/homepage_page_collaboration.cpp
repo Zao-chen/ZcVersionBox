@@ -182,7 +182,7 @@ void HomePageCollaborationPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     const bool narrow = width() < 640;
-    ui->contentLayout->setContentsMargins(narrow ? 28 : 36, 12, narrow ? 16 : 24, 8);
+    ui->contentLayout->setContentsMargins(narrow ? 32 : 40, 12, narrow ? 16 : 24, 8);
     ui->statusRow->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     ui->statusRow->setSpacing(narrow ? 8 : 24);
 }

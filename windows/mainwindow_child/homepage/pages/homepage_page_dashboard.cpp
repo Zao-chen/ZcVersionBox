@@ -205,5 +205,5 @@ void HomePageDashboardPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     const bool compact = width() < 640;
-    ui->readingLayout->setContentsMargins(compact ? 28 : 36, 12, compact ? 16 : 24, 8);
+    ui->readingLayout->setContentsMargins(compact ? 32 : 40, 12, compact ? 16 : 24, 8);
 }

@@ -32,7 +32,7 @@
      <widget class="QWidget" name="scrollContents">
       <layout class="QHBoxLayout" name="readingLayout">
        <property name="leftMargin">
-        <number>36</number>
+        <number>40</number>
        </property>
        <property name="topMargin">
         <number>12</number>
