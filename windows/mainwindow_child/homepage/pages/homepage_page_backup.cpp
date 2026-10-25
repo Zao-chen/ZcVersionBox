@@ -324,11 +324,11 @@ class HistoryDelegate : public QStyledItemDelegate
                     else if (action == 5) label = "恢复到此版本…";
                     if (action < ActionCount && !m_enabled(index, static_cast<RevisionAction>(action)))
                     {
-                        if (action == 4) label += tags.isEmpty() ? "\n只能编辑当前方案的最新说明，并需处于正常追踪状态。" : "\n里程碑版本的说明已固定，可通过里程碑按钮修改名称。";
-                        else label += "\n需处于正常追踪状态。";
+                        if (action == 4) label += tags.isEmpty() ? "\n只能编辑当前方案的最新说明，且需先处理完同步问题。" : "\n里程碑版本的说明已固定，可通过里程碑按钮修改名称。";
+                        else label += "\n请先处理完同步问题。";
                     }
                     if (action == static_cast<int>(RevisionAction::ToggleAncestors))
-                        label = index.data(HistoryGraph::AncestorsExpanded).toBool() ? "收起共同祖先 (Enter)" : "展开查看共同祖先 (Enter)";
+                        label = index.data(HistoryGraph::AncestorsExpanded).toBool() ? "收起更早的版本 (Enter)" : "展开更早的版本 (Enter)";
                     const auto rect = action == static_cast<int>(RevisionAction::ToggleAncestors) ? m_view->visualRect(index)
                         : actionRect(m_view->visualRect(index.siblingAtColumn(ActionsColumn)), action);
                     QToolTip::showText(help->globalPos(), label, m_view->viewport(), rect);
@@ -827,7 +827,8 @@ void HomePageBackupPage::showRevisionMenu(const RevisionContext &context, const 
     menu->setObjectName("revisionMenu");
     m_revisionMenu = menu;
     connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
-    menu->addSection("版本 " + context.commit.left(8));
+    const auto message = index.siblingAtColumn(0).data(Qt::DisplayRole).toString();
+    menu->addSection("版本：" + (message.size() > 20 ? message.left(20) + "…" : message));
     const auto add = [this, menu, context](QAction *source, void (HomePageBackupPage::*callback)(const RevisionContext &))
     {
         auto *action = UiStyle::action(menu, source->objectName() + "Menu", source->text(), source->property("iconName").toString());
@@ -966,7 +967,7 @@ void HomePageBackupPage::refresh()
     QScopedValueRollback<bool> loading(m_loading, true);
     ui->table->clearSpans();
     m_model.clear();
-    m_model.setHorizontalHeaderLabels({"提交说明", "提交时间", "短哈希", {}});
+    m_model.setHorizontalHeaderLabels({"版本说明", "保存时间", "编号", {}});
     m_model.horizontalHeaderItem(ActionsColumn)->setData("版本操作", Qt::AccessibleTextRole);
     if (!reply.result.success)
         emit notification(reply.result);

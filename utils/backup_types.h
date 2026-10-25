@@ -183,6 +183,8 @@ struct BranchRequest
     QString ref, expectedHead, name, startCommit, upstream, endpoint;
     bool force{false};
 };
+// Title of the warning returned when a non-forced delete finds versions unique to the branch.
+inline constexpr char BranchNotMergedTitle[] = "这个方案里有独有的版本";
 struct PreparedBranchSwitch
 {
     BranchContext context;

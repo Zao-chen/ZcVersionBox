@@ -76,7 +76,7 @@ void insertCommonAncestors(QStandardItemModel &model, int row, int count, bool e
         lanes.insert(edge[1].toInt());
         incoming.append(QVariant(QVariantList{edge[1], 0, edge[2]}));
     }
-    const auto label = QString("%1 个共同祖先").arg(count);
+    const auto label = QString("更早的 %1 个版本（与其他方案共有）").arg(count);
     const auto operation = expanded ? QStringLiteral("收起") : QStringLiteral("展开");
     QList<QStandardItem *> items;
     for (int column = 0; column < model.columnCount(); ++column)
@@ -86,8 +86,8 @@ void insertCommonAncestors(QStandardItemModel &model, int row, int count, bool e
         item->setData(count, AncestorCount);
         item->setData(expanded, AncestorsExpanded);
         item->setData(label, Qt::AccessibleTextRole);
-        item->setData("点击或按 Enter " + operation + "共同祖先，仅查看历史，不切换方案。", Qt::AccessibleDescriptionRole);
-        item->setToolTip(operation + "共同祖先的历史版本");
+        item->setData("点击或按 Enter " + operation + "更早的版本，仅查看历史，不切换方案。", Qt::AccessibleDescriptionRole);
+        item->setToolTip(operation + "与其他方案共有的更早版本");
         items.append(item);
     }
     items.first()->setData(incoming, Edges);
