@@ -999,6 +999,34 @@
             </widget>
            </item>
            <item>
+            <widget class="QToolButton" name="branchesTab">
+             <property name="text">
+              <string>方案</string>
+             </property>
+             <property name="toolTip">
+              <string>方案：同一对象的多条独立版本线</string>
+             </property>
+             <property name="accessibleName">
+              <string>方案</string>
+             </property>
+             <property name="autoRaise">
+              <bool>true</bool>
+             </property>
+             <property name="focusPolicy">
+              <enum>Qt::TabFocus</enum>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>28</width>
+               <height>32</height>
+              </size>
+             </property>
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
             <widget class="QToolButton" name="overviewTab">
              <property name="text">
               <string>概览</string>

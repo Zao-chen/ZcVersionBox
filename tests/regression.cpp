@@ -2741,7 +2741,7 @@ class Regression : public QObject
             if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()))
             {
                 choose.stop();
-                for (auto *action : menu->actions()) if (action->text() == "删除本地方案…")
+                for (auto *action : menu->actions()) if (action->text() == "删除…")
                 {
                     menu->setActiveAction(action);
                     QTest::keyPress(menu, Qt::Key_Return);
@@ -2767,6 +2767,57 @@ class Regression : public QObject
         QCOMPARE(notifications.count(), 1);
         QCOMPARE(qvariant_cast<OperationResult>(notifications.first().first()).success, !changedDuringConfirmation);
         QCOMPARE(routes.count(), changedDuringConfirmation ? 0 : 1);
+    }
+    void branchDeletionAsksAgainForUniqueVersions_data()
+    {
+        QTest::addColumn<bool>("confirmSecond");
+        QTest::newRow("keep") << false;
+        QTest::newRow("delete") << true;
+    }
+    void branchDeletionAsksAgainForUniqueVersions()
+    {
+        QFETCH(bool, confirmSecond);
+        TestDirectory dir; TestBackupService service(pathsIn(dir));
+        const auto source = dir.path() + "/document.txt";
+        writeFile(source, "base\n"); QVERIFY(service.addLocal(source).success);
+        const auto id = service.idForSource(source);
+        const auto original = service.branchContext(id).ref;
+        QVERIFY(service.createBranch(id, "topic").success);
+        QVERIFY(service.switchBranch(id, "refs/heads/topic").success);
+        writeFile(source, "topic only\n"); QVERIFY(service.backup(id).success);
+        QVERIFY(service.switchBranch(id, original).success);
+        HomePageBranchesPage page(&service);
+        page.resize(1080, 700); page.setAttribute(Qt::WA_DontShowOnScreen); page.show();
+        page.setBackup(id, "refs/heads/topic"); settle(service);
+        auto *operations = page.findChild<QPushButton *>("operations"); QVERIFY(operations && operations->isEnabled());
+        int dialogs = 0;
+        QTimer responder; responder.setInterval(10);
+        connect(&responder, &QTimer::timeout, &page, [&] {
+            if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()))
+            {
+                for (auto *action : menu->actions()) if (action->text() == "删除…") { menu->setActiveAction(action); QTest::keyPress(menu, Qt::Key_Return); return; }
+                menu->close();
+            }
+            else if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+            {
+                ++dialogs;
+                if (dialogs == 1 || confirmSecond) dialog->accept(); else dialog->reject();
+                if (dialogs == 2) responder.stop();
+            }
+        });
+        QTimer watchdog; watchdog.setSingleShot(true);
+        connect(&watchdog, &QTimer::timeout, &page, [&] {
+            responder.stop();
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget())) dialog->reject();
+            if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget())) menu->close();
+        });
+        responder.start(); watchdog.start(15000);
+        operations->click();
+        // The second confirmation opens from the service callback after the menu returns.
+        QTRY_VERIFY_WITH_TIMEOUT(dialogs == 2, 10000);
+        settle(service);
+        watchdog.stop(); responder.stop();
+        QCOMPARE(runGit(service.repoPath(id), {"rev-parse", "--verify", "refs/heads/topic"}).success(), !confirmSecond);
     }
     void branchDetailReportsHistoryErrors()
     {
@@ -2865,7 +2916,7 @@ class Regression : public QObject
         // Bound a failed popup detection so this test cannot leave a modal menu open.
         QTimer::singleShot(5000, &window, [&] { if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget())) menu->close(); });
         closer.start(); operations->click(); closer.stop();
-        QCOMPARE(menuItems, QStringList({"与其他方案比较…", "合并到正在使用的方案…", "重命名…", "删除本地方案…", "仍然删除未合并方案…"}));
+        QCOMPARE(menuItems, QStringList({"重命名…", "删除…", "高级"}));
     }
     void collaborationConnectionUsesExplicitSaveAndRejectsStaleReply()
     {
@@ -3051,6 +3102,16 @@ class Regression : public QObject
         activate->trigger(); settle(service);
         QCOMPARE(detailHistory->model()->rowCount(), 1);
         QVERIFY(!detailHistory->model()->index(0, 0).data(HistoryGraph::AncestorsExpanded).toBool());
+        // The 方案 tab without a branch shows the list of all branches as a normal tab page.
+        window.navigate({PageId::Branches, id}); settle(service);
+        auto *list = page->findChild<QListView *>("branchList"); QVERIFY(list && list->isVisible());
+        QVERIFY(window.findChild<QToolButton *>("branchesTab")->isChecked());
+        QVERIFY(!window.findChild<QToolButton *>("returnHistoryButton")->isVisible());
+        QStringList listed;
+        for (int row = 0; row < list->model()->rowCount(); ++row) listed.append(list->model()->index(row, 0).data(Qt::UserRole + 1).toString());
+        QVERIFY(listed.contains("refs/heads/main") && listed.contains("refs/heads/试验方案") && listed.contains("refs/heads/全部共享"));
+        QCOMPARE(list->currentIndex().data(Qt::UserRole + 1).toString(), QString("refs/heads/main"));
+        QVERIFY(!page->findChild<QPushButton *>("listUse")->isEnabled());
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
     }

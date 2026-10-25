@@ -177,6 +177,14 @@ struct BranchSnapshot
     QVector<BranchInfo> branches;
     QDateTime fetchedAt;
 };
+// A cloud branch already followed by a local branch is the same 方案 to the user.
+inline bool isLinkedRemote(const BranchInfo &remote, const QVector<BranchInfo> &branches)
+{
+    if (!remote.remoteBranch) return false;
+    for (const auto &branch : branches)
+        if (!branch.remoteBranch && branch.upstream == remote.ref) return true;
+    return false;
+}
 struct BranchRequest
 {
     BranchContext context;

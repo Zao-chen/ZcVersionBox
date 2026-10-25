@@ -179,7 +179,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         m_windowAgent->setHitTestVisible(ui->backButton, true);
         m_windowAgent->setHitTestVisible(ui->forwardButton, true);
     }
-    for (auto *button : {ui->previewTab, ui->historyTab, ui->overviewTab, ui->returnHistoryButton, ui->generalTab, ui->aiTab, ui->aboutTab,
+    for (auto *button : {ui->previewTab, ui->historyTab, ui->branchesTab, ui->overviewTab, ui->returnHistoryButton, ui->generalTab, ui->aiTab, ui->aboutTab,
                          ui->backupsButton, ui->settingsButton, ui->returnApplicationButton,
                          ui->addSidebarButton, ui->collapseButton, ui->backButton, ui->forwardButton,
                          ui->moreButton, ui->appMenuButton})
@@ -291,6 +291,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         m_preview->requestLeave(std::move(next));
         ui->previewTab->setChecked(m_route.page == PageId::Preview);
         ui->historyTab->setChecked(m_route.page == PageId::History);
+        ui->branchesTab->setChecked(m_route.page == PageId::Branches);
         ui->overviewTab->setChecked(m_route.page == PageId::Dashboard);
         ui->collaborationTab->setChecked(m_route.page == PageId::Collaboration);
         syncSidebarSelection();
@@ -389,10 +390,10 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     {
         if (m_route.page == PageId::Branches)
         {
-            if (m_navigation.canBack() && m_navigation.previous().page == PageId::History)
+            if (m_navigation.canBack() && m_navigation.previous().page == PageId::Branches && m_navigation.previous().branchRef.isEmpty())
                 m_navigation.back();
             else
-                navigate({PageId::History, m_route.backupId});
+                navigate({PageId::Branches, m_route.backupId});
         }
         else if (m_route.page == PageId::Conflict)
         {
@@ -420,13 +421,8 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         }
         else if (m_route.page == PageId::Diff)
             navigate({PageId::History, m_route.backupId});
-        else if (m_route.page == PageId::Branches)
-        {
-            if (m_navigation.canBack() && m_navigation.previous().page == PageId::History)
-                m_navigation.back();
-            else
-                navigate({PageId::History, m_route.backupId});
-        }
+        else if (m_route.page == PageId::Branches && !m_route.branchRef.isEmpty())
+            ui->returnHistoryButton->click();
         else if (m_route.page == PageId::Conflict)
         {
             if (m_navigation.canBack() && (m_navigation.previous().page == PageId::History || m_navigation.previous().page == PageId::Branches))
@@ -438,7 +434,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     connect(ui->clearSettingsSearchButton, &QPushButton::clicked, ui->settingsSearch, &QLineEdit::clear);
     connect(ui->collapseButton, &QToolButton::clicked, this, &MainWindow::toggleSidebar);
     const QList<QPair<QToolButton *, PageId>> tabs{
-        {ui->previewTab, PageId::Preview}, {ui->historyTab, PageId::History}, {ui->overviewTab, PageId::Dashboard}, {ui->collaborationTab, PageId::Collaboration}, {ui->generalTab, PageId::GeneralSettings}, {ui->aiTab, PageId::AiSettings}, {ui->aboutTab, PageId::About}};
+        {ui->previewTab, PageId::Preview}, {ui->historyTab, PageId::History}, {ui->branchesTab, PageId::Branches}, {ui->overviewTab, PageId::Dashboard}, {ui->collaborationTab, PageId::Collaboration}, {ui->generalTab, PageId::GeneralSettings}, {ui->aiTab, PageId::AiSettings}, {ui->aboutTab, PageId::About}};
     for (const auto &tab : tabs)
     {
         auto *button = tab.first;
@@ -727,11 +723,6 @@ void MainWindow::displayRoute(const Route &route)
             m_navigation.removeBackup(route.backupId);
         return;
     }
-    if (route.page == PageId::Branches && route.branchRef.isEmpty())
-    {
-        m_navigation.replaceCurrent({PageId::History, route.backupId});
-        return;
-    }
     if (m_route.page == PageId::Preview)
         m_preview->deactivate();
     if (m_route.page == PageId::History)
@@ -870,7 +861,7 @@ void MainWindow::displayRoute(const Route &route)
     ui->tabs->setVisible(isObject);
     const bool isDiff = (route.page == PageId::Diff);
     const bool isConflict = (route.page == PageId::Conflict);
-    const bool isBranches = (route.page == PageId::Branches);
+    const bool isBranches = (route.page == PageId::Branches && !route.branchRef.isEmpty());
     const bool isStandalone = isDiff || isConflict || isBranches;
     ui->returnHistoryButton->setVisible(isStandalone);
     if (isConflict)
@@ -882,6 +873,12 @@ void MainWindow::displayRoute(const Route &route)
         ui->returnHistoryButton->setToolTip(text + " (Esc)");
         ui->returnHistoryButton->setAccessibleName(text);
     }
+    else if (isBranches)
+    {
+        ui->returnHistoryButton->setText("返回方案列表");
+        ui->returnHistoryButton->setToolTip("返回方案列表 (Esc)");
+        ui->returnHistoryButton->setAccessibleName("返回方案列表");
+    }
     else
     {
         ui->returnHistoryButton->setText("返回历史版本");
@@ -891,11 +888,13 @@ void MainWindow::displayRoute(const Route &route)
     ui->diffTitleLabel->setVisible(isDiff);
     ui->previewTab->setVisible(!isStandalone && isObject);
     ui->historyTab->setVisible(!isStandalone && isObject);
+    ui->branchesTab->setVisible(!isStandalone && isObject);
     ui->overviewTab->setVisible(!isStandalone && isObject);
     ui->collaborationTab->setVisible(!isStandalone && isObject);
     updateBranchSelector();
     ui->previewTab->setChecked(route.page == PageId::Preview);
     ui->historyTab->setChecked(route.page == PageId::History);
+    ui->branchesTab->setChecked(route.page == PageId::Branches);
     ui->overviewTab->setChecked(route.page == PageId::Dashboard);
     ui->collaborationTab->setChecked(route.page == PageId::Collaboration);
     ui->generalTab->setChecked(route.page == PageId::GeneralSettings);
@@ -1005,7 +1004,7 @@ void MainWindow::updateConflictBadge()
     const auto sync = m_backups->syncStatus(m_route.backupId).state;
     const bool hasConflict = isObject && (state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending ||
         sync == SyncState::NeedsBranch || sync == SyncState::NeedsTags || sync == SyncState::NeedsAttention);
-    const bool isStandalone = (m_route.page == PageId::Diff || m_route.page == PageId::Conflict || m_route.page == PageId::Branches);
+    const bool isStandalone = (m_route.page == PageId::Diff || m_route.page == PageId::Conflict || (m_route.page == PageId::Branches && !m_route.branchRef.isEmpty()));
     const bool badgeVisible = hasConflict && !isStandalone;
     if (m_collaborationBadge)
     {
