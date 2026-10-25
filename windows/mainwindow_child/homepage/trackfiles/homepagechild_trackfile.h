@@ -1,5 +1,5 @@
 #pragma once
-#include "utils/backupservice.h"
+#include "utils/backup_types.h"
 #include <QAbstractListModel>
 #include <QSortFilterProxyModel>
 #include <QStyledItemDelegate>
