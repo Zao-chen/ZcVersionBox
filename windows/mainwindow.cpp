@@ -3,7 +3,6 @@
 #include "ui_mainwindow.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_branches.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_collaboration.h"
-#include <QComboBox>
 #include "utils/update_service.h"
 #include "windows/mainwindow_child/aboutpage/aboutpage.h"
 #include "windows/mainwindow_child/homepage/homepage.h"
@@ -356,13 +355,9 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         navigate(route);
     });
     connect(m_history, &HomePageBackupPage::createBranchRequested, m_branches, &HomePageBranchesPage::createFrom);
-    connect(ui->branchSelector, &QComboBox::activated, this, [this](int index)
-    {
-        const auto id = m_route.backupId, ref = ui->branchSelector->itemData(index).toString();
-        const auto current = m_backups->branchContext(id).ref;
-        { const QSignalBlocker blocker(ui->branchSelector); ui->branchSelector->setCurrentIndex(ui->branchSelector->findData(current)); }
-        if (!ref.isEmpty() && ref != current) m_preview->requestLeave([this, id, ref] { m_branches->requestSwitch(id, ref); });
-    });
+    m_branchMenu = new QMenu(ui->branchSelector);
+    m_branchMenu->setObjectName("branchSelectorMenu");
+    ui->branchSelector->setMenu(m_branchMenu);
     wire(m_general);
     wire(m_actions);
     connect(m_ai, &SettingPageAiPage::navigate, &m_navigation, &Navigation::go);
@@ -1094,16 +1089,35 @@ void MainWindow::updateBranchSelector()
     const auto request = ++m_branchRequest;
     if (!visible) return;
     const auto id = m_route.backupId;
-    const auto context = m_backups->branchContext(id);
-    ui->branchSelector->setEnabled(m_backups->syncState(id) == BackupSyncState::Tracking);
-    m_backups->branches(id, this, [this, id, request, context](const BackupResult<BranchSnapshot> &result)
+    const bool tracking = m_backups->syncState(id) == BackupSyncState::Tracking;
+    const auto reason = tracking ? QString() : QString("\n当前状态：%1，处理完成后才能切换或新建方案。").arg(backupStateText(m_backups->syncState(id)));
+    m_backups->branches(id, this, [this, id, request, tracking, reason](const BackupResult<BranchSnapshot> &result)
     {
         if (request != m_branchRequest || id != m_route.backupId || !result.result.success) return;
-        const QSignalBlocker blocker(ui->branchSelector);
-        ui->branchSelector->clear();
+        const auto current = result.value.context.ref.mid(11);
+        ui->branchSelector->setText("方案：" + current);
+        ui->branchSelector->setToolTip("正在使用：" + current + reason);
+        m_branchMenu->clear();
+        m_branchMenu->addSection("切换方案");
         for (const auto &branch : result.value.branches)
-            if (!branch.remoteBranch) ui->branchSelector->addItem((branch.current ? "正在使用：" : "切换到：") + branch.name, branch.ref);
-        ui->branchSelector->setCurrentIndex(ui->branchSelector->findData(result.value.context.ref));
-        ui->branchSelector->setToolTip("正在使用：" + result.value.context.ref.mid(11));
+        {
+            if (branch.remoteBranch) continue;
+            auto *action = m_branchMenu->addAction(branch.name);
+            action->setCheckable(true);
+            action->setChecked(branch.current);
+            action->setEnabled(tracking || branch.current);
+            const auto ref = branch.ref;
+            connect(action, &QAction::triggered, this, [this, id, ref, action]
+            {
+                if (ref == m_backups->branchContext(id).ref) { action->setChecked(true); return; }
+                action->setChecked(false);
+                m_preview->requestLeave([this, id, ref] { m_branches->requestSwitch(id, ref); });
+            });
+        }
+        m_branchMenu->addSeparator();
+        auto *create = m_branchMenu->addAction("新建方案…");
+        create->setEnabled(tracking);
+        connect(create, &QAction::triggered, this, [this, id] { m_branches->createFrom(id); });
+        m_branchMenu->addAction("管理全部方案", this, [this, id] { navigate({PageId::Branches, id}); });
     });
 }

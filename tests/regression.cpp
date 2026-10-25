@@ -3112,6 +3112,15 @@ class Regression : public QObject
         QVERIFY(listed.contains("refs/heads/main") && listed.contains("refs/heads/试验方案") && listed.contains("refs/heads/全部共享"));
         QCOMPARE(list->currentIndex().data(Qt::UserRole + 1).toString(), QString("refs/heads/main"));
         QVERIFY(!page->findChild<QPushButton *>("listUse")->isEnabled());
+        // The header menu button lists local branches and leads to the full list.
+        window.navigate({PageId::History, id}); settle(service);
+        auto *selector = window.findChild<QToolButton *>("branchSelector"); QVERIFY(selector && selector->isVisible());
+        QTRY_COMPARE(selector->text(), QString("方案：main"));
+        QStringList entries;
+        for (auto *action : selector->menu()->actions()) if (!action->isSeparator()) entries.append(action->text());
+        QCOMPARE(entries, QStringList({"main", "全部共享", "试验方案", "新建方案…", "管理全部方案"}));
+        selector->menu()->actions().last()->trigger(); settle(service);
+        QVERIFY(list->isVisible());
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
     }
