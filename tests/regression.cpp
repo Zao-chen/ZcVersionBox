@@ -2656,6 +2656,17 @@ class Regression : public QObject
         QCOMPARE(head(service, id), switchAfter ? base : original.head);
         QCOMPARE(readFile(source), switchAfter ? QByteArray("base\n") : QByteArray("latest\n"));
     }
+    void historyMergesCloudCopyOfSameBranch()
+    {
+        Revision same, behind;
+        same.refs = {"main", "origin/main"}; same.branchRefs = {"refs/heads/main", "refs/remotes/origin/main"};
+        behind.refs = {"origin/topic"}; behind.branchRefs = {"refs/remotes/origin/topic"};
+        const auto shown = HistoryGraph::userFacing({same, behind});
+        QCOMPARE(shown[0].refs, QStringList({"main"}));
+        QCOMPARE(shown[0].branchRefs, QStringList({"refs/heads/main"}));
+        QCOMPARE(shown[1].refs, QStringList({"topic（云端）"}));
+        QCOMPARE(shown[1].branchRefs, QStringList({"refs/remotes/origin/topic"}));
+    }
     void historyBranchBadgesKeepExactTargets()
     {
         TestDirectory dir; TestBackupService service(pathsIn(dir));

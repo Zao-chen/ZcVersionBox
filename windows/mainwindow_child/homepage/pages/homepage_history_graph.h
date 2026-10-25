@@ -20,6 +20,9 @@ struct HitResult
     int colorIndex{-1};
 };
 
+// Merges a cloud copy into the local branch of the same name at the same version,
+// and names the remaining cloud branches without their remote prefix.
+QVector<Revision> userFacing(QVector<Revision> revisions);
 void populate(QStandardItemModel &model, const QVector<Revision> &revisions, const QString &currentCommit);
 void insertCommonAncestors(QStandardItemModel &model, int row, int count, bool expanded);
 void paint(QPainter *painter, const QRect &rect, const QModelIndex &index, const HoverInfo &hover = {});

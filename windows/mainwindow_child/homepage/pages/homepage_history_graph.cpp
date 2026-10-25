@@ -13,6 +13,30 @@ QColor color(int index)
         : QVector<QColor>{"#bb571b", "#a57c0c", "#b53778", "#366bb5", "#267e6b", "#8055b4"};
     return palette[qMax(0, index) % palette.size()];
 }
+QVector<Revision> userFacing(QVector<Revision> revisions)
+{
+    for (auto &revision : revisions)
+    {
+        QStringList names, refs;
+        for (int i = 0; i < revision.branchRefs.size(); ++i)
+        {
+            const auto &ref = revision.branchRefs[i];
+            auto name = i < revision.refs.size() ? revision.refs[i] : ref;
+            if (ref.startsWith("refs/remotes/"))
+            {
+                const auto slash = ref.indexOf('/', 13);
+                const auto branch = slash < 0 ? QString() : ref.mid(slash + 1);
+                if (!branch.isEmpty() && revision.branchRefs.contains("refs/heads/" + branch)) continue;
+                if (!branch.isEmpty()) name = branch + "（云端）";
+            }
+            names.append(name);
+            refs.append(ref);
+        }
+        revision.refs = names;
+        revision.branchRefs = refs;
+    }
+    return revisions;
+}
 void populate(QStandardItemModel &model, const QVector<Revision> &revisions, const QString &currentCommit)
 {
     struct Lane { QString oid; int color; QStringList refs; };

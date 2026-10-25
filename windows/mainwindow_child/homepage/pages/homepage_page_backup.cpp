@@ -510,7 +510,7 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     ui->historyScope->setMinimumContentsLength(10);
     ui->historyScope->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
     ui->historyScope->setAccessibleName("历史浏览范围");
-    ui->historyScope->setToolTip("只筛选历史记录，不切换正在使用的方案。");
+    ui->historyScope->setToolTip("只改变下面显示哪些版本，不会切换正在使用的方案。切换方案请用顶部的“方案”按钮。");
     connect(ui->historyScope, &QComboBox::activated, this, [this](int index) {
         Route route{PageId::History, m_id}; route.branchRef = ui->historyScope->itemData(index).toString(); emit navigate(route);
     });
@@ -935,8 +935,13 @@ void HomePageBackupPage::refresh()
     m_service->branches(id, this, [this, id, request](const BackupResult<BranchSnapshot> &reply) {
         if (id != m_id || request != m_refreshGeneration || !reply.result.success) return;
         const QSignalBlocker blocker(ui->historyScope);
-        ui->historyScope->clear(); ui->historyScope->addItem("全部方案", QString()); ui->historyScope->addItem("当前方案", "HEAD");
-        for (const auto &branch : reply.value.branches) ui->historyScope->addItem(branch.name, branch.ref);
+        ui->historyScope->clear(); ui->historyScope->addItem("显示全部方案", QString()); ui->historyScope->addItem("只看当前方案", "HEAD");
+        for (const auto &branch : reply.value.branches)
+        {
+            if (isLinkedRemote(branch, reply.value.branches)) continue;
+            const auto name = branch.remoteBranch && branch.remoteRef.startsWith("refs/heads/") ? branch.remoteRef.mid(11) + "（云端）" : branch.name;
+            ui->historyScope->addItem("只看：" + name, branch.ref);
+        }
         ui->historyScope->setCurrentIndex(qMax(0, ui->historyScope->findData(m_branchRef)));
     });
     updateActions();
@@ -962,7 +967,7 @@ void HomePageBackupPage::refresh()
         state.scroll = 0;
         m_requestedCommit.clear();
     }
-    const auto &revisions = reply.value;
+    const auto revisions = HistoryGraph::userFacing(reply.value);
     const bool ancestorSelected = ui->table->currentIndex().data(HistoryGraph::AncestorCount).toInt() > 0;
     QScopedValueRollback<bool> loading(m_loading, true);
     ui->table->clearSpans();
