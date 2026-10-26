@@ -28,6 +28,7 @@ class AboutPage;
 class BackupListModel;
 class BackupFilterModel;
 class BackupUiActions;
+class QMenu;
 class QSystemTrayIcon;
 class QToolButton;
 class QVariantAnimation;
@@ -75,6 +76,7 @@ class MainWindow : public QMainWindow
     HomePageConflictPage *m_conflict;
     HomePageBranchesPage *m_branches;
     quint64 m_branchRequest{0};
+    QMenu *m_branchMenu{nullptr};
     void updateBranchSelector();
     SettingPage *m_general;
     SettingPageAiPage *m_ai;

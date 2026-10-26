@@ -13,6 +13,30 @@ QColor color(int index)
         : QVector<QColor>{"#bb571b", "#a57c0c", "#b53778", "#366bb5", "#267e6b", "#8055b4"};
     return palette[qMax(0, index) % palette.size()];
 }
+QVector<Revision> userFacing(QVector<Revision> revisions)
+{
+    for (auto &revision : revisions)
+    {
+        QStringList names, refs;
+        for (int i = 0; i < revision.branchRefs.size(); ++i)
+        {
+            const auto &ref = revision.branchRefs[i];
+            auto name = i < revision.refs.size() ? revision.refs[i] : ref;
+            if (ref.startsWith("refs/remotes/"))
+            {
+                const auto slash = ref.indexOf('/', 13);
+                const auto branch = slash < 0 ? QString() : ref.mid(slash + 1);
+                if (!branch.isEmpty() && revision.branchRefs.contains("refs/heads/" + branch)) continue;
+                if (!branch.isEmpty()) name = branch + "（云端）";
+            }
+            names.append(name);
+            refs.append(ref);
+        }
+        revision.refs = names;
+        revision.branchRefs = refs;
+    }
+    return revisions;
+}
 void populate(QStandardItemModel &model, const QVector<Revision> &revisions, const QString &currentCommit)
 {
     struct Lane { QString oid; int color; QStringList refs; };
@@ -62,44 +86,9 @@ void populate(QStandardItemModel &model, const QVector<Revision> &revisions, con
     }
     for (int row = 0; row < model.rowCount(); ++row) model.item(row, 0)->setData(24 + maxLanes * 18, Width);
 }
-void insertCommonAncestors(QStandardItemModel &model, int row, int count, bool expanded)
-{
-    if (count <= 0) return;
-    const auto previous = model.index(row - 1, 0);
-    const auto next = model.index(row, 0);
-    QVariantList incoming;
-    QSet<int> lanes;
-    for (const auto &value : previous.data(Edges).toList())
-    {
-        const auto edge = value.toList();
-        if (edge.size() < 3 || lanes.contains(edge[1].toInt())) continue;
-        lanes.insert(edge[1].toInt());
-        incoming.append(QVariant(QVariantList{edge[1], 0, edge[2]}));
-    }
-    const auto label = QString("%1 个共同祖先").arg(count);
-    const auto operation = expanded ? QStringLiteral("收起") : QStringLiteral("展开");
-    QList<QStandardItem *> items;
-    for (int column = 0; column < model.columnCount(); ++column)
-    {
-        auto *item = new QStandardItem(column == 0 ? label : QString());
-        item->setEditable(false);
-        item->setData(count, AncestorCount);
-        item->setData(expanded, AncestorsExpanded);
-        item->setData(label, Qt::AccessibleTextRole);
-        item->setData("点击或按 Enter " + operation + "共同祖先，仅查看历史，不切换方案。", Qt::AccessibleDescriptionRole);
-        item->setToolTip(operation + "共同祖先的历史版本");
-        items.append(item);
-    }
-    items.first()->setData(incoming, Edges);
-    items.first()->setData((previous.isValid() ? previous : next).data(Color).toInt(), Color);
-    items.first()->setData(qMax(42, qMax(previous.data(Width).toInt(), next.data(Width).toInt())), Width);
-    // With no unique versions, the group supplies the first commit's incoming line.
-    if (expanded && row == 0 && next.isValid()) model.item(row, 0)->setData(true, Incoming);
-    model.insertRow(row, items);
-}
 HitResult hitTest(const QRect &rect, const QModelIndex &index, const QPoint &position)
 {
-    if (!index.isValid() || index.column() != 0 || index.data(AncestorCount).toInt() > 0 || !rect.contains(position))
+    if (!index.isValid() || index.column() != 0 || !rect.contains(position))
         return {};
     const int node = index.data(Node).toInt();
     const auto x = [&](int lane) { return rect.left() + 14 + lane * 18; };
@@ -213,39 +202,6 @@ void paint(QPainter *p, const QRect &rect, const QModelIndex &index, const Hover
     const auto nodeColor = color(nodeColorIdx);
     const int middle = rect.center().y(), bottom = rect.bottom() + 1;
     p->save(); p->setRenderHint(QPainter::Antialiasing);
-    if (index.data(AncestorCount).toInt() > 0)
-    {
-        const bool expanded = index.data(AncestorsExpanded).toBool();
-        // Several unfinished lanes can lead into this aggregate, not a Git commit.
-        for (const auto &value : index.data(Edges).toList())
-        {
-            const auto edge = value.toList();
-            if (expanded)
-            {
-                p->setPen(QPen(color(edge[2].toInt()), 1.7));
-                p->drawLine(x(edge[0].toInt()), rect.top(), x(edge[0].toInt()), bottom);
-                continue;
-            }
-            p->setPen(QPen(color(edge[2].toInt()), 1.7, Qt::DashLine, Qt::RoundCap));
-            QPainterPath line(QPointF(x(edge[0].toInt()), rect.top()));
-            line.cubicTo(x(edge[0].toInt()), middle - 10, x(0), middle - 14, x(0), middle - 7);
-            p->drawPath(line);
-        }
-        if (expanded && index.data(Edges).toList().isEmpty())
-        {
-            p->setPen(QPen(nodeColor, 1.7));
-            p->drawLine(x(0), middle, x(0), bottom);
-        }
-        p->setPen(QPen(nodeColor, 1.5));
-        p->setBrush(UiStyle::colors().canvas);
-        p->drawEllipse(QPoint(x(0), middle), 7, 7);
-        p->setPen(QPen(nodeColor, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        const int direction = expanded ? -1 : 1;
-        p->drawPolyline(QPolygonF{QPointF(x(0) - 3, middle - direction), QPointF(x(0), middle + 2 * direction), QPointF(x(0) + 3, middle - direction)});
-        p->restore();
-        return;
-    }
-
     const auto matchesHover = [&](int colorIdx, const QStringList &refs) -> bool {
         if (hover.progress <= 0.0) return false;
         if (hover.colorIndex >= 0 && colorIdx != hover.colorIndex) return false;

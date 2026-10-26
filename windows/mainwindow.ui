@@ -824,10 +824,12 @@
             </widget>
            </item>
            <item>
-            <widget class="QComboBox" name="branchSelector">
+            <widget class="QToolButton" name="branchSelector">
              <property name="minimumSize"><size><width>130</width><height>32</height></size></property>
              <property name="maximumSize"><size><width>220</width><height>16777215</height></size></property>
-             <property name="sizeAdjustPolicy"><enum>QComboBox::AdjustToMinimumContentsLengthWithIcon</enum></property>
+             <property name="popupMode"><enum>QToolButton::InstantPopup</enum></property>
+             <property name="toolButtonStyle"><enum>Qt::ToolButtonTextOnly</enum></property>
+             <property name="text"><string>方案</string></property>
              <property name="accessibleName"><string>正在使用的方案</string></property>
             </widget>
            </item>
@@ -980,6 +982,34 @@
              </property>
              <property name="accessibleName">
               <string>历史版本</string>
+             </property>
+             <property name="autoRaise">
+              <bool>true</bool>
+             </property>
+             <property name="focusPolicy">
+              <enum>Qt::TabFocus</enum>
+             </property>
+             <property name="minimumSize">
+              <size>
+               <width>28</width>
+               <height>32</height>
+              </size>
+             </property>
+             <property name="checkable">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QToolButton" name="branchesTab">
+             <property name="text">
+              <string>方案</string>
+             </property>
+             <property name="toolTip">
+              <string>方案：同一对象的多条独立版本线</string>
+             </property>
+             <property name="accessibleName">
+              <string>方案</string>
              </property>
              <property name="autoRaise">
               <bool>true</bool>

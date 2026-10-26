@@ -9,27 +9,24 @@
    <property name="bottomMargin"><number>24</number></property>
    <property name="spacing"><number>12</number></property>
    <item>
-    <widget class="QLabel" name="branchName">
-     <property name="text"><string>方案</string></property>
+    <widget class="QLabel" name="listHint">
+     <property name="text"><string>每个方案是一条独立的版本线。可以在新方案里放心尝试，原方案不受影响；随时切换回来。双击方案可查看它的历史版本。</string></property>
+     <property name="wordWrap"><bool>true</bool></property>
     </widget>
    </item>
    <item>
-    <layout class="QHBoxLayout" name="actions">
+    <layout class="QHBoxLayout" name="listActions">
      <property name="spacing"><number>8</number></property>
-     <item><widget class="QPushButton" name="useBranch"><property name="text"><string>使用此方案…</string></property></widget></item>
-     <item><widget class="QPushButton" name="operations"><property name="text"><string>管理方案…</string></property></widget></item>
-     <item><spacer name="actionSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
+     <item><widget class="QPushButton" name="listUse"><property name="text"><string>使用此方案…</string></property></widget></item>
+     <item><widget class="QPushButton" name="listCreate"><property name="text"><string>新建方案…</string></property></widget></item>
+     <item><widget class="QPushButton" name="listOperations"><property name="text"><string>更多</string></property></widget></item>
+     <item><spacer name="listActionSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
     </layout>
    </item>
    <item>
-    <widget class="QWidget" name="historyContainer">
-     <layout class="QVBoxLayout" name="historyLayout">
-      <property name="leftMargin"><number>0</number></property>
-      <property name="topMargin"><number>0</number></property>
-      <property name="rightMargin"><number>0</number></property>
-      <property name="bottomMargin"><number>0</number></property>
-      <property name="spacing"><number>0</number></property>
-     </layout>
+    <widget class="QListView" name="branchList">
+     <property name="accessibleName"><string>方案列表</string></property>
+     <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
     </widget>
    </item>
    <item>

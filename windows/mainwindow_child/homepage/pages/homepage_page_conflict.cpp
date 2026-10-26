@@ -174,9 +174,9 @@ void HomePageConflictPage::setBackup(const QString &id, const QString &returnBra
 }
 Route HomePageConflictPage::returnRoute() const
 {
-    Route route{m_returnBranchRef.isEmpty() ? (m_cloudSession ? PageId::Collaboration : PageId::History) : PageId::Branches, m_id};
-    route.branchRef = m_returnBranchRef;
-    return route;
+    // A local merge was started from the 方案 list, so it returns there.
+    if (!m_returnBranchRef.isEmpty()) return {PageId::Branches, m_id};
+    return {m_cloudSession ? PageId::Collaboration : PageId::History, m_id};
 }
 void HomePageConflictPage::load(bool restart, bool resumePreview)
 {
@@ -220,7 +220,7 @@ void HomePageConflictPage::acceptSession(const SyncResolutionSession &session, b
 {
     m_session = session;
     m_cloudSession = session.mergeRef.isEmpty();
-    ui->pageTitle->setText(session.mergeRef.isEmpty() ? QStringLiteral("处理同步差异") : QString("合并 %1 → %2").arg(session.remoteLabel, session.localLabel));
+    ui->pageTitle->setText(session.mergeRef.isEmpty() ? QStringLiteral("处理同步差异") : QString("把“%1”的修改合并到“%2”").arg(session.remoteLabel, session.localLabel));
     ui->localContent->setAccessibleName(session.localLabel);
     ui->remoteContent->setAccessibleName(session.remoteLabel);
     m_prepared = {};
@@ -530,7 +530,7 @@ void HomePageConflictPage::showResult()
                 ui->resultContent->setPlainText(text);
                 ui->previewDiffView->setTexts(QString(), reply.result.success ? reply.value.text : QString(),
                                               changePath, m_service->sourcePath(m_id),
-                                              QStringLiteral("修改前 (本地)"), QStringLiteral("修改后 (合并结果)"));
+                                              QStringLiteral("修改前 (本地)"), QStringLiteral("合并后的内容"));
             });
         }
         else
@@ -553,7 +553,7 @@ void HomePageConflictPage::showResult()
                 {
                     ui->previewDiffView->setTexts(mergeState->localText, mergeState->resultText,
                                                   changePath, m_service->sourcePath(m_id),
-                                                  QStringLiteral("修改前 (本地)"), QStringLiteral("修改后 (合并结果)"));
+                                                  QStringLiteral("修改前 (本地)"), QStringLiteral("合并后的内容"));
                 }
             });
 
@@ -569,7 +569,7 @@ void HomePageConflictPage::showResult()
                 {
                     ui->previewDiffView->setTexts(mergeState->localText, mergeState->resultText,
                                                   changePath, m_service->sourcePath(m_id),
-                                                  QStringLiteral("修改前 (本地)"), QStringLiteral("修改后 (合并结果)"));
+                                                  QStringLiteral("修改前 (本地)"), QStringLiteral("合并后的内容"));
                 }
             });
         }

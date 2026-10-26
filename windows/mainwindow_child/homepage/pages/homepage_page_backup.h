@@ -24,7 +24,6 @@ class HomePageBackupPage : public QWidget
     HomePageBackupPage(BackupService *service, QWidget *parent = nullptr);
     ~HomePageBackupPage();
     void setBackup(const QString &id, const QString &commit = {}, const QString &branchRef = {});
-    void setBranchDetail(const QString &id, const QString &branchRef, bool includeCommonAncestors = false);
     void refresh();
     void deactivate();
     QList<QAction *> toolbarActions() const;
@@ -32,7 +31,6 @@ class HomePageBackupPage : public QWidget
     void navigate(const Route &route);
     void createBranchRequested(const QString &id, const QString &commit);
     void branchRequested(const QString &branchRef);
-    void commonAncestorsExpansionChanged(bool expanded);
     void notification(const OperationResult &result);
 
   protected:
@@ -60,10 +58,6 @@ class HomePageBackupPage : public QWidget
     BackupService *m_service;
     QString m_id;
     QString m_branchRef;
-    bool m_branchDetail{false};
-    bool m_includeCommonAncestors{false};
-    int m_commonAncestorCount{0};
-    int m_uniqueRevisionCount{0};
     QString m_loadedId;
     QString m_requestedCommit;
     quint64 m_loadedGeneration{0};
@@ -88,7 +82,6 @@ class HomePageBackupPage : public QWidget
     quint64 m_refreshGeneration{0};
     QString selectedCommit() const;
     void updateActions();
-    void toggleCommonAncestors();
     void rememberState();
     void applyFilter();
     void manageTags(const RevisionContext &context);

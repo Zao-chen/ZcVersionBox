@@ -116,7 +116,7 @@ OperationResult BackupEngine::deleteBranch(const BranchRequest &request)
         if (!merged.success())
         {
             if (!merged.started || !merged.finished || merged.exitCode != 1) return GitRepository::outcome(merged);
-            return OperationResult::warn("方案尚未合并", "Git 的普通删除检查未通过。请先合并，或在确认不再需要独有版本后选择“仍然删除未合并方案”。");
+            return OperationResult::warn(BranchNotMergedTitle, "有些版本只存在于这个方案中，删除后可能无法找回。");
         }
     }
     auto r = record.value; r.operation = "delete-branch";

@@ -177,12 +177,22 @@ struct BranchSnapshot
     QVector<BranchInfo> branches;
     QDateTime fetchedAt;
 };
+// A cloud branch already followed by a local branch is the same 方案 to the user.
+inline bool isLinkedRemote(const BranchInfo &remote, const QVector<BranchInfo> &branches)
+{
+    if (!remote.remoteBranch) return false;
+    for (const auto &branch : branches)
+        if (!branch.remoteBranch && branch.upstream == remote.ref) return true;
+    return false;
+}
 struct BranchRequest
 {
     BranchContext context;
     QString ref, expectedHead, name, startCommit, upstream, endpoint;
     bool force{false};
 };
+// Title of the warning returned when a non-forced delete finds versions unique to the branch.
+inline constexpr char BranchNotMergedTitle[] = "这个方案里有独有的版本";
 struct PreparedBranchSwitch
 {
     BranchContext context;
