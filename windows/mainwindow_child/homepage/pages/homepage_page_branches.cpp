@@ -100,16 +100,16 @@ public:
         }
 
         const auto row = option.rect.adjusted(0, 2, 0, -2);
-        const bool selected = option.state.testFlag(QStyle::State_Selected);
         const bool hovered = option.state.testFlag(QStyle::State_MouseOver);
+        const bool keyboardFocus = UiStyle::isKeyboardNavigationActive() && option.state.testFlag(QStyle::State_HasFocus);
 
-        if (selected || hovered)
+        if (hovered)
         {
             painter->setPen(Qt::NoPen);
-            painter->setBrush(selected ? colors.selected : colors.hover);
+            painter->setBrush(colors.hover);
             painter->drawRoundedRect(row, 6, 6);
         }
-        if (UiStyle::isKeyboardNavigationActive() && option.state.testFlag(QStyle::State_HasFocus))
+        if (keyboardFocus)
         {
             painter->setBrush(Qt::NoBrush);
             painter->setPen(colors.secondary);
@@ -195,7 +195,7 @@ public:
                           Qt::AlignLeft | Qt::AlignVCenter,
                           captionFm.elidedText(displayMessage, Qt::ElideRight, contentWidth));
 
-        if (hovered || selected)
+        if (hovered || keyboardFocus)
         {
             const auto mRect = menuRect(row);
             UiStyle::icon("more").paint(painter, QRect(mRect.center() - QPoint(8, 8), QSize(16, 16)));
@@ -270,6 +270,7 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     });
     ui->branchList->setItemDelegate(delegate);
     ui->branchList->setModel(&m_listModel);
+    ui->branchList->setSelectionMode(QAbstractItemView::NoSelection);
     ui->branchList->setSpacing(4);
     m_refresh = UiStyle::action(this, "refreshBranchesAction", "刷新", "refresh");
     m_refresh->setProperty("iconOnly", true);

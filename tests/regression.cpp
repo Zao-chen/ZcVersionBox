@@ -3142,14 +3142,16 @@ class Regression : public QObject
         QCOMPARE(historyTable->model()->rowCount(), 8);
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
-        // Clicking a 方案 row selects it and stays on the list.
+        // Activating a 方案 row stays on the list and does not select it.
         QVERIFY(service.createBranch(id, "全部共享", topic).success);
         window.navigate({PageId::Branches, id}); settle(service);
         auto *page = window.findChild<HomePageBranchesPage *>(); QVERIFY(page && page->isVisible());
         auto *list = page->findChild<QListView *>("branchList"); QVERIFY(list && list->isVisible());
         QVERIFY(selectBranch(page, "refs/heads/试验方案"));
+        QVERIFY(!list->selectionModel()->hasSelection());
         emit list->activated(list->currentIndex()); settle(service);
         QVERIFY(page->isVisible());
+        QVERIFY(!list->selectionModel()->hasSelection());
         QVERIFY(list->isVisible());
         QVERIFY(window.findChild<QToolButton *>("branchesTab")->isChecked());
         QCOMPARE(head(service, id), main);
