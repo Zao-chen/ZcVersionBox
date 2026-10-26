@@ -73,6 +73,15 @@ OperationResult BackupEngine::begin(std::shared_ptr<std::atomic_bool> cancellati
     }
     return result;
 }
+OperationResult BackupEngine::beginRead(std::shared_ptr<std::atomic_bool> cancellation)
+{
+    m_cancel = std::move(cancellation);
+    if (m_cancel && m_cancel->load())
+        return OperationResult::cancel("操作已取消");
+    // Records being written by another task are skipped; the next query sees them.
+    m_catalog.load();
+    return OperationResult::ok({});
+}
 void BackupEngine::end()
 {
     m_lock.reset();

@@ -13,6 +13,8 @@ GitResult runGit(const QString &repository, const QStringList &arguments, const 
         environment.remove(key);
     environment.insert("GIT_TERMINAL_PROMPT", "0");
     environment.insert("GCM_INTERACTIVE", "Never");
+    // Concurrent page queries must never take index.lock away from the backup writer.
+    environment.insert("GIT_OPTIONAL_LOCKS", "0");
     process.setProcessEnvironment(environment);
     GitResult result;
     if (options.cancel && options.cancel->load())

@@ -31,12 +31,14 @@ class BackupService::Private
     AppPaths paths;
     BackupDependencies dependencies;
     QPointer<AiGateway> gateway;
-    QThread thread;
-    QObject *worker{new QObject};
-    std::unique_ptr<BackupEngine> engine;
+    QThread thread, readThread;
+    QObject *worker{new QObject}, *readWorker{new QObject};
+    std::unique_ptr<BackupEngine> engine, readEngine;
     QMap<QString, BackupRecord> cache;
     QQueue<JobPtr> foregroundQueue, backgroundQueue;
-    JobPtr active;
+    // Page queries run beside backups and synchronization instead of waiting behind them.
+    QQueue<JobPtr> readQueue;
+    JobPtr active, readActive;
     BackupTaskId sequence{0};
     struct SyncObserver { QPointer<QObject> context; Reply<SyncResult> callback; };
     QMap<QString, BackupTaskId> syncJobs;
@@ -56,29 +58,42 @@ class BackupService::Private
         : owner(service), paths(std::move(p)), dependencies(std::move(deps)),
           gateway(ai ? ai : new AiGateway(service)), engine(std::make_unique<BackupEngine>(paths, dependencies))
     {
+        // File cancellation state is per engine, so the reader keeps its own file helper.
+        auto readDependencies = dependencies;
+        readDependencies.files = std::make_shared<BackupFiles>();
+        readEngine = std::make_unique<BackupEngine>(paths, readDependencies);
         worker->moveToThread(&thread);
         QObject::connect(&thread, &QThread::finished, worker, &QObject::deleteLater);
         thread.setObjectName("BackupWorker");
         thread.start();
+        readWorker->moveToThread(&readThread);
+        QObject::connect(&readThread, &QThread::finished, readWorker, &QObject::deleteLater);
+        readThread.setObjectName("BackupReader");
+        readThread.start();
     }
     ~Private()
     {
         stopping = true;
-        if (active)
-            active->cancelled->store(true);
-        for (const auto *queue : {&foregroundQueue, &backgroundQueue})
+        for (const auto &job : {active, readActive})
+            if (job)
+                job->cancelled->store(true);
+        for (const auto *queue : {&foregroundQueue, &backgroundQueue, &readQueue})
             for (const auto &job : *queue)
                 job->cancelled->store(true);
         if (aiContext)
             delete aiContext.data();
         cancelAi = {};
+        QMetaObject::invokeMethod(readWorker, [this]
+                                  { readEngine.reset(); }, Qt::BlockingQueuedConnection);
+        readThread.quit();
+        readThread.wait();
         // The engine rolls back any prepared backup before releasing its process lock.
         QMetaObject::invokeMethod(worker, [this]
                                   { engine.reset(); }, Qt::BlockingQueuedConnection);
         thread.quit();
         thread.wait();
     }
-    bool busy() const { return active || !foregroundQueue.isEmpty() || !backgroundQueue.isEmpty(); }
+    bool busy() const { return active || readActive || !foregroundQueue.isEmpty() || !backgroundQueue.isEmpty() || !readQueue.isEmpty(); }
     void publishBusy()
     {
         const bool value = busy();
@@ -237,6 +252,55 @@ class BackupService::Private
             for (const auto &job : *queue) if (job->task == task) job->branchBound = false;
         return task;
     }
+    template <class T>
+    BackupTaskId query(const QString &id, QObject *context, Reply<T> callback, std::function<BackupResult<T>(BackupEngine &)> action)
+    {
+        auto job = std::make_shared<Job>();
+        job->task = ++sequence;
+        job->id = id;
+        job->generation = owner->repositoryGeneration(id);
+        job->branchVersion = cache.value(id).branchVersion;
+        job->context = context ? context : owner;
+        job->start = [this, action = std::move(action), callback = std::move(callback)](const JobPtr &job)
+        {
+            QMetaObject::invokeMethod(readWorker, [this, job, action, callback]
+                                      {
+                BackupResult<T> reply;
+                reply.result = readEngine->beginRead(job->cancelled);
+                if (reply.result.success && !job->id.isEmpty())
+                {
+                    const auto records = readEngine->records();
+                    const auto found = std::find_if(records.cbegin(), records.cend(), [&](const BackupRecord &r)
+                                                    { return r.id == job->id; });
+                    if (found == records.cend() || found->generation != job->generation || found->branchVersion != job->branchVersion)
+                        reply.result = OperationResult::cancel("操作已取消", "追踪对象或工作方案已变化，请刷新后再试");
+                }
+                if (reply.result.success)
+                    reply = action(*readEngine);
+                readEngine->end();
+                QMetaObject::invokeMethod(owner, [this, job, reply, callback]
+                {
+                    if (stopping) return;
+                    emit owner->taskFinished(job->task, job->id, reply.result);
+                    readActive.reset();
+                    publishBusy();
+                    QTimer::singleShot(0, owner, [this] { nextRead(); });
+                    if (job->context && callback) callback(reply);
+                }, Qt::QueuedConnection); }, Qt::QueuedConnection);
+        };
+        readQueue.enqueue(job);
+        publishBusy();
+        QTimer::singleShot(0, owner, [this] { nextRead(); });
+        return job->task;
+    }
+    void nextRead()
+    {
+        if (readActive || stopping || readQueue.isEmpty())
+            return;
+        readActive = readQueue.dequeue();
+        emit owner->taskStarted(readActive->task, readActive->id);
+        readActive->start(readActive);
+    }
     BackupTaskId mutate(const QString &id, QObject *context, Completion callback,
                         std::function<OperationResult(BackupEngine &)> action, bool notify = true,
                         BackupTaskPriority priority = BackupTaskPriority::Foreground)
@@ -381,22 +445,22 @@ BackupTaskId BackupService::addLocal(const QString &p, QObject *c, Completion f)
 BackupTaskId BackupService::backup(const QString &id, QObject *c, Completion f, BackupRequestOptions options) { return d->submitBackup(id, c, std::move(f), options); }
 BackupTaskId BackupService::statistics(const QString &id, QObject *c, Reply<BackupStats> f)
 {
-    return d->submit<BackupStats>(id, c, std::move(f), [id](BackupEngine &e)
+    return d->query<BackupStats>(id, c, std::move(f), [id](BackupEngine &e)
                                   { return e.statistics(id); });
 }
 BackupTaskId BackupService::history(const QString &id, QObject *c, Reply<QVector<Revision>> f)
 {
-    return d->submit<QVector<Revision>>(id, c, std::move(f), [id](BackupEngine &e)
+    return d->query<QVector<Revision>>(id, c, std::move(f), [id](BackupEngine &e)
                                         { return e.history(id); });
 }
 BackupTaskId BackupService::diff(const QString &id, const QString &commit, QObject *c, Reply<DiffData> f)
 {
-    return d->submit<DiffData>(id, c, std::move(f), [id, commit](BackupEngine &e)
+    return d->query<DiffData>(id, c, std::move(f), [id, commit](BackupEngine &e)
                                { return e.diff(id, commit); });
 }
 BackupTaskId BackupService::diffText(const QString &id, const DiffData &data, const QString &file, QObject *c, Reply<QString> f)
 {
-    return d->submit<QString>(id, c, std::move(f), [id, data, file](BackupEngine &e)
+    return d->query<QString>(id, c, std::move(f), [id, data, file](BackupEngine &e)
                               { return e.diffText(id, data, file); });
 }
 BackupTaskId BackupService::preview(const QString &id, const QString &commit, QObject *c, Completion f)
@@ -589,6 +653,8 @@ BackupTaskId BackupService::recheck(const QString &id, QObject *c, Completion f)
 }
 void BackupService::cancel(BackupTaskId task)
 {
+    if (d->readActive && d->readActive->task == task)
+        d->readActive->cancelled->store(true);
     if (d->active && d->active->task == task)
     {
         d->active->cancelled->store(true);
@@ -598,7 +664,7 @@ void BackupService::cancel(BackupTaskId task)
             cancel();
         }
     }
-    for (const auto *queue : {&d->foregroundQueue, &d->backgroundQueue})
+    for (const auto *queue : {&d->foregroundQueue, &d->backgroundQueue, &d->readQueue})
         for (const auto &job : *queue)
             if (job->task == task)
                 job->cancelled->store(true);
@@ -645,11 +711,11 @@ BranchContext BackupService::branchContext(const QString &id) const
     return {id, r.branchRef, r.lastCommit, r.generation, r.branchVersion};
 }
 BackupTaskId BackupService::branches(const QString &id, QObject *c, Reply<BranchSnapshot> f)
-{ return d->submit<BranchSnapshot>(id, c, std::move(f), [id](BackupEngine &e) { return e.branches(id); }); }
+{ return d->query<BranchSnapshot>(id, c, std::move(f), [id](BackupEngine &e) { return e.branches(id); }); }
 BackupTaskId BackupService::branchHistory(const QString &id, const HistoryQuery &query, QObject *c, Reply<HistoryPage> f)
-{ return d->submit<HistoryPage>(id, c, std::move(f), [id, query](BackupEngine &e) { return e.branchHistory(id, query); }); }
+{ return d->query<HistoryPage>(id, c, std::move(f), [id, query](BackupEngine &e) { return e.branchHistory(id, query); }); }
 BackupTaskId BackupService::diffBetween(const QString &id, const QString &oldCommit, const QString &newCommit, QObject *c, Reply<DiffData> f)
-{ return d->submit<DiffData>(id, c, std::move(f), [=](BackupEngine &e) { return e.diffBetween(id, oldCommit, newCommit); }); }
+{ return d->query<DiffData>(id, c, std::move(f), [=](BackupEngine &e) { return e.diffBetween(id, oldCommit, newCommit); }); }
 BackupTaskId BackupService::createBranch(const BranchRequest &r, QObject *c, Completion f)
 { return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.createBranch(r); }); }
 BackupTaskId BackupService::renameBranch(const BranchRequest &r, QObject *c, Completion f)
@@ -682,11 +748,11 @@ BackupTaskId BackupService::uploadBranch(const BranchRequest &r, QObject *c, Com
 { return d->mutate(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.uploadBranch(r); }); }
 
 BackupTaskId BackupService::sourceDirectory(const QString &id, const QString &path, QObject *c, Reply<SourceDirectory> f)
-{ return d->submit<SourceDirectory>(id, c, std::move(f), [=](BackupEngine &e) { return e.sourceDirectory(id, path); }); }
+{ return d->query<SourceDirectory>(id, c, std::move(f), [=](BackupEngine &e) { return e.sourceDirectory(id, path); }); }
 BackupTaskId BackupService::sourceContent(const QString &id, const QString &path, QObject *c, Reply<SourceContent> f)
-{ return d->submit<SourceContent>(id, c, std::move(f), [=](BackupEngine &e) { return e.sourceContent(id, path); }); }
+{ return d->query<SourceContent>(id, c, std::move(f), [=](BackupEngine &e) { return e.sourceContent(id, path); }); }
 BackupTaskId BackupService::sourceChanges(const QString &id, const QStringList &paths, QObject *c, Reply<SourceChanges> f)
-{ return d->submit<SourceChanges>(id, c, std::move(f), [=](BackupEngine &e) { return e.sourceChanges(id, paths); }); }
+{ return d->query<SourceChanges>(id, c, std::move(f), [=](BackupEngine &e) { return e.sourceChanges(id, paths); }); }
 
 BackupTaskId BackupService::saveSourceFile(const SourceSaveRequest &request, QObject *c, Completion f)
 {
