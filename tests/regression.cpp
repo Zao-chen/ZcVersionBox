@@ -39,6 +39,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QLockFile>
 #include <QMenu>
 #include <QMimeData>
 #ifdef _WIN32
@@ -54,6 +55,7 @@
 #include <QRawFont>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSemaphore>
 #include <QSettings>
 #include <QStyleHints>
 #include <QScopeGuard>
@@ -75,6 +77,7 @@
 #include <QToolTip>
 #include <QUrl>
 #include <algorithm>
+#include <atomic>
 #include <oclero/qlementine/widgets/Expander.hpp>
 #include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 #include <oclero/qlementine/widgets/Popover.hpp>
@@ -222,6 +225,140 @@ class Regression : public QObject
         QCoreApplication::setApplicationName("ZcVersionBox tests");
         QCoreApplication::setApplicationVersion("0.1.0");
         m_theme = new ThemeController(nullptr, this);
+    }
+    void startupHomeWaitsBeforeShowingEmptyState()
+    {
+        TestDirectory dir;
+        BackupService service(pathsIn(dir));
+        FakeAi gateway;
+        SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        auto *page = window.findChild<HomePage *>();
+        auto *spinner = window.findChild<oclero::qlementine::LoadingSpinner *>("pageSpinner");
+        QVERIFY(page && spinner);
+        QVERIFY(page->loading());
+        QVERIFY(!spinner->isHidden());
+        QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("正在加载备份"));
+        QVERIFY(!page->findChild<QLabel *>("countLabel")->text().contains("0"));
+        QVERIFY(page->findChild<QPushButton *>("emptyAddButton")->isHidden());
+        settle(service);
+        QVERIFY(!page->loading());
+        QVERIFY(spinner->isHidden());
+        QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("还没有备份"));
+        QCOMPARE(page->findChild<QLabel *>("countLabel")->text(), QString("0 个备份"));
+        QVERIFY(!page->findChild<QPushButton *>("emptyAddButton")->isHidden());
+        QVERIFY(page->findChild<QPushButton *>("retryButton")->isHidden());
+    }
+    void startupHomeDisplaysItemsBeforeSlowAuditFinishes()
+    {
+        TestDirectory dir;
+        const auto paths = pathsIn(dir);
+        const auto source = dir.path() + "/source.txt";
+        writeFile(source, "keep\n");
+        {
+            TestBackupService seed(paths);
+            QVERIFY(seed.addLocal(source).success);
+        }
+        struct Gate
+        {
+            std::atomic_bool hold{true};
+            QSemaphore entered, resume;
+        };
+        const auto gate = std::make_shared<Gate>();
+        BackupDependencies dependencies;
+        dependencies.git = [gate](const QString &repo, const QStringList &args, const GitOptions &options)
+        {
+            if (gate->hold.exchange(false))
+            {
+                gate->entered.release();
+                gate->resume.acquire();
+            }
+            return runGit(repo, args, options);
+        };
+        BackupService service(paths, nullptr, nullptr, dependencies);
+        const auto releaseOnFailure = qScopeGuard([&] { gate->resume.release(); });
+        FakeAi gateway;
+        SettingsService settings(paths, &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        auto *page = window.findChild<HomePage *>();
+        auto *spinner = window.findChild<oclero::qlementine::LoadingSpinner *>("pageSpinner");
+        auto *list = page->findChild<QListView *>("backupList");
+        QTRY_VERIFY(gate->entered.available() > 0);
+        QTRY_COMPARE(list->model()->rowCount(), 1);
+        QCOMPARE(page->findChild<QLabel *>("countLabel")->text(), QString("1 个备份"));
+        QVERIFY(!page->findChild<QWidget *>("listPage")->isHidden());
+        QVERIFY(!spinner->isHidden());
+        QVERIFY(!service.isReady());
+        window.navigate({PageId::GeneralSettings});
+        QVERIFY(spinner->isHidden());
+        window.navigate({});
+        QVERIFY(!spinner->isHidden());
+        gate->resume.release();
+        settle(service);
+        QVERIFY(spinner->isHidden());
+        QVERIFY(service.isReady());
+        QCOMPARE(list->model()->rowCount(), 1);
+    }
+    void startupHomeOffersRetryAfterLoadFailure_data()
+    {
+        QTest::addColumn<QString>("failure");
+        QTest::newRow("writer-lock") << QString("lock");
+        QTest::newRow("storage-unavailable") << QString("storage");
+        QTest::newRow("unreadable-record") << QString("record");
+    }
+    void startupHomeOffersRetryAfterLoadFailure()
+    {
+        QFETCH(QString, failure);
+        TestDirectory dir;
+        const auto paths = pathsIn(dir);
+        QLockFile lock(paths.backupRoot + "/.writer.lock");
+        const auto recordPath = paths.backupRoot + "/items/" + QUuid::createUuid().toString(QUuid::WithoutBraces) + "/record.json";
+        if (failure == "storage")
+            writeFile(paths.backupRoot, "not a directory");
+        else if (failure == "record")
+            writeFile(recordPath, "{invalid record");
+        else
+        {
+            QVERIFY(QDir().mkpath(paths.backupRoot));
+            QVERIFY(lock.tryLock(0));
+        }
+        BackupService service(paths);
+        settle(service);
+        FakeAi gateway;
+        SettingsService settings(paths, &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        auto *page = window.findChild<HomePage *>();
+        auto *retry = page->findChild<QPushButton *>("retryButton");
+        auto *spinner = window.findChild<oclero::qlementine::LoadingSpinner *>("pageSpinner");
+        QVERIFY(!retry->isHidden());
+        QVERIFY(!page->findChild<QLabel *>("emptyHint")->text().isEmpty());
+        QVERIFY(page->findChild<QPushButton *>("emptyAddButton")->isHidden());
+        QVERIFY(!page->findChild<QLabel *>("countLabel")->text().contains("0"));
+        QVERIFY(spinner->isHidden());
+        if (failure == "record")
+        {
+            QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("备份记录无法完整读取"));
+            QVERIFY(QFile::remove(recordPath));
+            QVERIFY(QDir().rmdir(QFileInfo(recordPath).absolutePath()));
+        }
+        else
+        {
+            QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("备份加载失败"));
+            if (failure == "storage")
+                QVERIFY(QFile::remove(paths.backupRoot));
+            else
+                lock.unlock();
+        }
+        retry->click();
+        QVERIFY(page->loading());
+        QVERIFY(!spinner->isHidden());
+        QVERIFY(retry->isHidden());
+        settle(service);
+        QVERIFY(service.isReady());
+        QVERIFY(spinner->isHidden());
+        QVERIFY(retry->isHidden());
+        QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("还没有备份"));
+        QVERIFY(!page->findChild<QPushButton *>("emptyAddButton")->isHidden());
     }
     void sourcePreviewUnsavedNavigationAndExternalEdits()
     {

@@ -408,6 +408,8 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         connect(page, &std::remove_pointer_t<decltype(page)>::loadingChanged, this, [this, page](bool loading)
                 { setPageLoading(page, loading); });
     };
+    reportLoading(m_list);
+    setPageLoading(m_list, m_list->loading());
     reportLoading(m_preview);
     reportLoading(m_history);
     reportLoading(m_branches);

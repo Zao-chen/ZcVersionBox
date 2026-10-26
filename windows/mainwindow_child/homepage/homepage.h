@@ -18,10 +18,12 @@ class HomePage : public QWidget
     HomePage(BackupService *service, QWidget *parent = nullptr, BackupListModel *model = nullptr, BackupUiActions *actions = nullptr);
     ~HomePage();
     void refresh();
+    bool loading() const { return m_loading; }
     QList<QAction *> toolbarActions() const;
   signals:
     void navigate(const Route &route);
     void notification(const OperationResult &result);
+    void loadingChanged(bool loading);
 
   protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -33,5 +35,6 @@ class HomePage : public QWidget
     BackupFilterModel *m_filter;
     BackupUiActions *m_actions;
     bool m_ownsModel;
+    bool m_loading{false};
     void updateEmptyState();
 };
