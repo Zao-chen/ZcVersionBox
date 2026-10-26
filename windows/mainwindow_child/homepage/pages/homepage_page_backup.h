@@ -13,7 +13,6 @@ class QAction;
 class QMenu;
 class QDialog;
 class QAbstractButton;
-namespace oclero::qlementine { class LoadingSpinner; }
 namespace UiDialog
 {
 class Dialog;
@@ -33,6 +32,7 @@ class HomePageBackupPage : public QWidget
     void createBranchRequested(const QString &id, const QString &commit);
     void branchRequested(const QString &branchRef);
     void notification(const OperationResult &result);
+    void loadingChanged(bool loading);
 
   protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -73,7 +73,7 @@ class HomePageBackupPage : public QWidget
     QAction *m_refresh;
     QAction *m_tag;
     QAbstractButton *m_milestoneOnly;
-    oclero::qlementine::LoadingSpinner *m_spinner{nullptr};
+    bool m_reading{false};
     QPointer<QDialog> m_tagDialog;
     QPointer<QMenu> m_revisionMenu;
     quint64 m_contextGeneration{0};

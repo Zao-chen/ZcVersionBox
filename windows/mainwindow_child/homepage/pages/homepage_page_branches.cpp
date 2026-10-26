@@ -13,7 +13,6 @@
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
-#include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 
 namespace
 {
@@ -55,12 +54,6 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     UiStyle::text(ui->listHint, UiStyle::FontRole::Caption, true);
     ui->branchList->setModel(&m_listModel);
     ui->branchList->setSpacing(2);
-    m_spinner = new oclero::qlementine::LoadingSpinner(this);
-    m_spinner->setObjectName("branchesSpinner");
-    m_spinner->setAccessibleName("正在读取方案");
-    m_spinner->setFixedSize(16, 16);
-    ui->listActions->insertWidget(ui->listActions->indexOf(ui->listOperations) + 1, m_spinner);
-    m_spinner->hide();
     m_refresh = UiStyle::action(this, "refreshBranchesAction", "刷新", "refresh");
     m_refresh->setProperty("iconOnly", true);
     connect(m_refresh, &QAction::triggered, this, &HomePageBranchesPage::refresh);
@@ -130,8 +123,11 @@ void HomePageBranchesPage::refresh()
 }
 void HomePageBranchesPage::setLoading(bool loading)
 {
-    m_spinner->setVisible(loading);
-    m_spinner->setSpinning(loading);
+    if (m_loading != loading)
+    {
+        m_loading = loading;
+        emit loadingChanged(loading);
+    }
     if (loading && m_listModel.rowCount() == 0)
     {
         auto *item = new QStandardItem("正在读取方案…");

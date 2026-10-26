@@ -12,7 +12,6 @@
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QUrl>
-#include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 
 HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *parent) : QWidget(parent), ui(new Ui::HomePageDashboardPage), m_service(service)
 {
@@ -28,12 +27,6 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
     m_syncState = ui->syncStateLabel;
     ui->headerDot->hide();
     m_syncState->hide();
-    m_spinner = new oclero::qlementine::LoadingSpinner(this);
-    m_spinner->setObjectName("overviewSpinner");
-    m_spinner->setAccessibleName("正在读取概览");
-    m_spinner->setFixedSize(16, 16);
-    ui->objectHeaderLayout->insertWidget(ui->objectHeaderLayout->indexOf(ui->objectLabel) + 1, m_spinner);
-    m_spinner->hide();
     m_syncPanel = new QWidget(this);
     m_syncPanel->setObjectName("syncStatePanel");
     auto *syncLayout = new QVBoxLayout(m_syncPanel);
@@ -108,8 +101,10 @@ void HomePageDashboardPage::deactivate()
 }
 void HomePageDashboardPage::setLoading(bool loading)
 {
-    m_spinner->setVisible(loading);
-    m_spinner->setSpinning(loading && m_active);
+    if (m_loading == loading)
+        return;
+    m_loading = loading;
+    emit loadingChanged(loading);
 }
 void HomePageDashboardPage::setBackup(const QString &id)
 {

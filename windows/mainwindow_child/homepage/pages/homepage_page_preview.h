@@ -7,7 +7,6 @@
 #include <QWidget>
 #include <memory>
 namespace Ui { class HomePagePreviewPage; }
-namespace oclero::qlementine { class LoadingSpinner; }
 class QAction;
 class HomePagePreviewPage : public QWidget
 {
@@ -26,6 +25,7 @@ class HomePagePreviewPage : public QWidget
   signals:
     void navigate(const Route &route);
     void notification(const OperationResult &result);
+    void loadingChanged(bool loading);
   protected:
     void resizeEvent(QResizeEvent *event) override;
   private:
@@ -34,7 +34,6 @@ class HomePagePreviewPage : public QWidget
     BackupDirectoryWatcher m_watcher;
     QTimer m_refreshTimer;
     QStandardItemModel m_model;
-    oclero::qlementine::LoadingSpinner *m_spinner;
     QAction *m_refresh, *m_open, *m_new, *m_edit, *m_save, *m_cancel, *m_manage;
     bool m_editing{false}, m_newFile{false}, m_saving{false}, m_mutating{false}, m_prompt{false};
     QString m_statusText;

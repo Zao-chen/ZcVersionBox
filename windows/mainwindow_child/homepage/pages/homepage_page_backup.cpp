@@ -7,7 +7,6 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QSignalBlocker>
-#include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 #include <oclero/qlementine/widgets/Switch.hpp>
 #include <QFocusEvent>
 #include <QHeaderView>
@@ -500,12 +499,6 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     UiStyle::text(ui->milestoneFilterLabel, UiStyle::FontRole::Body);
     ui->filterLayout->insertWidget(ui->filterLayout->indexOf(ui->milestoneFilterLabel) + 1, m_milestoneOnly);
     ui->tagConflictButton->hide();
-    m_spinner = new oclero::qlementine::LoadingSpinner(ui->filterBar);
-    m_spinner->setObjectName("historySpinner");
-    m_spinner->setAccessibleName("正在读取历史版本");
-    m_spinner->setFixedSize(16, 16);
-    ui->filterLayout->insertWidget(ui->filterLayout->indexOf(m_milestoneOnly) + 1, m_spinner);
-    m_spinner->hide();
     connect(m_milestoneOnly, &QAbstractButton::toggled, this, [this] { applyFilter(); rememberState(); refresh(); });
     connect(ui->tagConflictButton, &QPushButton::clicked, this, &HomePageBackupPage::resolveTagConflicts);
     ui->table->setModel(&m_model);
@@ -1016,8 +1009,10 @@ QVector<VersionTag> HomePageBackupPage::revisionTags(const RevisionContext &cont
 }
 void HomePageBackupPage::setLoading(bool loading)
 {
-    m_spinner->setVisible(loading);
-    m_spinner->setSpinning(loading);
+    if (m_reading == loading)
+        return;
+    m_reading = loading;
+    emit loadingChanged(loading);
 }
 void HomePageBackupPage::applyFilter()
 {

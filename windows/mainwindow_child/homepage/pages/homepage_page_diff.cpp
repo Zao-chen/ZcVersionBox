@@ -14,7 +14,6 @@
 #include <QShowEvent>
 #include <QTimer>
 #include <oclero/qlementine/widgets/Expander.hpp>
-#include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 
 HomePageDiffPage::HomePageDiffPage(BackupService *service, SettingsService *settings, AiGateway *gateway, QWidget *parent)
     : QWidget(parent), ui(new Ui::HomePageDiffPage), m_service(service), m_settings(settings), m_gateway(gateway)
@@ -33,13 +32,8 @@ HomePageDiffPage::HomePageDiffPage(BackupService *service, SettingsService *sett
     UiStyle::text(ui->currentFilePath, UiStyle::FontRole::Body, false);
     UiStyle::text(ui->analysisStatus, UiStyle::FontRole::Caption, true);
 
-    // 顶部操作动作与 Spinner
+    // 顶部操作动作；加载状态由主窗口统一显示
     m_analyze = UiStyle::action(this, "analyzeAction", "AI 智能速读", "sparkles");
-    m_spinner = new oclero::qlementine::LoadingSpinner(this);
-    m_spinner->setObjectName("analysisSpinner");
-    m_spinner->setAccessibleName("AI 正在分析");
-    m_spinner->setFixedSize(16, 16);
-    ui->editorToolbarLayout->insertWidget(ui->editorToolbarLayout->indexOf(ui->expandAnalysisButton), m_spinner);
 
     // 底部 Expander 折叠动画容器（收纳 AI 分析结果，平时不占用主区高度）
     m_expander = new oclero::qlementine::Expander(this);
@@ -127,6 +121,7 @@ void HomePageDiffPage::deactivate()
         m_hasAnalysis = false;
     }
     m_loading = false;
+    m_reading = false;
     updateLoadingState();
 }
 
@@ -147,6 +142,7 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit, con
     m_analysisText.clear();
 
     emit titleChanged("正在读取版本差异…");
+    m_reading = true;
     updateLoadingState();
 
     const auto generation = m_generation;
@@ -155,10 +151,12 @@ void HomePageDiffPage::setRevision(const QString &id, const QString &commit, con
     const auto loaded = [this, id, generation, repositoryGeneration](const BackupResult<DiffData> &reply) {
         if (!m_active || generation != m_generation || id != m_id || repositoryGeneration != m_service->repositoryGeneration(id))
             return;
+        m_reading = false;
         m_valid = reply.result.success;
         if (!reply.result.success)
         {
-            emit notification(reply.result);
+            if (!reply.result.cancelled)
+                emit notification(reply.result);
             emit titleChanged("无法打开版本对比");
             m_hasAnalysis = false;
             updateLoadingState();
@@ -334,8 +332,12 @@ void HomePageDiffPage::updateLoadingState()
     m_analyze->setEnabled(m_active && m_valid && !m_loading && configured);
     m_analyze->setToolTip(configured ? QStringLiteral("AI 智能速读") : QStringLiteral("AI 未配置：请先在设置中配置 API Key 和模型"));
 
-    m_spinner->setSpinning(m_loading && m_active && isVisible());
-    m_spinner->setVisible(m_loading);
+    const bool loading = m_active && (m_reading || m_loading);
+    if (m_reported != loading)
+    {
+        m_reported = loading;
+        emit loadingChanged(loading);
+    }
 
     const bool showAnalysis = m_loading || m_hasAnalysis;
     ui->expandAnalysisButton->setVisible(showAnalysis);
@@ -382,12 +384,6 @@ bool HomePageDiffPage::eventFilter(QObject *watched, QEvent *event)
     if (watched == ui->editorPane && event->type() == QEvent::Resize)
         updateResponsiveLayout();
     return QWidget::eventFilter(watched, event);
-}
-
-void HomePageDiffPage::hideEvent(QHideEvent *event)
-{
-    QWidget::hideEvent(event);
-    m_spinner->setSpinning(false);
 }
 
 void HomePageDiffPage::showEvent(QShowEvent *event)

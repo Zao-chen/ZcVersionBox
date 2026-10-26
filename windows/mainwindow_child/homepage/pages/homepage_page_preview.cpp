@@ -24,7 +24,6 @@
 #include <QPainter>
 #include <QPersistentModelIndex>
 #include <QItemSelectionModel>
-#include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 
 namespace
 {
@@ -410,9 +409,6 @@ HomePagePreviewPage::HomePagePreviewPage(BackupService *service, QWidget *parent
     connect(search, &QShortcut::activated, this, [this] {
         if (m_content.textual) { ui->findBar->show(); ui->findEdit->setFocus(); ui->findEdit->selectAll(); }
     });
-    m_spinner = new oclero::qlementine::LoadingSpinner(this);
-    m_spinner->setFixedSize(16, 16);
-    ui->actionLayout->insertWidget(0, m_spinner);
     m_refreshTimer.setSingleShot(true); m_refreshTimer.setInterval(250);
     connect(&m_refreshTimer, &QTimer::timeout, this, &HomePagePreviewPage::refresh);
     connect(&m_watcher, &BackupDirectoryWatcher::pathsChanged, this, [this] { if (m_active) m_refreshTimer.start(); });
@@ -472,7 +468,7 @@ void HomePagePreviewPage::deactivate()
     rememberScroll(); m_active = false; ++m_request; ++m_changesRequest;
     m_refreshTimer.stop(); m_watcher.clear();
     for (const auto task : m_tasks) m_service->cancel(task);
-    m_tasks.clear(); m_spinner->setSpinning(false);
+    m_tasks.clear(); setLoading(false);
 }
 void HomePagePreviewPage::openPath(const QString &path)
 {
@@ -481,7 +477,7 @@ void HomePagePreviewPage::openPath(const QString &path)
 }
 void HomePagePreviewPage::setLoading(bool loading)
 {
-    m_loading = loading; m_spinner->setVisible(loading); m_spinner->setSpinning(loading && m_active);
+    if (m_loading != loading) { m_loading = loading; emit loadingChanged(loading); }
     updateActions();
 }
 void HomePagePreviewPage::refresh()

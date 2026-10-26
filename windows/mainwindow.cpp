@@ -33,6 +33,7 @@
 #include <QTimer>
 #include <QVariantAnimation>
 #include <oclero/qlementine/style/QlementineStyle.hpp>
+#include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 #include <algorithm>
 #include <type_traits>
 #include <QWKWidgets/widgetwindowagent.h>
@@ -194,6 +195,12 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
             { ui->settingsSearch->setFocus(Qt::ShortcutFocusReason); });
     ui->headerLayout->setContentsMargins(24, 12, 8, 8);
     ui->tabsLayout->setContentsMargins(24, 0, 24, 8);
+    m_pageSpinner = new oclero::qlementine::LoadingSpinner(ui->header);
+    m_pageSpinner->setObjectName("pageSpinner");
+    m_pageSpinner->setAccessibleName("正在加载");
+    m_pageSpinner->setFixedSize(16, 16);
+    ui->headerLayout->insertWidget(ui->headerLayout->indexOf(ui->toolbarHost), m_pageSpinner, 0, Qt::AlignVCenter);
+    m_pageSpinner->hide();
     ui->windowSplitter->setStretchFactor(0, 0);
     ui->windowSplitter->setStretchFactor(1, 1);
     ui->windowSplitter->setCollapsible(0, true);
@@ -396,6 +403,17 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         }
     });
     connect(m_diff, &HomePageDiffPage::titleChanged, ui->diffTitleLabel, &QLabel::setText);
+    const auto reportLoading = [this](auto *page)
+    {
+        connect(page, &std::remove_pointer_t<decltype(page)>::loadingChanged, this, [this, page](bool loading)
+                { setPageLoading(page, loading); });
+    };
+    reportLoading(m_preview);
+    reportLoading(m_history);
+    reportLoading(m_branches);
+    reportLoading(m_dashboard);
+    reportLoading(m_collaboration);
+    reportLoading(m_diff);
     connect(new QShortcut(QKeySequence(Qt::Key_Escape), this), &QShortcut::activated, this, [this]
             {
         // A single window shortcut avoids ambiguous Escape registrations when
@@ -837,6 +855,7 @@ void MainWindow::displayRoute(const Route &route)
         break;
     }
     ui->pages->setCurrentWidget(page);
+    updatePageSpinner();
     if (auto *focus = QApplication::focusWidget())
         focus->clearFocus();
     ui->backButton->setEnabled(m_navigation.canBack());
@@ -894,6 +913,20 @@ void MainWindow::displayRoute(const Route &route)
         m_applicationFocus->setFocus(Qt::OtherFocusReason);
     m_notifications->raise();
     updateConflictBadge();
+}
+void MainWindow::setPageLoading(QWidget *page, bool loading)
+{
+    if (loading)
+        m_loadingPages.insert(page);
+    else
+        m_loadingPages.remove(page);
+    updatePageSpinner();
+}
+void MainWindow::updatePageSpinner()
+{
+    const bool loading = !isSettingsPage(m_route.page) && m_loadingPages.contains(ui->pages->currentWidget());
+    m_pageSpinner->setVisible(loading);
+    m_pageSpinner->setSpinning(loading && isVisible());
 }
 void MainWindow::updateHeaderLayout()
 {
@@ -1059,6 +1092,7 @@ void MainWindow::changeEvent(QEvent *event)
 void MainWindow::showEvent(QShowEvent *event)
 {
     QMainWindow::showEvent(event);
+    updatePageSpinner();
 #ifdef Q_OS_MACOS
     disableSafeAreaInsets(this);
     if (QGuiApplication::platformName() == "cocoa")

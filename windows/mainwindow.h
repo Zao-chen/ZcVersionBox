@@ -4,6 +4,7 @@
 #include "windows/mainwindow_navigation.h"
 #include "windows/mainwindow_presentation.h"
 #include <QMainWindow>
+#include <QSet>
 #include <QPointer>
 #include <memory>
 namespace Ui
@@ -32,6 +33,7 @@ class QMenu;
 class QSystemTrayIcon;
 class QToolButton;
 class QVariantAnimation;
+namespace oclero::qlementine { class LoadingSpinner; }
 class UpdateService;
 
 class MainWindow : public QMainWindow
@@ -90,6 +92,11 @@ class MainWindow : public QMainWindow
     QVariantAnimation *m_sidebarAnimation{nullptr};
     QWidget *m_collaborationBadge{nullptr};
     QWidget *m_aboutBadge{nullptr};
+    // One header indicator for every page; pages only report whether they are loading.
+    oclero::qlementine::LoadingSpinner *m_pageSpinner{nullptr};
+    QSet<QWidget *> m_loadingPages;
+    void setPageLoading(QWidget *page, bool loading);
+    void updatePageSpinner();
     bool m_hasUnreadUpdate{false};
     void displayRoute(const Route &route);
     void syncBackups();

@@ -14,7 +14,6 @@ class HomePageDiffPage;
 namespace oclero::qlementine
 {
 class Expander;
-class LoadingSpinner;
 } // namespace oclero::qlementine
 class QAction;
 class QSyntaxHighlighter;
@@ -29,15 +28,16 @@ class HomePageDiffPage : public QWidget
     void deactivate();
     void refreshTheme();
     QList<QAction *> toolbarActions() const;
+    bool isLoading() const { return m_reported; }
 
   signals:
     void navigate(const Route &route);
     void notification(const OperationResult &result);
     void titleChanged(const QString &title);
+    void loadingChanged(bool loading);
 
   protected:
     void resizeEvent(QResizeEvent *event) override;
-    void hideEvent(QHideEvent *event) override;
     void showEvent(QShowEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 
@@ -57,7 +57,6 @@ class HomePageDiffPage : public QWidget
     AiGateway *m_gateway;
     QStandardItemModel m_model;
     QAction *m_analyze;
-    oclero::qlementine::LoadingSpinner *m_spinner;
     oclero::qlementine::Expander *m_expander{nullptr};
 
     QHash<QString, ViewState> m_states;
@@ -68,6 +67,7 @@ class HomePageDiffPage : public QWidget
     QString m_currentRawDiff;
     quint64 m_generation{0}, m_repositoryGeneration{0}, m_fileGeneration{0};
     bool m_active{false}, m_valid{false}, m_loading{false}, m_hasAnalysis{false};
+    bool m_reading{false}, m_reported{false};
 
     void rememberState();
     void loadFile();

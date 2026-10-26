@@ -9,7 +9,6 @@
 
 namespace Ui { class HomePageBranchesPage; }
 class QAction;
-namespace oclero::qlementine { class LoadingSpinner; }
 
 class HomePageBranchesPage : public QWidget
 {
@@ -25,13 +24,14 @@ class HomePageBranchesPage : public QWidget
   signals:
     void navigate(const Route &route);
     void notification(const OperationResult &result);
+    void loadingChanged(bool loading);
   private:
     std::unique_ptr<Ui::HomePageBranchesPage> ui;
     BackupService *m_service;
     QString m_id;
     BranchSnapshot m_snapshot;
     QAction *m_refresh{nullptr};
-    oclero::qlementine::LoadingSpinner *m_spinner{nullptr};
+    bool m_loading{false};
     quint64 m_generation{0};
     bool m_busy{false};
     BackupTaskId m_task{0};

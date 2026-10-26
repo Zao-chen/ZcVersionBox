@@ -8,7 +8,6 @@
 #include <QResizeEvent>
 #include <QScrollBar>
 #include <QSignalBlocker>
-#include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 #include <oclero/qlementine/widgets/Switch.hpp>
 
 HomePageCollaborationPage::HomePageCollaborationPage(BackupService *service, QWidget *parent)
@@ -23,8 +22,6 @@ HomePageCollaborationPage::HomePageCollaborationPage(BackupService *service, QWi
     ui->connectButton->setIcon(UiStyle::icon("link"));
     ui->copyButton->setIcon(UiStyle::icon("copy"));
     ui->disconnectButton->setIcon(UiStyle::icon("unlink"));
-    m_spinner = new oclero::qlementine::LoadingSpinner(this);
-    ui->statusTextRow->insertWidget(0, m_spinner);
     m_automatic = new oclero::qlementine::Switch(this);
     m_automatic->setObjectName("automaticSyncSwitch"); m_automatic->setAccessibleName("自动同步"); m_automatic->setFocusPolicy(Qt::TabFocus);
     m_automatic->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
@@ -74,7 +71,11 @@ void HomePageCollaborationPage::setBackup(const QString &id)
 }
 void HomePageCollaborationPage::deactivate()
 {
-    m_scrolls[m_id] = ui->scroll->verticalScrollBar()->value(); m_active = false; ++m_context; m_connecting = false; m_spinner->setSpinning(false);
+    m_scrolls[m_id] = ui->scroll->verticalScrollBar()->value(); m_active = false; ++m_context; m_connecting = false; setLoading(false);
+}
+void HomePageCollaborationPage::setLoading(bool loading)
+{
+    if (m_loading != loading) { m_loading = loading; emit loadingChanged(loading); }
 }
 void HomePageCollaborationPage::connectRemote()
 {
@@ -166,7 +167,7 @@ void HomePageCollaborationPage::refresh()
     ui->syncButton->setText(state == BackupSyncState::NeedsAttention ? "重新检查" : state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending ? "处理差异" : status.state == SyncState::NeedsBranch ? "切换方案并处理" : status.state == SyncState::NeedsTags ? "处理里程碑" : running ? "同步中…" : "立即同步");
     ui->syncButton->setAccessibleName(ui->syncButton->text() == "立即同步" ? "立即同步全部方案" : ui->syncButton->text());
     ui->syncButton->setEnabled(connected && !running && !m_connecting);
-    m_spinner->setSpinning(m_active && isVisible() && (running || m_connecting)); m_spinner->setVisible(running || m_connecting);
+    setLoading(running || m_connecting);
     { const QSignalBlocker block(m_automatic); m_automatic->setChecked(status.automatic && connected); }
     m_automatic->setEnabled(connected && !m_connecting);
     if (!ui->remoteUrl->isModified()) ui->remoteUrl->setText(status.remoteUrl);

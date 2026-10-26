@@ -4,7 +4,7 @@
 #include <QWidget>
 #include <memory>
 namespace Ui { class HomePageCollaborationPage; }
-namespace oclero::qlementine { class Switch; class LoadingSpinner; }
+namespace oclero::qlementine { class Switch; }
 class HomePageCollaborationPage : public QWidget
 {
     Q_OBJECT
@@ -19,16 +19,17 @@ class HomePageCollaborationPage : public QWidget
     void navigate(const Route &route);
     void notification(const OperationResult &result);
     void switchRequested(const QString &id, const QString &ref);
+    void loadingChanged(bool loading);
   protected:
     void resizeEvent(QResizeEvent *event) override;
   private:
     std::unique_ptr<Ui::HomePageCollaborationPage> ui;
     BackupService *m_service;
     oclero::qlementine::Switch *m_automatic;
-    oclero::qlementine::LoadingSpinner *m_spinner;
     QString m_id;
     quint64 m_generation{0}, m_context{0};
-    bool m_active{false}, m_connecting{false};
+    bool m_active{false}, m_connecting{false}, m_loading{false};
+    void setLoading(bool loading);
     QHash<QString, int> m_scrolls;
     bool current(const QString &id, quint64 generation, quint64 context) const;
     void connectRemote();
