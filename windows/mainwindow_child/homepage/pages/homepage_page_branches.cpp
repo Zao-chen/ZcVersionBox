@@ -51,7 +51,6 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     : QWidget(parent), ui(new Ui::HomePageBranchesPage), m_service(service)
 {
     ui->setupUi(this);
-    UiStyle::text(ui->listHint, UiStyle::FontRole::Caption, true);
     ui->branchList->setModel(&m_listModel);
     ui->branchList->setSpacing(2);
     m_refresh = UiStyle::action(this, "refreshBranchesAction", "刷新", "refresh");
@@ -156,7 +155,6 @@ void HomePageBranchesPage::populateList()
         if (branch.current) { auto font = item->font(); font.setBold(true); item->setFont(font); }
         (branch.remoteBranch ? cloud : local).append(item);
     }
-    m_listModel.appendRow(groupItem("我的方案"));
     for (auto *item : local) m_listModel.appendRow(item);
     if (!cloud.isEmpty())
     {
