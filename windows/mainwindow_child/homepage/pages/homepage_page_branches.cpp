@@ -116,11 +116,17 @@ public:
             painter->drawRoundedRect(QRectF(row).adjusted(.5, .5, -.5, -.5), 6, 6);
         }
 
-        const auto content = row.adjusted(12, 6, -36, -6);
+        const int leftX = row.left() + 12;
+        const int contentWidth = row.width() - 12 - 36;
         const auto mainFont = UiStyle::font(UiStyle::FontRole::Body);
         const auto captionFont = UiStyle::font(UiStyle::FontRole::Caption);
         const int mainHeight = QFontMetrics(mainFont).height();
         const int captionHeight = QFontMetrics(captionFont).height();
+        constexpr int lineSpacing = 4;
+        const int totalTextHeight = mainHeight + lineSpacing + captionHeight;
+        const int verticalPadding = qMax(4, (row.height() - totalTextHeight) / 2);
+        const int line1Y = row.y() + verticalPadding;
+        const int line2Y = line1Y + mainHeight + lineSpacing;
 
         const QString name = index.data(NameRole).toString();
         const bool isCurrent = index.data(CurrentRole).toBool();
@@ -137,17 +143,17 @@ public:
         const int statusBadgeWidth = !statusText.isEmpty() ? captionFm.horizontalAdvance(statusText) + 14 : 0;
         const int badgesWidth = (currentBadgeWidth ? currentBadgeWidth + 6 : 0) + statusBadgeWidth;
 
-        const int maxNameWidth = qMax(0, content.width() - badgesWidth - 8);
+        const int maxNameWidth = qMax(0, contentWidth - badgesWidth - 8);
         const QString elidedName = nameFm.elidedText(name, Qt::ElideRight, maxNameWidth);
         const int actualNameWidth = nameFm.horizontalAdvance(elidedName);
 
         painter->setFont(nameFont);
         painter->setPen(colors.text);
-        painter->drawText(QRect(content.x(), content.y(), actualNameWidth, mainHeight), Qt::AlignLeft | Qt::AlignVCenter, elidedName);
+        painter->drawText(QRect(leftX, line1Y, actualNameWidth, mainHeight), Qt::AlignLeft | Qt::AlignVCenter, elidedName);
 
-        int badgeX = content.x() + actualNameWidth + 8;
+        int badgeX = leftX + actualNameWidth + 8;
         constexpr int badgeH = 18;
-        const int badgeY = content.y() + (mainHeight - badgeH) / 2;
+        const int badgeY = line1Y + (mainHeight - badgeH) / 2;
 
         if (isCurrent)
         {
@@ -182,13 +188,12 @@ public:
             painter->drawText(badgeRect, Qt::AlignCenter, statusText);
         }
 
-        const int line2Y = content.y() + mainHeight + 4;
         painter->setFont(captionFont);
         painter->setPen(colors.secondary);
         const QString displayMessage = message.isEmpty() ? QStringLiteral("（无最新提交说明）") : message;
-        painter->drawText(QRect(content.x(), line2Y, content.width(), captionHeight),
+        painter->drawText(QRect(leftX, line2Y, contentWidth, captionHeight),
                           Qt::AlignLeft | Qt::AlignVCenter,
-                          captionFm.elidedText(displayMessage, Qt::ElideRight, content.width()));
+                          captionFm.elidedText(displayMessage, Qt::ElideRight, contentWidth));
 
         if (hovered || selected)
         {
