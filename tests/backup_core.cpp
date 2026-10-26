@@ -3759,6 +3759,80 @@ class BackupCoreRegression : public QObject
         QVERIFY(!repository.initialize().success);
         QCOMPARE(commands, 0);
     }
+    void startupPublishesCatalogBeforeRepositoryAudit()
+    {
+        TestDirectory dir;
+        const auto paths = pathsIn(dir);
+        const auto source = dir.path() + "/source.txt";
+        writeFile(source, "keep\n");
+        QString id;
+        {
+            TestBackupService seed(paths);
+            CHECK_OK(seed.addLocal(source));
+            id = seed.idForSource(source);
+        }
+        const auto gate = std::make_shared<ScanGate>();
+        BackupDependencies dependencies;
+        dependencies.git = [gate](const QString &repo, const QStringList &args, const GitOptions &options)
+        {
+            if (gate->hold.exchange(false))
+            {
+                gate->entered.release();
+                gate->resume.acquire();
+            }
+            return runGit(repo, args, options);
+        };
+        BackupService service(paths, nullptr, nullptr, dependencies);
+        const auto releaseOnFailure = qScopeGuard([&] { gate->resume.release(); });
+        QSignalSpy ready(&service, &BackupService::ready);
+        QTRY_VERIFY(gate->entered.available() > 0);
+        QTRY_VERIFY(service.contains(id));
+        QVERIFY(service.isReloading());
+        QVERIFY(!service.isReady());
+        QCOMPARE(ready.size(), 0);
+        QCOMPARE(service.trackedItems().first().sourcePath, source);
+        const auto history = awaitBackup<BackupResult<QVector<Revision>>>([&](auto done) { service.history(id, this, done); });
+        CHECK_OK(history.result);
+        QCOMPARE(history.value.size(), 1);
+        QVERIFY(!service.isReady());
+        gate->resume.release();
+        settle(service);
+        QVERIFY(service.isReady());
+        QCOMPARE(ready.size(), 1);
+        QCOMPARE(readFile(source), QByteArray("keep\n"));
+    }
+    void startupReadsCatalogWhileAnotherProcessHoldsWriterLock()
+    {
+        TestDirectory dir;
+        const auto paths = pathsIn(dir);
+        const auto source = dir.path() + "/source.txt";
+        writeFile(source, "keep\n");
+        QString id;
+        {
+            TestBackupService seed(paths);
+            CHECK_OK(seed.addLocal(source));
+            id = seed.idForSource(source);
+        }
+        QLockFile lock(paths.backupRoot + "/.writer.lock");
+        QVERIFY(lock.tryLock(0));
+        BackupService service(paths);
+        QSignalSpy reloads(&service, &BackupService::reloadFinished);
+        settle(service);
+        QVERIFY(service.contains(id));
+        QVERIFY(!service.isReady());
+        QCOMPARE(reloads.size(), 1);
+        QVERIFY(qvariant_cast<OperationResult>(reloads.first().first()).retryable);
+        QVERIFY(service.lastReloadResult().retryable);
+        lock.unlock();
+        const auto another = dir.path() + "/another.txt";
+        writeFile(another, "another\n");
+        CHECK_OK(awaitBackup<OperationResult>([&](auto done) { service.addLocal(another, this, done); }));
+        QVERIFY(!service.isReady());
+        CHECK_OK(awaitBackup<OperationResult>([&](auto done) { service.reload(this, done); }));
+        QVERIFY(service.isReady());
+        QCOMPARE(service.trackedItems().size(), 2);
+        QCOMPARE(readFile(source), QByteArray("keep\n"));
+    }
     void monitorStartDoesNotReloadItsOwnLock()
     {
         TestDirectory dir;

@@ -51,6 +51,7 @@ class BackupService::Private
     int foregroundStreak{0}, reloadCount{0};
     bool reportedBusy{false};
     bool loaded{false}, stopping{false};
+    OperationResult lastReloadResult;
     QPointer<QObject> aiContext;
     std::function<void()> cancelAi;
 
@@ -206,11 +207,6 @@ class BackupService::Private
     {
         if (stopping)
             return;
-        if (!loaded && result.success)
-        {
-            loaded = true;
-            emit owner->ready();
-        }
         emit owner->taskFinished(job->task, job->id, result);
         foregroundStreak = job->priority == BackupTaskPriority::Background || backgroundQueue.isEmpty()
                                ? 0
@@ -223,11 +219,20 @@ class BackupService::Private
     template <class T>
     BackupTaskId submit(const QString &id, QObject *context, Reply<T> callback,
                         std::function<BackupResult<T>(BackupEngine &)> action, bool notify = false,
-                        BackupTaskPriority priority = BackupTaskPriority::Foreground)
+                        BackupTaskPriority priority = BackupTaskPriority::Foreground, bool catalogFirst = false)
     {
-        return schedule(id, context, [this, action = std::move(action), callback = std::move(callback), notify](const JobPtr &job)
-                        { QMetaObject::invokeMethod(worker, [this, job, action, callback, notify]
+        return schedule(id, context, [this, action = std::move(action), callback = std::move(callback), notify, catalogFirst](const JobPtr &job)
+                        { QMetaObject::invokeMethod(worker, [this, job, action, callback, notify, catalogFirst]
                                                     {
+                // Startup lists must not wait for the writer lock or every repository audit.
+                if (catalogFirst)
+                {
+                    const auto snapshot = engine->beginRead(job->cancelled);
+                    const auto records = engine->records();
+                    engine->end();
+                    if (snapshot.success)
+                        QMetaObject::invokeMethod(owner, [this, records] { publish(records); }, Qt::QueuedConnection);
+                }
                 BackupResult<T> reply;
                 reply.result = begin(job);
                 if (reply.result.success)
@@ -303,11 +308,11 @@ class BackupService::Private
     }
     BackupTaskId mutate(const QString &id, QObject *context, Completion callback,
                         std::function<OperationResult(BackupEngine &)> action, bool notify = true,
-                        BackupTaskPriority priority = BackupTaskPriority::Foreground)
+                        BackupTaskPriority priority = BackupTaskPriority::Foreground, bool catalogFirst = false)
     {
         return submit<bool>(id, context, [callback](const BackupResult<bool> &reply)
                             { if (callback) callback(reply.result); }, [action](BackupEngine &e)
-                            { return BackupResult<bool>{action(e), false}; }, notify, priority);
+                            { return BackupResult<bool>{action(e), false}; }, notify, priority, catalogFirst);
     }
     void finishBackup(const JobPtr &job, const std::shared_ptr<PendingBackup> &work, const QString &message, Completion callback)
     {
@@ -420,6 +425,7 @@ QString BackupService::idForSource(const QString &source) const
 bool BackupService::contains(const QString &id) const { return d->cache.contains(id); }
 bool BackupService::isReady() const { return d->loaded; }
 bool BackupService::isReloading() const { return d->reloadCount > 0; }
+OperationResult BackupService::lastReloadResult() const { return d->lastReloadResult; }
 bool BackupService::isBusy() const { return d->busy(); }
 quint64 BackupService::repositoryGeneration(const QString &id) const { return contains(id) ? d->cache.value(id).generation : 0; }
 BackupSyncState BackupService::syncState(const QString &id) const { return contains(id) ? d->cache[id].state : BackupSyncState::NeedsAttention; }
@@ -429,13 +435,22 @@ BackupTaskId BackupService::reload(QObject *c, Completion f, BackupReloadOptions
     ++d->reloadCount;
     const QPointer<QObject> context(c ? c : this);
     // Load accounting belongs to the service even if the caller is destroyed.
-    return d->mutate({}, this, [this, context, f, options](const OperationResult &result)
+    const auto task = d->mutate({}, this, [this, context, f, options](const OperationResult &result)
                      {
+        // Only a completed startup audit enables automatic backup and synchronization.
+        if (!d->loaded && result.success)
+        {
+            d->loaded = true;
+            emit ready();
+        }
         --d->reloadCount;
+        d->lastReloadResult = result;
         emit reloadFinished(result);
         if (options.notify && (!result.success || !result.warning.isEmpty())) emit notification(result);
         if (context && f) f(result); }, [](BackupEngine &e)
-                     { return e.reload(); }, false, options.priority);
+                     { return e.reload(); }, false, options.priority, !d->loaded);
+    emit reloadStarted();
+    return task;
 }
 BackupTaskId BackupService::addLocal(const QString &p, QObject *c, Completion f)
 {

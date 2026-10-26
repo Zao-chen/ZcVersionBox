@@ -25,6 +25,7 @@ class BackupService : public QObject
     bool contains(const QString &id) const;
     bool isReady() const;
     bool isReloading() const;
+    OperationResult lastReloadResult() const;
     bool isBusy() const;
     quint64 repositoryGeneration(const QString &id) const;
     BackupSyncState syncState(const QString &id) const;
@@ -102,6 +103,7 @@ class BackupService : public QObject
     void localVersionsChanged(const QString &id);
     void syncEditingChanged(const QString &id);
     void ready();
+    void reloadStarted();
     void reloadFinished(const OperationResult &result);
     void trackedItemsChanged();
     void sourceChanged(const QString &id);
