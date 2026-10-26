@@ -3142,20 +3142,19 @@ class Regression : public QObject
         QCOMPARE(historyTable->model()->rowCount(), 8);
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
-        // Double-clicking a 方案 in the list opens its history in the same history page.
+        // Clicking a 方案 row selects it and stays on the list.
         QVERIFY(service.createBranch(id, "全部共享", topic).success);
         window.navigate({PageId::Branches, id}); settle(service);
         auto *page = window.findChild<HomePageBranchesPage *>(); QVERIFY(page && page->isVisible());
         auto *list = page->findChild<QListView *>("branchList"); QVERIFY(list && list->isVisible());
         QVERIFY(selectBranch(page, "refs/heads/试验方案"));
         emit list->activated(list->currentIndex()); settle(service);
-        QVERIFY(history->isVisible());
-        QCOMPARE(scope->currentData().toString(), QString("refs/heads/试验方案"));
-        QCOMPARE(historyTable->model()->rowCount(), 8);
+        QVERIFY(page->isVisible());
+        QVERIFY(list->isVisible());
+        QVERIFY(window.findChild<QToolButton *>("branchesTab")->isChecked());
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
         // The 方案 tab without a branch shows the list of all branches as a normal tab page.
-        window.navigate({PageId::Branches, id}); settle(service);
         QVERIFY(list->isVisible());
         QVERIFY(window.findChild<QToolButton *>("branchesTab")->isChecked());
         QVERIFY(!window.findChild<QToolButton *>("returnHistoryButton")->isVisible());

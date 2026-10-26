@@ -278,13 +278,6 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     connect(ui->listCreate, &QPushButton::clicked, this, [this] { createFrom(m_id); });
     connect(ui->listOperations, &QPushButton::clicked, this, [this] { showOperations(); });
     connect(ui->branchList->selectionModel(), &QItemSelectionModel::currentChanged, this, &HomePageBranchesPage::updateActions);
-    // Viewing one 方案 reuses the history page's scope filter instead of a separate page.
-    connect(ui->branchList, &QListView::activated, this, [this](const QModelIndex &index)
-    {
-        const auto ref = index.data(RefRole).toString();
-        if (ref.isEmpty()) return;
-        Route route{PageId::History, m_id}; route.branchRef = ref; emit navigate(route);
-    });
     connect(ui->cancelTask, &QPushButton::clicked, this, [this] { if (m_task) m_service->cancel(m_task); });
     connect(service, &BackupService::repositoryChanged, this, [this](const QString &id)
     {
@@ -381,7 +374,7 @@ void HomePageBranchesPage::populateList()
         item->setData(branch.message, MessageRole);
         item->setData(false, IsGroupRole);
         item->setData(displayName(branch) + "，" + status, Qt::AccessibleTextRole);
-        item->setToolTip("双击查看这个方案的历史版本；右键或点击右侧“更多”按钮进行操作");
+        item->setToolTip("右键或点击右侧“更多”按钮进行操作");
         item->setEditable(false);
         (branch.remoteBranch ? cloud : local).append(item);
     }
