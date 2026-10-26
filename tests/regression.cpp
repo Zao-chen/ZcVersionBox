@@ -113,17 +113,11 @@ void openHistoryMenu(QTableView *table, int row)
     QContextMenuEvent context(QContextMenuEvent::Mouse, point, table->viewport()->mapToGlobal(point));
     QApplication::sendEvent(table->viewport(), &context);
 }
-bool selectBranch(QWidget *page, const QString &ref)
+QWidget *branchRow(QWidget *page, const QString &ref)
 {
-    auto *list = page->findChild<QListView *>("branchList");
-    if (!list) return false;
-    for (int row = 0; row < list->model()->rowCount(); ++row)
-        if (list->model()->index(row, 0).data(Qt::UserRole + 1).toString() == ref)
-        {
-            list->setCurrentIndex(list->model()->index(row, 0));
-            return true;
-        }
-    return false;
+    for (auto *row : page->findChildren<QWidget *>("branchRow"))
+        if (row->property("ref").toString() == ref) return row;
+    return nullptr;
 }
 void hoverHistoryAction(QTableView *table, int row, int action)
 {
@@ -2878,8 +2872,8 @@ class Regression : public QObject
         HomePageBranchesPage page(&service);
         page.resize(1080, 700); page.setAttribute(Qt::WA_DontShowOnScreen); page.show();
         page.setBackup(id); settle(service);
-        QVERIFY(selectBranch(&page, "refs/heads/topic"));
-        auto *operations = page.findChild<QPushButton *>("listOperations"); QVERIFY(operations && operations->isEnabled());
+        auto *row = branchRow(&page, "refs/heads/topic"); QVERIFY(row);
+        auto *operations = row->findChild<QToolButton *>("branchMore"); QVERIFY(operations && operations->isEnabled());
         QSignalSpy notifications(&page, &HomePageBranchesPage::notification);
         bool confirmed = false, updated = false;
         QTimer responder;
@@ -2947,8 +2941,8 @@ class Regression : public QObject
         HomePageBranchesPage page(&service);
         page.resize(1080, 700); page.setAttribute(Qt::WA_DontShowOnScreen); page.show();
         page.setBackup(id); settle(service);
-        QVERIFY(selectBranch(&page, "refs/heads/topic"));
-        auto *operations = page.findChild<QPushButton *>("listOperations"); QVERIFY(operations && operations->isEnabled());
+        auto *row = branchRow(&page, "refs/heads/topic"); QVERIFY(row);
+        auto *operations = row->findChild<QToolButton *>("branchMore"); QVERIFY(operations && operations->isEnabled());
         int dialogs = 0;
         QTimer responder; responder.setInterval(10);
         connect(&responder, &QTimer::timeout, &page, [&] {
@@ -3041,8 +3035,8 @@ class Regression : public QObject
         window.navigate({PageId::Branches, id}); settle(service);
         auto *branches = window.findChild<HomePageBranchesPage *>(); QVERIFY(branches && branches->isVisible());
         QVERIFY(!branches->findChild<QAction *>("fetchBranchesAction"));
-        QVERIFY(selectBranch(branches, "refs/heads/topic"));
-        auto *operations = branches->findChild<QPushButton *>("listOperations"); QVERIFY(operations && operations->isEnabled());
+        auto *topicRow = branchRow(branches, "refs/heads/topic"); QVERIFY(topicRow);
+        auto *operations = topicRow->findChild<QToolButton *>("branchMore"); QVERIFY(operations && operations->isEnabled());
         QStringList menuItems;
         QTimer closer;
         closer.setInterval(10);
@@ -3057,7 +3051,7 @@ class Regression : public QObject
         // Bound a failed popup detection so this test cannot leave a modal menu open.
         QTimer::singleShot(5000, &window, [&] { if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget())) menu->close(); });
         closer.start(); operations->click(); closer.stop();
-        QCOMPARE(menuItems, QStringList({"重命名…", "删除…", "高级"}));
+        QCOMPARE(menuItems, QStringList({"查看历史", "切换到此方案…", "从此方案新建…", "与其他方案比较…", "合并到正在使用的方案…", "重命名…", "删除…"}));
     }
     void collaborationConnectionUsesExplicitSaveAndRejectsStaleReply()
     {
@@ -3142,29 +3136,26 @@ class Regression : public QObject
         QCOMPARE(historyTable->model()->rowCount(), 8);
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
-        // Clicking a 方案 row selects it and stays on the list.
+        // A single click on a 方案 row stays on the list; double-click opens its history without switching.
         QVERIFY(service.createBranch(id, "全部共享", topic).success);
         window.navigate({PageId::Branches, id}); settle(service);
         auto *page = window.findChild<HomePageBranchesPage *>(); QVERIFY(page && page->isVisible());
-        auto *list = page->findChild<QListView *>("branchList"); QVERIFY(list && list->isVisible());
-        QVERIFY(selectBranch(page, "refs/heads/试验方案"));
-        emit list->activated(list->currentIndex()); settle(service);
+        auto *trial = branchRow(page, "refs/heads/试验方案"); QVERIFY(trial && trial->isVisible());
+        QTest::mouseClick(trial, Qt::LeftButton, Qt::NoModifier, QPoint(40, trial->height() / 2)); settle(service);
         QVERIFY(page->isVisible());
-        QVERIFY(list->isVisible());
         QVERIFY(window.findChild<QToolButton *>("branchesTab")->isChecked());
+        QTest::mouseDClick(trial, Qt::LeftButton, Qt::NoModifier, QPoint(40, trial->height() / 2)); settle(service);
+        QVERIFY(history->isVisible());
+        QCOMPARE(scope->currentData().toString(), QString("refs/heads/试验方案"));
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
-        // The 方案 tab without a branch shows the list of all branches as a normal tab page.
-        QVERIFY(list->isVisible());
+        // The 方案 tab lists every branch as a normal tab page; the current one offers no switch.
+        window.navigate({PageId::Branches, id}); settle(service);
         QVERIFY(window.findChild<QToolButton *>("branchesTab")->isChecked());
         QVERIFY(!window.findChild<QToolButton *>("returnHistoryButton")->isVisible());
-        QStringList listed;
-        for (int row = 0; row < list->model()->rowCount(); ++row) listed.append(list->model()->index(row, 0).data(Qt::UserRole + 1).toString());
-        QVERIFY(listed.contains("refs/heads/main") && listed.contains("refs/heads/试验方案") && listed.contains("refs/heads/全部共享"));
-        QCOMPARE(list->currentIndex().data(Qt::UserRole + 1).toString(), QString("refs/heads/试验方案"));
-        QVERIFY(selectBranch(page, "refs/heads/main"));
-        QVERIFY(!page->findChild<QPushButton *>("listUse")->isEnabled());
-        QCOMPARE(page->findChild<QPushButton *>("listUse")->text(), QString("正在使用"));
+        QVERIFY(branchRow(page, "refs/heads/main") && branchRow(page, "refs/heads/试验方案") && branchRow(page, "refs/heads/全部共享"));
+        QVERIFY(!branchRow(page, "refs/heads/main")->findChild<QPushButton *>("branchUse"));
+        QVERIFY(branchRow(page, "refs/heads/试验方案")->findChild<QPushButton *>("branchUse"));
         // The header menu button lists local branches and leads to the full list.
         window.navigate({PageId::History, id}); settle(service);
         auto *selector = window.findChild<QToolButton *>("branchSelector"); QVERIFY(selector && selector->isVisible());
@@ -3173,7 +3164,7 @@ class Regression : public QObject
         for (auto *action : selector->menu()->actions()) if (!action->isSeparator()) entries.append(action->text());
         QCOMPARE(entries, QStringList({"main", "全部共享", "试验方案", "新建方案…", "管理全部方案"}));
         selector->menu()->actions().last()->trigger(); settle(service);
-        QVERIFY(list->isVisible());
+        QVERIFY(page->isVisible());
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
     }

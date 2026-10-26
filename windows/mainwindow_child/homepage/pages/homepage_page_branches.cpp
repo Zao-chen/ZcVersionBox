@@ -1,34 +1,20 @@
 #include "homepage_page_branches.h"
+#include "homepage_page_branches_row.h"
 #include "ui_homepage_page_branches.h"
 #include "windows/mainwindow_dialog.h"
 #include "windows/mainwindow_presentation.h"
 #include <QCheckBox>
 #include <QComboBox>
-#include <QContextMenuEvent>
 #include <QDialogButtonBox>
-#include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
-#include <QMouseEvent>
-#include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QSignalBlocker>
-#include <QStyledItemDelegate>
 #include <QVBoxLayout>
-#include <utility>
 
 namespace
 {
-constexpr int RefRole = Qt::UserRole + 1;
-constexpr int NameRole = Qt::UserRole + 2;
-constexpr int CurrentRole = Qt::UserRole + 3;
-constexpr int RemoteRole = Qt::UserRole + 4;
-constexpr int StatusRole = Qt::UserRole + 5;
-constexpr int MessageRole = Qt::UserRole + 6;
-constexpr int IsGroupRole = Qt::UserRole + 7;
-
 QDialogButtonBox *dialogButtons(UiDialog::Dialog &dialog)
 {
     auto *buttons = dialog.buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -50,234 +36,27 @@ QString displayName(const BranchInfo &branch)
 {
     return branch.remoteBranch && branch.remoteRef.startsWith("refs/heads/") ? branch.remoteRef.mid(11) : branch.name;
 }
-QStandardItem *groupItem(const QString &text)
+QLabel *sectionLabel(const QString &text, QWidget *parent)
 {
-    auto *item = new QStandardItem(text);
-    item->setFlags(Qt::NoItemFlags);
-    item->setData(true, IsGroupRole);
-    item->setData(text, NameRole);
-    return item;
+    auto *label = new QLabel(text, parent);
+    label->setObjectName("branchSection");
+    label->setContentsMargins(14, 10, 0, 2);
+    UiStyle::text(label, UiStyle::FontRole::Caption, true);
+    return label;
 }
-
-class BranchItemDelegate : public QStyledItemDelegate
-{
-public:
-    using MenuHandler = std::function<void(const QModelIndex &, const QPoint &)>;
-    BranchItemDelegate(QListView *view, MenuHandler onMenu)
-        : QStyledItemDelegate(view), m_view(view), m_menuHandler(std::move(onMenu))
-    {
-        view->viewport()->installEventFilter(this);
-        view->installEventFilter(this);
-    }
-
-    QRect menuRect(const QRect &row) const
-    {
-        return QRect(row.right() - 32, row.center().y() - 14, 28, 28);
-    }
-
-    QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &index) const override
-    {
-        if (index.data(IsGroupRole).toBool())
-            return {0, UiStyle::rowHeight(32, UiStyle::font(UiStyle::FontRole::Caption), false)};
-        return {0, UiStyle::rowHeight(58, UiStyle::font(UiStyle::FontRole::Body), true)};
-    }
-
-    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
-    {
-        painter->save();
-        painter->setRenderHint(QPainter::Antialiasing);
-        const auto colors = UiStyle::colors();
-
-        if (index.data(IsGroupRole).toBool())
-        {
-            const auto font = UiStyle::font(UiStyle::FontRole::Caption);
-            painter->setFont(font);
-            painter->setPen(colors.secondary);
-            const auto rect = option.rect.adjusted(12, 0, -12, 0);
-            painter->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter, index.data(NameRole).toString());
-            painter->restore();
-            return;
-        }
-
-        const auto row = option.rect.adjusted(0, 2, 0, -2);
-        const bool selected = option.state.testFlag(QStyle::State_Selected);
-        const bool hovered = option.state.testFlag(QStyle::State_MouseOver);
-
-        if (selected || hovered)
-        {
-            painter->setPen(Qt::NoPen);
-            painter->setBrush(selected ? colors.selected : colors.hover);
-            painter->drawRoundedRect(row, 6, 6);
-        }
-        if (UiStyle::isKeyboardNavigationActive() && option.state.testFlag(QStyle::State_HasFocus))
-        {
-            painter->setBrush(Qt::NoBrush);
-            painter->setPen(colors.secondary);
-            painter->drawRoundedRect(QRectF(row).adjusted(.5, .5, -.5, -.5), 6, 6);
-        }
-
-        const int leftX = row.left() + 12;
-        const int contentWidth = row.width() - 12 - 36;
-        const auto mainFont = UiStyle::font(UiStyle::FontRole::Body);
-        const auto captionFont = UiStyle::font(UiStyle::FontRole::Caption);
-        const int mainHeight = QFontMetrics(mainFont).height();
-        const int captionHeight = QFontMetrics(captionFont).height();
-        constexpr int lineSpacing = 4;
-        const int totalTextHeight = mainHeight + lineSpacing + captionHeight;
-        const int verticalPadding = qMax(4, (row.height() - totalTextHeight) / 2);
-        const int line1Y = row.y() + verticalPadding;
-        const int line2Y = line1Y + mainHeight + lineSpacing;
-
-        const QString name = index.data(NameRole).toString();
-        const bool isCurrent = index.data(CurrentRole).toBool();
-        const QString statusText = index.data(StatusRole).toString();
-        const QString message = index.data(MessageRole).toString();
-
-        auto nameFont = mainFont;
-        if (isCurrent)
-            nameFont.setWeight(QFont::DemiBold);
-        const QFontMetrics nameFm(nameFont);
-        const QFontMetrics captionFm(captionFont);
-
-        const int currentBadgeWidth = isCurrent ? captionFm.horizontalAdvance("正在使用") + 22 : 0;
-        const int statusBadgeWidth = !statusText.isEmpty() ? captionFm.horizontalAdvance(statusText) + 14 : 0;
-        const int badgesWidth = (currentBadgeWidth ? currentBadgeWidth + 6 : 0) + statusBadgeWidth;
-
-        const int maxNameWidth = qMax(0, contentWidth - badgesWidth - 8);
-        const QString elidedName = nameFm.elidedText(name, Qt::ElideRight, maxNameWidth);
-        const int actualNameWidth = nameFm.horizontalAdvance(elidedName);
-
-        painter->setFont(nameFont);
-        painter->setPen(colors.text);
-        painter->drawText(QRect(leftX, line1Y, actualNameWidth, mainHeight), Qt::AlignLeft | Qt::AlignVCenter, elidedName);
-
-        int badgeX = leftX + actualNameWidth + 8;
-        constexpr int badgeH = 18;
-        const int badgeY = line1Y + (mainHeight - badgeH) / 2;
-
-        if (isCurrent)
-        {
-            const QRect badgeRect(badgeX, badgeY, currentBadgeWidth, badgeH);
-            painter->setPen(Qt::NoPen);
-            auto bg = colors.added;
-            bg.setAlpha(36);
-            painter->setBrush(bg);
-            painter->drawRoundedRect(badgeRect, 4, 4);
-
-            constexpr int dotSize = 5;
-            const int dotX = badgeRect.x() + 6;
-            const int dotY = badgeRect.y() + (badgeH - dotSize) / 2;
-            painter->setBrush(colors.added);
-            painter->drawEllipse(dotX, dotY, dotSize, dotSize);
-
-            painter->setFont(captionFont);
-            painter->setPen(colors.added);
-            painter->drawText(QRect(dotX + dotSize + 4, badgeRect.y(), badgeRect.width() - (dotSize + 10), badgeRect.height()),
-                              Qt::AlignLeft | Qt::AlignVCenter, "正在使用");
-            badgeX += currentBadgeWidth + 6;
-        }
-
-        if (!statusText.isEmpty())
-        {
-            const QRect badgeRect(badgeX, badgeY, statusBadgeWidth, badgeH);
-            painter->setPen(Qt::NoPen);
-            painter->setBrush(colors.selected);
-            painter->drawRoundedRect(badgeRect, 4, 4);
-            painter->setFont(captionFont);
-            painter->setPen(colors.secondary);
-            painter->drawText(badgeRect, Qt::AlignCenter, statusText);
-        }
-
-        painter->setFont(captionFont);
-        painter->setPen(colors.secondary);
-        const QString displayMessage = message.isEmpty() ? QStringLiteral("（无最新提交说明）") : message;
-        painter->drawText(QRect(leftX, line2Y, contentWidth, captionHeight),
-                          Qt::AlignLeft | Qt::AlignVCenter,
-                          captionFm.elidedText(displayMessage, Qt::ElideRight, contentWidth));
-
-        if (hovered || selected)
-        {
-            const auto mRect = menuRect(row);
-            UiStyle::icon("more").paint(painter, QRect(mRect.center() - QPoint(8, 8), QSize(16, 16)));
-        }
-
-        painter->restore();
-    }
-
-protected:
-    bool eventFilter(QObject *watched, QEvent *event) override
-    {
-        if (watched == m_view->viewport())
-        {
-            if (event->type() == QEvent::MouseButtonPress)
-            {
-                const auto *mouse = static_cast<QMouseEvent *>(event);
-                const auto index = m_view->indexAt(mouse->position().toPoint());
-                if (mouse->button() == Qt::LeftButton && index.isValid() && !index.data(IsGroupRole).toBool())
-                {
-                    if (menuRect(m_view->visualRect(index)).contains(mouse->position().toPoint()))
-                    {
-                        m_pressedIndex = index;
-                        return true;
-                    }
-                }
-            }
-            else if (event->type() == QEvent::MouseButtonRelease && m_pressedIndex.isValid())
-            {
-                const auto *mouse = static_cast<QMouseEvent *>(event);
-                const auto index = std::exchange(m_pressedIndex, {});
-                if (index.isValid() && menuRect(m_view->visualRect(index)).contains(mouse->position().toPoint()))
-                {
-                    if (m_menuHandler)
-                        m_menuHandler(index, mouse->globalPosition().toPoint());
-                    return true;
-                }
-            }
-        }
-        if ((watched == m_view->viewport() || watched == m_view) && event->type() == QEvent::ContextMenu)
-        {
-            const auto *context = static_cast<QContextMenuEvent *>(event);
-            const auto index = context->reason() == QContextMenuEvent::Keyboard ? m_view->currentIndex() : m_view->indexAt(context->pos());
-            if (index.isValid() && !index.data(IsGroupRole).toBool())
-            {
-                const auto pos = context->reason() == QContextMenuEvent::Keyboard
-                    ? m_view->viewport()->mapToGlobal(m_view->visualRect(index).bottomRight())
-                    : context->globalPos();
-                if (m_menuHandler)
-                    m_menuHandler(index, pos);
-                return true;
-            }
-        }
-        return QStyledItemDelegate::eventFilter(watched, event);
-    }
-
-private:
-    QListView *m_view;
-    MenuHandler m_menuHandler;
-    mutable QPersistentModelIndex m_pressedIndex;
-};
 }
 
 HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *parent)
     : QWidget(parent), ui(new Ui::HomePageBranchesPage), m_service(service)
 {
     ui->setupUi(this);
-    UiStyle::flatView(ui->branchList);
-    auto *delegate = new BranchItemDelegate(ui->branchList, [this](const QModelIndex &index, const QPoint &pos)
-    {
-        ui->branchList->setCurrentIndex(index);
-        showOperations(pos);
-    });
-    ui->branchList->setItemDelegate(delegate);
-    ui->branchList->setModel(&m_listModel);
-    ui->branchList->setSpacing(4);
+    ui->branchScroll->viewport()->setAutoFillBackground(false);
+    ui->branchList->setAutoFillBackground(false);
+    ui->listCreate->setIcon(UiStyle::icon("add"));
     m_refresh = UiStyle::action(this, "refreshBranchesAction", "刷新", "refresh");
     m_refresh->setProperty("iconOnly", true);
     connect(m_refresh, &QAction::triggered, this, &HomePageBranchesPage::refresh);
-    connect(ui->listUse, &QPushButton::clicked, this, [this] { useBranch(selectedBranch()); });
     connect(ui->listCreate, &QPushButton::clicked, this, [this] { createFrom(m_id); });
-    connect(ui->listOperations, &QPushButton::clicked, this, [this] { showOperations(); });
-    connect(ui->branchList->selectionModel(), &QItemSelectionModel::currentChanged, this, &HomePageBranchesPage::updateActions);
     connect(ui->cancelTask, &QPushButton::clicked, this, [this] { if (m_task) m_service->cancel(m_task); });
     connect(service, &BackupService::repositoryChanged, this, [this](const QString &id)
     {
@@ -288,13 +67,6 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
 HomePageBranchesPage::~HomePageBranchesPage() = default;
 QList<QAction *> HomePageBranchesPage::toolbarActions() const { return {m_refresh}; }
 QWidget *HomePageBranchesPage::dialogOwner() const { return const_cast<HomePageBranchesPage *>(this); }
-BranchInfo HomePageBranchesPage::selectedBranch() const
-{
-    const auto ref = ui->branchList->currentIndex().data(RefRole).toString();
-    for (const auto &branch : m_snapshot.branches)
-        if (!ref.isEmpty() && branch.ref == ref) return branch;
-    return {};
-}
 BranchRequest HomePageBranchesPage::request(const BranchInfo &branch) const
 {
     BranchRequest result;
@@ -310,7 +82,7 @@ void HomePageBranchesPage::setBackup(const QString &id)
     {
         ++m_generation;
         m_snapshot = {};
-        m_listModel.clear();
+        clearList();
     }
     m_id = id;
     refresh();
@@ -338,64 +110,62 @@ void HomePageBranchesPage::setLoading(bool loading)
         m_loading = loading;
         emit loadingChanged(loading);
     }
-    if (loading && m_listModel.rowCount() == 0)
+    if (loading && m_rows.isEmpty()) clearList("正在读取方案…");
+    else if (!loading && m_snapshot.branches.isEmpty()) clearList();
+}
+void HomePageBranchesPage::clearList(const QString &placeholder)
+{
+    m_rows.clear();
+    while (auto *item = ui->branchRows->takeAt(0))
     {
-        auto *item = new QStandardItem("正在读取方案…");
-        item->setFlags(Qt::NoItemFlags);
-        item->setData(true, IsGroupRole);
-        item->setData("正在读取方案…", NameRole);
-        m_listModel.appendRow(item);
+        if (auto *widget = item->widget()) widget->deleteLater();
+        delete item;
     }
-    else if (!loading && m_snapshot.branches.isEmpty())
-        m_listModel.clear();
+    if (placeholder.isEmpty()) return;
+    ui->branchRows->addWidget(sectionLabel(placeholder, ui->branchList));
+    ui->branchRows->addStretch(1);
 }
 void HomePageBranchesPage::populateList()
 {
-    const auto previous = ui->branchList->currentIndex().data(RefRole).toString();
-    m_listModel.clear();
-    QList<QStandardItem *> local, cloud;
+    const auto *focused = qobject_cast<HomePageBranchRow *>(focusWidget());
+    const auto focusedRef = focused ? focused->branch().ref : QString();
+    clearList();
+    QVector<BranchInfo> current, local, cloud;
     for (const auto &branch : m_snapshot.branches)
     {
         if (isLinkedRemote(branch, m_snapshot.branches)) continue;
-        QString status;
-        if (branch.remoteBranch) status = "仅在云端，可加入";
-        else status = (branch.current ? QStringLiteral("正在使用 · ") : QString()) + (branch.upstream.isEmpty() ? "仅本机" : "已共享");
-
-        QString badgeText;
-        if (branch.remoteBranch) badgeText = "可加入";
-        else badgeText = branch.upstream.isEmpty() ? "仅本机" : "已共享";
-
-        auto *item = new QStandardItem(displayName(branch));
-        item->setData(branch.ref, RefRole);
-        item->setData(displayName(branch), NameRole);
-        item->setData(branch.current, CurrentRole);
-        item->setData(branch.remoteBranch, RemoteRole);
-        item->setData(badgeText, StatusRole);
-        item->setData(branch.message, MessageRole);
-        item->setData(false, IsGroupRole);
-        item->setData(displayName(branch) + "，" + status, Qt::AccessibleTextRole);
-        item->setToolTip("右键或点击右侧“更多”按钮进行操作");
-        item->setEditable(false);
-        (branch.remoteBranch ? cloud : local).append(item);
+        (branch.current ? current : branch.remoteBranch ? cloud : local).append(branch);
     }
-    for (auto *item : local) m_listModel.appendRow(item);
-    if (!cloud.isEmpty())
+    HomePageBranchRow *restore = nullptr;
+    const auto addSection = [&](const QString &title, const QVector<BranchInfo> &branches)
     {
-        m_listModel.appendRow(groupItem("云端其他方案"));
-        for (auto *item : cloud) m_listModel.appendRow(item);
-    }
-    QModelIndex select;
-    for (int row = 0; row < m_listModel.rowCount(); ++row)
-    {
-        const auto index = m_listModel.index(row, 0);
-        const auto ref = index.data(RefRole).toString();
-        if (ref.isEmpty()) continue;
-        if (ref == previous || (!select.isValid() && previous.isEmpty() && ref == m_snapshot.context.ref)) select = index;
-    }
-    if (!select.isValid())
-        for (int row = 0; row < m_listModel.rowCount() && !select.isValid(); ++row)
-            if (!m_listModel.index(row, 0).data(RefRole).toString().isEmpty()) select = m_listModel.index(row, 0);
-    ui->branchList->setCurrentIndex(select);
+        if (branches.isEmpty()) return;
+        ui->branchRows->addWidget(sectionLabel(title, ui->branchList));
+        for (const auto &branch : branches)
+        {
+            auto *row = new HomePageBranchRow(branch, displayName(branch), ui->branchList);
+            connect(row, &HomePageBranchRow::useRequested, this, [this, branch] { useBranch(branch); });
+            connect(row, &HomePageBranchRow::historyRequested, this, [this, branch] { showHistory(branch); });
+            connect(row, &HomePageBranchRow::menuRequested, this, [this, branch](const QPoint &pos) { showOperations(branch, pos); });
+            connect(row, &HomePageBranchRow::stepRequested, this, [this, row](int delta)
+            {
+                const auto next = m_rows.indexOf(row) + delta;
+                if (next >= 0 && next < m_rows.size())
+                {
+                    m_rows[next]->setFocus(Qt::TabFocusReason);
+                    ui->branchScroll->ensureWidgetVisible(m_rows[next]);
+                }
+            });
+            if (branch.ref == focusedRef) restore = row;
+            ui->branchRows->addWidget(row);
+            m_rows.append(row);
+        }
+    };
+    addSection("正在使用", current);
+    addSection("其他方案", local);
+    addSection("云端方案（尚未加入）", cloud);
+    ui->branchRows->addStretch(1);
+    if (restore) restore->setFocus(Qt::OtherFocusReason);
 }
 void HomePageBranchesPage::complete(const OperationResult &result, bool reload)
 {
@@ -407,41 +177,44 @@ void HomePageBranchesPage::complete(const OperationResult &result, bool reload)
 }
 void HomePageBranchesPage::updateActions()
 {
-    const auto selected = selectedBranch();
-    const bool available = !m_id.isEmpty() && !selected.ref.isEmpty() && m_service->contains(m_id);
     const bool tracking = !m_id.isEmpty() && m_service->contains(m_id) && m_service->syncState(m_id) == BackupSyncState::Tracking;
-    const bool editable = available && !m_busy && tracking;
-    m_refresh->setEnabled(!m_id.isEmpty() && !m_busy);
-    ui->listUse->setEnabled(editable && !selected.current);
-    ui->listUse->setText(selected.remoteBranch ? "加入并使用…" : selected.current ? "正在使用" : "使用此方案…");
-    ui->listOperations->setEnabled(editable);
-    ui->listCreate->setEnabled(!m_busy && tracking);
     const auto reason = tracking ? QString() : QString("当前状态：%1。处理完成后才能管理方案。").arg(m_id.isEmpty() ? QString() : backupStateText(m_service->syncState(m_id)));
-    for (auto *button : {ui->listUse, ui->listCreate}) button->setToolTip(reason);
+    m_refresh->setEnabled(!m_id.isEmpty() && !m_busy);
+    ui->listCreate->setEnabled(!m_busy && tracking);
+    ui->listCreate->setToolTip(reason);
+    for (auto *row : std::as_const(m_rows)) row->setActionsEnabled(!m_busy && tracking, reason);
     ui->cancelTask->setVisible(m_busy);
 }
 void HomePageBranchesPage::useBranch(const BranchInfo &branch)
 {
-    if (branch.ref.isEmpty()) return;
-    if (branch.remoteBranch) createFrom(m_id, branch.head);
+    if (branch.ref.isEmpty() || branch.current) return;
+    if (branch.remoteBranch) create(m_id, branch.head, branch);
     else requestSwitch(m_id, branch.ref);
 }
+// Viewing one 方案 reuses the history page's scope filter instead of a separate page.
+void HomePageBranchesPage::showHistory(const BranchInfo &branch)
+{
+    Route route{PageId::History, m_id}; route.branchRef = branch.ref; emit navigate(route);
+}
 void HomePageBranchesPage::createFrom(const QString &id, const QString &commit)
+{
+    create(id, commit, {});
+}
+void HomePageBranchesPage::create(const QString &id, const QString &commit, const BranchInfo &tracked)
 {
     if (m_busy || !m_service->contains(id)) return;
     const auto context = m_service->branchContext(id);
     const QPointer<HomePageBranchesPage> guard(this);
-    const auto selected = selectedBranch();
-    const bool tracking = id == m_id && selected.remoteBranch && selected.head == commit;
-    const auto upstream = tracking ? selected.ref : QString();
+    const bool tracking = tracked.remoteBranch;
+    const auto upstream = tracking ? tracked.ref : QString();
     UiDialog::Dialog dialog(dialogOwner(), "createBranchDialog", tracking ? "加入云端方案" : "新建方案");
-    const auto text = tracking ? QString("在本机加入云端方案“%1”。之后的修改会同步回这个云端方案。").arg(displayName(selected))
+    const auto text = tracking ? QString("在本机加入云端方案“%1”。之后的修改会同步回这个云端方案。").arg(displayName(tracked))
                     : commit.isEmpty() || commit == context.head ? QStringLiteral("从当前方案的最新版本开始一个新方案。原方案不受影响，随时可以切换回来。")
-                    : QStringLiteral("从所选的历史版本开始一个新方案。原方案不受影响，随时可以切换回来。");
+                    : QStringLiteral("从所选的版本开始一个新方案。原方案不受影响，随时可以切换回来。");
     auto *description = new QLabel(text, &dialog);
     description->setWordWrap(true); dialog.contentLayout()->addWidget(description);
     auto *name = new QLineEdit(&dialog); name->setObjectName("branchName"); name->setPlaceholderText("例如：尝试新排版");
-    if (tracking) name->setText(displayName(selected));
+    if (tracking) name->setText(displayName(tracked));
     dialog.contentLayout()->addWidget(name);
     auto *rule = new QLabel("可以使用中文；不能包含空格以及 ~ ^ : ? * [ \\ 等符号。", &dialog);
     rule->setWordWrap(true); UiStyle::text(rule, UiStyle::FontRole::Caption, true); dialog.contentLayout()->addWidget(rule);
@@ -493,32 +266,36 @@ void HomePageBranchesPage::requestSwitch(const QString &id, const QString &ref, 
         });
     });
 }
-void HomePageBranchesPage::showOperations(const QPoint &globalPos)
+void HomePageBranchesPage::showOperations(const BranchInfo &selected, const QPoint &globalPos)
 {
-    const auto selected = selectedBranch();
     if (selected.ref.isEmpty()) return;
     const auto selectedRequest = request(selected);
     const auto branches = m_snapshot.branches;
     const QPointer<HomePageBranchesPage> guard(this);
+    const bool editable = !m_busy && m_service->contains(m_id) && m_service->syncState(m_id) == BackupSyncState::Tracking;
     QMenu menu(this);
-    QAction *renameAction = nullptr, *removeAction = nullptr, *mergeAction = nullptr;
+    QAction *useAction = nullptr, *mergeAction = nullptr, *renameAction = nullptr, *removeAction = nullptr;
+    auto *historyAction = menu.addAction("查看历史");
+    if (!selected.current) useAction = menu.addAction(selected.remoteBranch ? "加入…" : "切换到此方案…");
+    menu.addSeparator();
+    auto *createAction = menu.addAction("从此方案新建…");
+    auto *compareAction = menu.addAction("与其他方案比较…");
+    if (!selected.remoteBranch && !selected.current) mergeAction = menu.addAction("合并到正在使用的方案…");
     if (!selected.remoteBranch)
     {
+        menu.addSeparator();
         renameAction = menu.addAction("重命名…");
         removeAction = menu.addAction("删除…"); removeAction->setEnabled(!selected.current);
         if (selected.current) removeAction->setToolTip("正在使用的方案不能删除，请先切换到其他方案。");
-        menu.addSeparator();
     }
-    auto *advanced = menu.addMenu("高级");
-    auto *compareAction = advanced->addAction("与其他方案比较…");
-    if (!selected.remoteBranch)
-    {
-        mergeAction = advanced->addAction("把这个方案的修改合并到正在使用的方案…"); mergeAction->setEnabled(!selected.current);
-    }
-    const auto targetPos = globalPos.isNull() ? ui->listOperations->mapToGlobal(QPoint(0, ui->listOperations->height())) : globalPos;
-    const auto chosen = menu.exec(targetPos);
+    for (auto *action : {useAction, createAction, mergeAction, renameAction, removeAction})
+        if (action && !editable) action->setEnabled(false);
+    const auto chosen = menu.exec(globalPos);
     if (!guard || !chosen) return;
-    if (chosen == compareAction) compare(selected, selectedRequest, branches);
+    if (chosen == historyAction) showHistory(selected);
+    else if (chosen == useAction) useBranch(selected);
+    else if (chosen == createAction) createFrom(m_id, selected.head);
+    else if (chosen == compareAction) compare(selected, selectedRequest, branches);
     else if (chosen == mergeAction) merge(selectedRequest);
     else if (chosen == renameAction) rename(selected);
     else if (chosen == removeAction && UiDialog::confirm(dialogOwner(), QString("删除方案“%1”？\n云端的同名方案不受影响。").arg(selected.name), "删除方案") && guard)

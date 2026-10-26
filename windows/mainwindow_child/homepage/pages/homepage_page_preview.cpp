@@ -28,16 +28,6 @@
 namespace
 {
 constexpr int PathRole = Qt::UserRole + 1;
-QString relativeTime(const QDateTime &time)
-{
-    const auto seconds = qMax<qint64>(0, time.secsTo(QDateTime::currentDateTimeUtc()));
-    if (seconds < 60) return "刚刚";
-    if (seconds < 3600) return QString("%1 分钟前").arg(seconds / 60);
-    if (seconds < 86400) return QString("%1 小时前").arg(seconds / 3600);
-    if (seconds < 86400 * 30) return QString("%1 天前").arg(seconds / 86400);
-    return time.toLocalTime().toString("yyyy-MM-dd");
-}
-
 class BreadcrumbLabel : public QLabel
 {
   public:

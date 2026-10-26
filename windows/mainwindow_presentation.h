@@ -1,6 +1,7 @@
 #pragma once
 #include "utils/operationresult.h"
 #include <QColor>
+#include <QDateTime>
 #include <QFont>
 #include <QIcon>
 #include <QPointer>
@@ -123,5 +124,6 @@ class NotificationBar : public QWidget
 };
 
 QString formatBytes(qint64 bytes);
+QString relativeTime(const QDateTime &time);
 bool confirmAction(QWidget *owner, const QString &text, const QString &action);
 void openLocalPath(QWidget *owner, const QString &path);

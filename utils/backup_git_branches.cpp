@@ -22,7 +22,7 @@ OperationResult GitRepository::validateBranchName(const QString &name) const
 BackupResult<QVector<BranchInfo>> GitRepository::branches() const
 {
     const auto result = run({"for-each-ref", "--sort=refname",
-        "--format=%(refname)%00%(objectname)%00%(upstream)%00%(symref)%00%(subject)%00%(upstream:remotename)%00%(upstream:remoteref)",
+        "--format=%(refname)%00%(objectname)%00%(upstream)%00%(symref)%00%(subject)%00%(upstream:remotename)%00%(upstream:remoteref)%00%(committerdate:unix)",
         "refs/heads/", "refs/remotes/"});
     if (!result.success()) return {outcome(result)};
     const auto current = branchRef();
@@ -41,11 +41,12 @@ BackupResult<QVector<BranchInfo>> GitRepository::branches() const
     for (auto line : result.output.split('\n', Qt::SkipEmptyParts))
     {
         const auto fields = line.split(QChar(0));
-        if (fields.size() != 7) return {OperationResult::fail("读取方案失败", "无法解析分支引用")};
+        if (fields.size() != 8) return {OperationResult::fail("读取方案失败", "无法解析分支引用")};
         if (!fields[3].isEmpty()) continue; // remote HEAD is an alias, not a branch.
         BranchInfo value;
         value.ref = fields[0]; value.head = fields[1]; value.upstream = fields[2]; value.message = fields[4];
         value.remote = fields[5]; value.remoteRef = fields[6];
+        value.committedAt = QDateTime::fromSecsSinceEpoch(fields[7].toLongLong(), QTimeZone::UTC);
         value.remoteBranch = value.ref.startsWith("refs/remotes/");
         value.current = current.result.success && current.value == value.ref;
         value.name = value.ref.mid(value.remoteBranch ? 13 : 11);
