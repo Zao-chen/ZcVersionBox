@@ -4,19 +4,31 @@
 #include "windows/mainwindow_presentation.h"
 #include <QCheckBox>
 #include <QComboBox>
+#include <QContextMenuEvent>
 #include <QDialogButtonBox>
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMouseEvent>
+#include <QPainter>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
+#include <QStyledItemDelegate>
 #include <QVBoxLayout>
+#include <utility>
 
 namespace
 {
 constexpr int RefRole = Qt::UserRole + 1;
+constexpr int NameRole = Qt::UserRole + 2;
+constexpr int CurrentRole = Qt::UserRole + 3;
+constexpr int RemoteRole = Qt::UserRole + 4;
+constexpr int StatusRole = Qt::UserRole + 5;
+constexpr int MessageRole = Qt::UserRole + 6;
+constexpr int IsGroupRole = Qt::UserRole + 7;
+
 QDialogButtonBox *dialogButtons(UiDialog::Dialog &dialog)
 {
     auto *buttons = dialog.buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -42,23 +54,224 @@ QStandardItem *groupItem(const QString &text)
 {
     auto *item = new QStandardItem(text);
     item->setFlags(Qt::NoItemFlags);
-    auto font = item->font(); font.setBold(true); item->setFont(font);
+    item->setData(true, IsGroupRole);
+    item->setData(text, NameRole);
     return item;
 }
+
+class BranchItemDelegate : public QStyledItemDelegate
+{
+public:
+    using MenuHandler = std::function<void(const QModelIndex &, const QPoint &)>;
+    BranchItemDelegate(QListView *view, MenuHandler onMenu)
+        : QStyledItemDelegate(view), m_view(view), m_menuHandler(std::move(onMenu))
+    {
+        view->viewport()->installEventFilter(this);
+        view->installEventFilter(this);
+    }
+
+    QRect menuRect(const QRect &row) const
+    {
+        return QRect(row.right() - 32, row.center().y() - 14, 28, 28);
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem &, const QModelIndex &index) const override
+    {
+        if (index.data(IsGroupRole).toBool())
+            return {0, UiStyle::rowHeight(32, UiStyle::font(UiStyle::FontRole::Caption), false)};
+        return {0, UiStyle::rowHeight(58, UiStyle::font(UiStyle::FontRole::Body), true)};
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        const auto colors = UiStyle::colors();
+
+        if (index.data(IsGroupRole).toBool())
+        {
+            const auto font = UiStyle::font(UiStyle::FontRole::Caption);
+            painter->setFont(font);
+            painter->setPen(colors.secondary);
+            const auto rect = option.rect.adjusted(12, 0, -12, 0);
+            painter->drawText(rect, Qt::AlignLeft | Qt::AlignVCenter, index.data(NameRole).toString());
+            painter->restore();
+            return;
+        }
+
+        const auto row = option.rect.adjusted(0, 2, 0, -2);
+        const bool selected = option.state.testFlag(QStyle::State_Selected);
+        const bool hovered = option.state.testFlag(QStyle::State_MouseOver);
+
+        if (selected || hovered)
+        {
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(selected ? colors.selected : colors.hover);
+            painter->drawRoundedRect(row, 6, 6);
+        }
+        if (UiStyle::isKeyboardNavigationActive() && option.state.testFlag(QStyle::State_HasFocus))
+        {
+            painter->setBrush(Qt::NoBrush);
+            painter->setPen(colors.secondary);
+            painter->drawRoundedRect(QRectF(row).adjusted(.5, .5, -.5, -.5), 6, 6);
+        }
+
+        const auto content = row.adjusted(12, 6, -36, -6);
+        const auto mainFont = UiStyle::font(UiStyle::FontRole::Body);
+        const auto captionFont = UiStyle::font(UiStyle::FontRole::Caption);
+        const int mainHeight = QFontMetrics(mainFont).height();
+        const int captionHeight = QFontMetrics(captionFont).height();
+
+        const QString name = index.data(NameRole).toString();
+        const bool isCurrent = index.data(CurrentRole).toBool();
+        const QString statusText = index.data(StatusRole).toString();
+        const QString message = index.data(MessageRole).toString();
+
+        auto nameFont = mainFont;
+        if (isCurrent)
+            nameFont.setWeight(QFont::DemiBold);
+        const QFontMetrics nameFm(nameFont);
+        const QFontMetrics captionFm(captionFont);
+
+        const int currentBadgeWidth = isCurrent ? captionFm.horizontalAdvance("正在使用") + 22 : 0;
+        const int statusBadgeWidth = !statusText.isEmpty() ? captionFm.horizontalAdvance(statusText) + 14 : 0;
+        const int badgesWidth = (currentBadgeWidth ? currentBadgeWidth + 6 : 0) + statusBadgeWidth;
+
+        const int maxNameWidth = qMax(0, content.width() - badgesWidth - 8);
+        const QString elidedName = nameFm.elidedText(name, Qt::ElideRight, maxNameWidth);
+        const int actualNameWidth = nameFm.horizontalAdvance(elidedName);
+
+        painter->setFont(nameFont);
+        painter->setPen(colors.text);
+        painter->drawText(QRect(content.x(), content.y(), actualNameWidth, mainHeight), Qt::AlignLeft | Qt::AlignVCenter, elidedName);
+
+        int badgeX = content.x() + actualNameWidth + 8;
+        constexpr int badgeH = 18;
+        const int badgeY = content.y() + (mainHeight - badgeH) / 2;
+
+        if (isCurrent)
+        {
+            const QRect badgeRect(badgeX, badgeY, currentBadgeWidth, badgeH);
+            painter->setPen(Qt::NoPen);
+            auto bg = colors.added;
+            bg.setAlpha(36);
+            painter->setBrush(bg);
+            painter->drawRoundedRect(badgeRect, 4, 4);
+
+            constexpr int dotSize = 5;
+            const int dotX = badgeRect.x() + 6;
+            const int dotY = badgeRect.y() + (badgeH - dotSize) / 2;
+            painter->setBrush(colors.added);
+            painter->drawEllipse(dotX, dotY, dotSize, dotSize);
+
+            painter->setFont(captionFont);
+            painter->setPen(colors.added);
+            painter->drawText(QRect(dotX + dotSize + 4, badgeRect.y(), badgeRect.width() - (dotSize + 10), badgeRect.height()),
+                              Qt::AlignLeft | Qt::AlignVCenter, "正在使用");
+            badgeX += currentBadgeWidth + 6;
+        }
+
+        if (!statusText.isEmpty())
+        {
+            const QRect badgeRect(badgeX, badgeY, statusBadgeWidth, badgeH);
+            painter->setPen(Qt::NoPen);
+            painter->setBrush(colors.selected);
+            painter->drawRoundedRect(badgeRect, 4, 4);
+            painter->setFont(captionFont);
+            painter->setPen(colors.secondary);
+            painter->drawText(badgeRect, Qt::AlignCenter, statusText);
+        }
+
+        const int line2Y = content.y() + mainHeight + 4;
+        painter->setFont(captionFont);
+        painter->setPen(colors.secondary);
+        const QString displayMessage = message.isEmpty() ? QStringLiteral("（无最新提交说明）") : message;
+        painter->drawText(QRect(content.x(), line2Y, content.width(), captionHeight),
+                          Qt::AlignLeft | Qt::AlignVCenter,
+                          captionFm.elidedText(displayMessage, Qt::ElideRight, content.width()));
+
+        if (hovered || selected)
+        {
+            const auto mRect = menuRect(row);
+            UiStyle::icon("more").paint(painter, QRect(mRect.center() - QPoint(8, 8), QSize(16, 16)));
+        }
+
+        painter->restore();
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched == m_view->viewport())
+        {
+            if (event->type() == QEvent::MouseButtonPress)
+            {
+                const auto *mouse = static_cast<QMouseEvent *>(event);
+                const auto index = m_view->indexAt(mouse->position().toPoint());
+                if (mouse->button() == Qt::LeftButton && index.isValid() && !index.data(IsGroupRole).toBool())
+                {
+                    if (menuRect(m_view->visualRect(index)).contains(mouse->position().toPoint()))
+                    {
+                        m_pressedIndex = index;
+                        return true;
+                    }
+                }
+            }
+            else if (event->type() == QEvent::MouseButtonRelease && m_pressedIndex.isValid())
+            {
+                const auto *mouse = static_cast<QMouseEvent *>(event);
+                const auto index = std::exchange(m_pressedIndex, {});
+                if (index.isValid() && menuRect(m_view->visualRect(index)).contains(mouse->position().toPoint()))
+                {
+                    if (m_menuHandler)
+                        m_menuHandler(index, mouse->globalPosition().toPoint());
+                    return true;
+                }
+            }
+        }
+        if ((watched == m_view->viewport() || watched == m_view) && event->type() == QEvent::ContextMenu)
+        {
+            const auto *context = static_cast<QContextMenuEvent *>(event);
+            const auto index = context->reason() == QContextMenuEvent::Keyboard ? m_view->currentIndex() : m_view->indexAt(context->pos());
+            if (index.isValid() && !index.data(IsGroupRole).toBool())
+            {
+                const auto pos = context->reason() == QContextMenuEvent::Keyboard
+                    ? m_view->viewport()->mapToGlobal(m_view->visualRect(index).bottomRight())
+                    : context->globalPos();
+                if (m_menuHandler)
+                    m_menuHandler(index, pos);
+                return true;
+            }
+        }
+        return QStyledItemDelegate::eventFilter(watched, event);
+    }
+
+private:
+    QListView *m_view;
+    MenuHandler m_menuHandler;
+    mutable QPersistentModelIndex m_pressedIndex;
+};
 }
 
 HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *parent)
     : QWidget(parent), ui(new Ui::HomePageBranchesPage), m_service(service)
 {
     ui->setupUi(this);
+    UiStyle::flatView(ui->branchList);
+    auto *delegate = new BranchItemDelegate(ui->branchList, [this](const QModelIndex &index, const QPoint &pos)
+    {
+        ui->branchList->setCurrentIndex(index);
+        showOperations(pos);
+    });
+    ui->branchList->setItemDelegate(delegate);
     ui->branchList->setModel(&m_listModel);
-    ui->branchList->setSpacing(2);
+    ui->branchList->setSpacing(4);
     m_refresh = UiStyle::action(this, "refreshBranchesAction", "刷新", "refresh");
     m_refresh->setProperty("iconOnly", true);
     connect(m_refresh, &QAction::triggered, this, &HomePageBranchesPage::refresh);
     connect(ui->listUse, &QPushButton::clicked, this, [this] { useBranch(selectedBranch()); });
     connect(ui->listCreate, &QPushButton::clicked, this, [this] { createFrom(m_id); });
-    connect(ui->listOperations, &QPushButton::clicked, this, &HomePageBranchesPage::showOperations);
+    connect(ui->listOperations, &QPushButton::clicked, this, [this] { showOperations(); });
     connect(ui->branchList->selectionModel(), &QItemSelectionModel::currentChanged, this, &HomePageBranchesPage::updateActions);
     // Viewing one 方案 reuses the history page's scope filter instead of a separate page.
     connect(ui->branchList, &QListView::activated, this, [this](const QModelIndex &index)
@@ -131,6 +344,8 @@ void HomePageBranchesPage::setLoading(bool loading)
     {
         auto *item = new QStandardItem("正在读取方案…");
         item->setFlags(Qt::NoItemFlags);
+        item->setData(true, IsGroupRole);
+        item->setData("正在读取方案…", NameRole);
         m_listModel.appendRow(item);
     }
     else if (!loading && m_snapshot.branches.isEmpty())
@@ -147,12 +362,22 @@ void HomePageBranchesPage::populateList()
         QString status;
         if (branch.remoteBranch) status = "仅在云端，可加入";
         else status = (branch.current ? QStringLiteral("正在使用 · ") : QString()) + (branch.upstream.isEmpty() ? "仅本机" : "已共享");
-        auto *item = new QStandardItem(displayName(branch) + "　" + status + (branch.message.isEmpty() ? QString() : "\n" + branch.message));
+
+        QString badgeText;
+        if (branch.remoteBranch) badgeText = "可加入";
+        else badgeText = branch.upstream.isEmpty() ? "仅本机" : "已共享";
+
+        auto *item = new QStandardItem(displayName(branch));
         item->setData(branch.ref, RefRole);
+        item->setData(displayName(branch), NameRole);
+        item->setData(branch.current, CurrentRole);
+        item->setData(branch.remoteBranch, RemoteRole);
+        item->setData(badgeText, StatusRole);
+        item->setData(branch.message, MessageRole);
+        item->setData(false, IsGroupRole);
         item->setData(displayName(branch) + "，" + status, Qt::AccessibleTextRole);
-        item->setToolTip("双击查看这个方案的历史版本");
+        item->setToolTip("双击查看这个方案的历史版本；右键或点击右侧“更多”按钮进行操作");
         item->setEditable(false);
-        if (branch.current) { auto font = item->font(); font.setBold(true); item->setFont(font); }
         (branch.remoteBranch ? cloud : local).append(item);
     }
     for (auto *item : local) m_listModel.appendRow(item);
@@ -270,7 +495,7 @@ void HomePageBranchesPage::requestSwitch(const QString &id, const QString &ref, 
         });
     });
 }
-void HomePageBranchesPage::showOperations()
+void HomePageBranchesPage::showOperations(const QPoint &globalPos)
 {
     const auto selected = selectedBranch();
     if (selected.ref.isEmpty()) return;
@@ -292,7 +517,8 @@ void HomePageBranchesPage::showOperations()
     {
         mergeAction = advanced->addAction("把这个方案的修改合并到正在使用的方案…"); mergeAction->setEnabled(!selected.current);
     }
-    const auto chosen = menu.exec(ui->listOperations->mapToGlobal(QPoint(0, ui->listOperations->height())));
+    const auto targetPos = globalPos.isNull() ? ui->listOperations->mapToGlobal(QPoint(0, ui->listOperations->height())) : globalPos;
+    const auto chosen = menu.exec(targetPos);
     if (!guard || !chosen) return;
     if (chosen == compareAction) compare(selected, selectedRequest, branches);
     else if (chosen == mergeAction) merge(selectedRequest);

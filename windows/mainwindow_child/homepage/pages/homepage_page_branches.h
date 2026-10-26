@@ -44,7 +44,7 @@ class HomePageBranchesPage : public QWidget
     void updateActions();
     void complete(const OperationResult &result, bool reload = true);
     void useBranch(const BranchInfo &branch);
-    void showOperations();
+    void showOperations(const QPoint &globalPos = {});
     void rename(const BranchInfo &selected);
     void remove(const BranchInfo &selected, bool force);
     void compare(const BranchInfo &selected, const BranchRequest &request, const QVector<BranchInfo> &branches);
