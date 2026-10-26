@@ -12,6 +12,7 @@
 #include <QSignalBlocker>
 #include <QTimer>
 #include <QUrl>
+#include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 
 HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *parent) : QWidget(parent), ui(new Ui::HomePageDashboardPage), m_service(service)
 {
@@ -27,6 +28,12 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
     m_syncState = ui->syncStateLabel;
     ui->headerDot->hide();
     m_syncState->hide();
+    m_spinner = new oclero::qlementine::LoadingSpinner(this);
+    m_spinner->setObjectName("overviewSpinner");
+    m_spinner->setAccessibleName("正在读取概览");
+    m_spinner->setFixedSize(16, 16);
+    ui->objectHeaderLayout->insertWidget(ui->objectHeaderLayout->indexOf(ui->objectLabel) + 1, m_spinner);
+    m_spinner->hide();
     m_syncPanel = new QWidget(this);
     m_syncPanel->setObjectName("syncStatePanel");
     auto *syncLayout = new QVBoxLayout(m_syncPanel);
@@ -97,11 +104,26 @@ void HomePageDashboardPage::deactivate()
     m_active = false;
     ++m_contextGeneration;
     ++m_requestGeneration;
+    setLoading(false);
+}
+void HomePageDashboardPage::setLoading(bool loading)
+{
+    m_spinner->setVisible(loading);
+    m_spinner->setSpinning(loading && m_active);
 }
 void HomePageDashboardPage::setBackup(const QString &id)
 {
     rememberState();
     m_id = id;
+    if (m_loadedId != id)
+    {
+        // Never show another object's figures while this one is loading.
+        for (auto *value : {ui->versionValue, ui->fileValue, ui->sizeValue, ui->cacheValue})
+            value->setText("—");
+        ui->stateValue->clear();
+        ui->sourcePathEdit->clear();
+        ui->repositoryPathEdit->clear();
+    }
     m_repositoryGeneration = m_service->repositoryGeneration(id);
     ++m_contextGeneration;
     m_active = true;
@@ -120,13 +142,16 @@ void HomePageDashboardPage::refresh()
     const auto generation = m_repositoryGeneration;
     const auto context = m_contextGeneration;
     const auto request = ++m_requestGeneration;
+    setLoading(true);
     m_service->statistics(id, this, [this, id, generation, context, request](const BackupResult<BackupStats> &reply)
                           {
     if (!isCurrent(id, generation, context) || request != m_requestGeneration)
         return;
+    setLoading(false);
     if (!reply.result.success)
     {
-        emit notification(reply.result);
+        if (!reply.result.cancelled)
+            emit notification(reply.result);
         updateActions();
         return;
     }
@@ -148,6 +173,7 @@ void HomePageDashboardPage::refresh()
     ui->sizeValue->setText(formatBytes(stats.fileSize));
     ui->cacheValue->setText(formatBytes(stats.cacheSize));
     ui->stateValue->setText(stats.sourceState);
+    m_loadedId = id;
     const bool hasState = !m_syncState->text().isEmpty();
     const bool hasType = !stats.sourceState.isEmpty();
     ui->headerDot->setVisible(hasState && hasType);

@@ -10,6 +10,7 @@ class HomePageDashboardPage;
 class QAction;
 class QLabel;
 class QPushButton;
+namespace oclero::qlementine { class LoadingSpinner; }
 class HomePageDashboardPage : public QWidget
 {
     Q_OBJECT
@@ -44,6 +45,9 @@ class HomePageDashboardPage : public QWidget
     QLabel *m_syncState, *m_syncDetail;
     QPushButton *m_continueResolution, *m_recheck;
     QWidget *m_syncPanel{nullptr};
+    oclero::qlementine::LoadingSpinner *m_spinner{nullptr};
+    QString m_loadedId;
+    void setLoading(bool loading);
     void rememberState();
     void updateActions();
     bool isCurrent(const QString &id, quint64 generation, quint64 context) const;

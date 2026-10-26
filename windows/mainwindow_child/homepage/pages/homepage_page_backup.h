@@ -13,6 +13,7 @@ class QAction;
 class QMenu;
 class QDialog;
 class QAbstractButton;
+namespace oclero::qlementine { class LoadingSpinner; }
 namespace UiDialog
 {
 class Dialog;
@@ -72,6 +73,7 @@ class HomePageBackupPage : public QWidget
     QAction *m_refresh;
     QAction *m_tag;
     QAbstractButton *m_milestoneOnly;
+    oclero::qlementine::LoadingSpinner *m_spinner{nullptr};
     QPointer<QDialog> m_tagDialog;
     QPointer<QMenu> m_revisionMenu;
     quint64 m_contextGeneration{0};
@@ -84,6 +86,7 @@ class HomePageBackupPage : public QWidget
     void updateActions();
     void rememberState();
     void applyFilter();
+    void setLoading(bool loading);
     void manageTags(const RevisionContext &context);
     void resolveTagConflicts();
     QVector<VersionTag> revisionTags(const RevisionContext &context) const;
