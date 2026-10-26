@@ -47,8 +47,7 @@ enum class RevisionAction
     CreateBranch,
     Edit,
     Restore,
-    More,
-    ToggleAncestors
+    More
 };
 class HistoryDelegate : public QStyledItemDelegate
 {
@@ -101,7 +100,7 @@ class HistoryDelegate : public QStyledItemDelegate
     }
     QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
-        if (index.data(HistoryGraph::AncestorCount).toInt() > 0 || !m_enabled(index, RevisionAction::Edit)) return nullptr;
+        if (!m_enabled(index, RevisionAction::Edit)) return nullptr;
         auto *editor = QStyledItemDelegate::createEditor(parent, option, index);
         if (editor)
         {
@@ -138,23 +137,7 @@ class HistoryDelegate : public QStyledItemDelegate
             painter->setPen(colors.secondary);
             painter->drawRoundedRect(QRectF(row).adjusted(.5, .5, -.5, -.5), 6, 6);
         }
-        if (index.data(HistoryGraph::AncestorCount).toInt() > 0)
-        {
-            HistoryGraph::paint(painter, opt.rect, index);
-            const auto hintFont = UiStyle::font(UiStyle::FontRole::Caption);
-            const QString hint = index.data(HistoryGraph::AncestorsExpanded).toBool() ? "收起" : "展开查看";
-            const int hintWidth = QFontMetrics(hintFont, painter->device()).horizontalAdvance(hint);
-            const auto hintRect = opt.rect.adjusted(opt.rect.width() - hintWidth - 16, 0, -16, 0);
-            const auto textRect = opt.rect.adjusted(index.data(HistoryGraph::Width).toInt(), 0, -hintWidth - 36, 0);
-            painter->setFont(font);
-            painter->setPen(hover ? colors.text : colors.secondary);
-            painter->drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft,
-                QFontMetrics(font, painter->device()).elidedText(opt.text, Qt::ElideRight, qMax(0, textRect.width())));
-            painter->setFont(hintFont);
-            painter->setPen(HistoryGraph::color(index.data(HistoryGraph::Color).toInt()));
-            painter->drawText(hintRect, Qt::AlignVCenter | Qt::AlignRight, hint);
-        }
-        else if (index.column() == ActionsColumn)
+        if (index.column() == ActionsColumn)
         {
             if (actionsVisible(index))
             {
@@ -322,15 +305,12 @@ class HistoryDelegate : public QStyledItemDelegate
                     else if (action == 3) label = "从此版本新建方案";
                     else if (action == 4) label = "编辑说明 (F2)";
                     else if (action == 5) label = "恢复到此版本…";
-                    if (action < ActionCount && !m_enabled(index, static_cast<RevisionAction>(action)))
+                    if (!m_enabled(index, static_cast<RevisionAction>(action)))
                     {
                         if (action == 4) label += tags.isEmpty() ? "\n只能编辑当前方案的最新说明，且需先处理完同步问题。" : "\n里程碑版本的说明已固定，可通过里程碑按钮修改名称。";
                         else label += "\n请先处理完同步问题。";
                     }
-                    if (action == static_cast<int>(RevisionAction::ToggleAncestors))
-                        label = index.data(HistoryGraph::AncestorsExpanded).toBool() ? "收起更早的版本 (Enter)" : "展开更早的版本 (Enter)";
-                    const auto rect = action == static_cast<int>(RevisionAction::ToggleAncestors) ? m_view->visualRect(index)
-                        : actionRect(m_view->visualRect(index.siblingAtColumn(ActionsColumn)), action);
+                    const auto rect = actionRect(m_view->visualRect(index.siblingAtColumn(ActionsColumn)), action);
                     QToolTip::showText(help->globalPos(), label, m_view->viewport(), rect);
                     return true;
                 }
@@ -396,7 +376,7 @@ class HistoryDelegate : public QStyledItemDelegate
     }
     HistoryGraph::HitResult hitBranchAt(const QModelIndex &index, const QPoint &position) const
     {
-        if (!index.isValid() || index.column() != 0 || m_editorOpen || index.data(HistoryGraph::AncestorCount).toInt() > 0 || m_view->property("milestonesOnly").toBool()) return {};
+        if (!index.isValid() || index.column() != 0 || m_editorOpen || m_view->property("milestonesOnly").toBool()) return {};
         const auto cell = m_view->visualRect(index);
         if (branchBadgeRect(cell, index).contains(position))
             return {index.data(HistoryGraph::TipRefs).toStringList(), index.data(HistoryGraph::Color).toInt()};
@@ -417,12 +397,10 @@ class HistoryDelegate : public QStyledItemDelegate
     }
     bool actionsVisible(const QModelIndex &index) const
     {
-        return index.isValid() && !m_editorOpen && index.data(HistoryGraph::AncestorCount).toInt() == 0 && ((m_hovered.isValid() && m_hovered.row() == index.row()) || (UiStyle::isKeyboardNavigationActive() && m_view->hasFocus() && m_view->currentIndex().row() == index.row()));
+        return index.isValid() && !m_editorOpen && ((m_hovered.isValid() && m_hovered.row() == index.row()) || (UiStyle::isKeyboardNavigationActive() && m_view->hasFocus() && m_view->currentIndex().row() == index.row()));
     }
     int hitAction(const QModelIndex &index, const QPoint &position) const
     {
-        if (!m_editorOpen && index.data(HistoryGraph::AncestorCount).toInt() > 0)
-            return static_cast<int>(RevisionAction::ToggleAncestors);
         if (actionsVisible(index))
         {
             const auto cell = m_view->visualRect(index.siblingAtColumn(ActionsColumn));
@@ -545,9 +523,7 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
         case RevisionAction::Edit: editRevision(context); break;
         case RevisionAction::Restore: restoreRevision(context); break;
         case RevisionAction::More: showRevisionMenu(context, position); break;
-        case RevisionAction::ToggleAncestors: toggleCommonAncestors(); break;
         } }, [this](const QModelIndex &index, RevisionAction action) {
-        if (action == RevisionAction::ToggleAncestors) return true;
         const auto context = revisionContext(index);
         if (!isCurrentContext(context)) return false;
         if (action == RevisionAction::Preview || action == RevisionAction::Compare) return true;
@@ -603,12 +579,8 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
     m_refresh->setShortcut(QKeySequence::Refresh);
     m_refresh->setShortcutContext(Qt::WidgetWithChildrenShortcut);
     addAction(m_refresh);
-    const auto activate = [this](const QModelIndex &index) {
-        if (index.data(HistoryGraph::AncestorCount).toInt() > 0) toggleCommonAncestors();
-        else compareRevision(revisionContext(index));
-    };
-    connect(m_compare, &QAction::triggered, this, [this, activate] { activate(ui->table->currentIndex()); });
-    connect(ui->table, &QTableView::activated, this, activate);
+    connect(m_compare, &QAction::triggered, this, [this] { compareRevision(revisionContext(ui->table->currentIndex())); });
+    connect(ui->table, &QTableView::activated, this, [this](const QModelIndex &index) { compareRevision(revisionContext(index)); });
     connect(m_preview, &QAction::triggered, this, [this]
             { previewRevision(revisionContext(ui->table->currentIndex())); });
     connect(m_tag, &QAction::triggered, this, [this]
@@ -694,38 +666,10 @@ void HomePageBackupPage::setBackup(const QString &id, const QString &commit, con
     if (m_tagDialog) m_tagDialog->reject();
     closeRevisionMenu();
     m_id = id;
-    m_branchDetail = false;
-    m_includeCommonAncestors = false;
     const bool narrow = width() < 640;
     ui->pageLayout->setContentsMargins(narrow ? 28 : 36, 8, narrow ? 16 : 24, 16);
-    ui->filterBar->setVisible(true);
-    ui->historyScope->setVisible(true);
-    ui->milestoneFilterLabel->setVisible(true);
-    m_milestoneOnly->setVisible(true);
     m_requestedCommit = commit;
     m_branchRef = branchRef;
-    refresh();
-}
-void HomePageBackupPage::setBranchDetail(const QString &id, const QString &branchRef, bool includeCommonAncestors)
-{
-    rememberState();
-    ++m_contextGeneration;
-    if (m_tagDialog) m_tagDialog->reject();
-    closeRevisionMenu();
-    m_id = id;
-    m_requestedCommit.clear();
-    m_branchRef = branchRef;
-    m_branchDetail = true;
-    m_includeCommonAncestors = includeCommonAncestors;
-    ui->pageLayout->setContentsMargins(0, 0, 0, 0);
-    ui->filterBar->setVisible(false);
-    ui->historyScope->setVisible(false);
-    ui->milestoneFilterLabel->setVisible(false);
-    m_milestoneOnly->setVisible(false);
-    {
-        const QSignalBlocker blocker(m_milestoneOnly);
-        m_milestoneOnly->setChecked(false);
-    }
     refresh();
 }
 HomePageBackupPage::RevisionContext HomePageBackupPage::revisionContext(const QModelIndex &index) const
@@ -892,12 +836,9 @@ QString HomePageBackupPage::selectedCommit() const
 void HomePageBackupPage::updateActions()
 {
     const auto index = ui->table->currentIndex();
-    const bool available = index.isValid() && !ui->table->isRowHidden(index.row()) && m_loadedId == m_id && m_loadedGeneration == m_service->repositoryGeneration(m_id);
-    const bool ancestors = available && index.data(HistoryGraph::AncestorCount).toInt() > 0;
-    const bool enabled = available && !ancestors;
+    const bool enabled = index.isValid() && !ui->table->isRowHidden(index.row()) && m_loadedId == m_id && m_loadedGeneration == m_service->repositoryGeneration(m_id);
     for (auto *action : {m_compare, m_preview, m_restore, m_edit, m_tag, m_more})
         action->setEnabled(enabled);
-    m_compare->setEnabled(enabled || ancestors);
     m_restore->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
     const auto tags = revisionTags(revisionContext(ui->table->currentIndex()));
     m_edit->setEnabled(enabled && canEditRevision(revisionContext(index)));
@@ -905,14 +846,6 @@ void HomePageBackupPage::updateActions()
     m_tag->setEnabled(enabled && m_service->syncState(m_id) == BackupSyncState::Tracking);
     m_tag->setText(tags.isEmpty() ? "标记为里程碑…" : "管理里程碑…");
     ui->tagConflictButton->setVisible(!m_service->tagConflicts(m_id).isEmpty());
-}
-void HomePageBackupPage::toggleCommonAncestors()
-{
-    if (!m_branchDetail || m_loadedId != m_id || m_loadedGeneration != m_service->repositoryGeneration(m_id) ||
-        ui->table->currentIndex().data(HistoryGraph::AncestorCount).toInt() <= 0) return;
-    m_includeCommonAncestors = !m_includeCommonAncestors;
-    emit commonAncestorsExpansionChanged(m_includeCommonAncestors);
-    refresh();
 }
 void HomePageBackupPage::refresh()
 {
@@ -930,8 +863,6 @@ void HomePageBackupPage::refresh()
     const auto generation = m_service->repositoryGeneration(id);
     const auto working = m_service->branchContext(id);
     const auto request = ++m_refreshGeneration;
-    m_commonAncestorCount = 0;
-    m_uniqueRevisionCount = 0;
     m_service->branches(id, this, [this, id, request](const BackupResult<BranchSnapshot> &reply) {
         if (id != m_id || request != m_refreshGeneration || !reply.result.success) return;
         const QSignalBlocker blocker(ui->historyScope);
@@ -968,9 +899,7 @@ void HomePageBackupPage::refresh()
         m_requestedCommit.clear();
     }
     const auto revisions = HistoryGraph::userFacing(reply.value);
-    const bool ancestorSelected = ui->table->currentIndex().data(HistoryGraph::AncestorCount).toInt() > 0;
     QScopedValueRollback<bool> loading(m_loading, true);
-    ui->table->clearSpans();
     m_model.clear();
     m_model.setHorizontalHeaderLabels({"版本说明", "保存时间", "编号", {}});
     m_model.horizontalHeaderItem(ActionsColumn)->setData("版本操作", Qt::AccessibleTextRole);
@@ -1011,15 +940,6 @@ void HomePageBackupPage::refresh()
     m_loadedGeneration = m_service->repositoryGeneration(m_id);
     m_loadedBranch = working;
     HistoryGraph::populate(m_model, revisions, working.head);
-    if (reply.result.success && m_branchDetail && m_commonAncestorCount > 0)
-    {
-        const int row = m_uniqueRevisionCount;
-        HistoryGraph::insertCommonAncestors(m_model, row, m_commonAncestorCount, m_includeCommonAncestors);
-        ui->table->setSpan(row, 0, 1, m_model.columnCount());
-        ui->table->setRowHeight(row, UiStyle::rowHeight(48, UiStyle::font(UiStyle::FontRole::Body)));
-        if (selectedRow >= row) ++selectedRow;
-        if (ancestorSelected && !requestedCommit) selectedRow = row;
-    }
     ui->table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     ui->table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
     ui->table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Fixed);
@@ -1047,19 +967,15 @@ void HomePageBackupPage::refresh()
     {
         HistoryQuery query; query.allBranches = m_branchRef.isEmpty();
         if (!m_branchRef.isEmpty()) query.tips = {m_branchRef};
-        // Keep the unique/shared boundary even when the ancestor group is open.
-        query.uniqueOnly = m_branchDetail;
         // The timeline and relationship graph share the same bounded Git batches.
         auto revisions = std::make_shared<QVector<Revision>>();
-        auto uniqueRevisions = std::make_shared<QVector<Revision>>();
         auto next = std::make_shared<std::function<void(HistoryQuery)>>();
-        *next = [this, id, request, receive, revisions, uniqueRevisions, weak = std::weak_ptr<std::function<void(HistoryQuery)>>(next)](HistoryQuery page) {
+        *next = [this, id, request, receive, revisions, weak = std::weak_ptr<std::function<void(HistoryQuery)>>(next)](HistoryQuery page) {
             const auto keep = weak.lock(); if (!keep) return;
-            m_service->branchHistory(id, page, this, [this, id, request, page, receive, revisions, uniqueRevisions, keep](const BackupResult<HistoryPage> &result) mutable {
+            m_service->branchHistory(id, page, this, [this, id, request, page, receive, revisions, keep](const BackupResult<HistoryPage> &result) mutable {
                 if (id != m_id || request != m_refreshGeneration) return;
                 if (!result.result.success) { receive({result.result, {}}); return; }
                 *revisions += result.value.revisions;
-                if (page.uniqueOnly) m_commonAncestorCount = result.value.hiddenAncestorCount;
                 if (result.value.hasMore)
                 {
                     page.tips = result.value.tips;
@@ -1067,31 +983,6 @@ void HomePageBackupPage::refresh()
                     page.refsPinned = true;
                     page.offset = revisions->size();
                     (*keep)(page);
-                }
-                else if (page.uniqueOnly)
-                {
-                    m_uniqueRevisionCount = revisions->size();
-                    if (m_includeCommonAncestors && m_commonAncestorCount > 0)
-                    {
-                        *uniqueRevisions = std::move(*revisions);
-                        revisions->clear();
-                        HistoryQuery full;
-                        full.tips = result.value.tips;
-                        full.refsPinned = true;
-                        (*keep)(full);
-                    }
-                    else receive({result.result, *revisions});
-                }
-                else if (m_branchDetail && m_includeCommonAncestors)
-                {
-                    // The full query uses the same pinned head. Common ancestors
-                    // form a closed ancestry set, so grouping them last preserves topology.
-                    QSet<QString> uniqueIds;
-                    for (const auto &revision : *uniqueRevisions) uniqueIds.insert(revision.hash);
-                    for (const auto &revision : *revisions)
-                        if (!uniqueIds.contains(revision.hash)) uniqueRevisions->append(revision);
-                    m_commonAncestorCount = uniqueRevisions->size() - m_uniqueRevisionCount;
-                    receive({result.result, *uniqueRevisions});
                 }
                 else receive({result.result, *revisions});
             });
@@ -1125,13 +1016,8 @@ void HomePageBackupPage::applyFilter()
 void HomePageBackupPage::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
-    if (m_branchDetail)
-        ui->pageLayout->setContentsMargins(0, 0, 0, 0);
-    else
-    {
-        const bool narrow = width() < 640;
-        ui->pageLayout->setContentsMargins(narrow ? 28 : 36, 8, narrow ? 16 : 24, 16);
-    }
+    const bool narrow = width() < 640;
+    ui->pageLayout->setContentsMargins(narrow ? 28 : 36, 8, narrow ? 16 : 24, 16);
     ui->table->setColumnHidden(1, width() < 760);
     ui->table->setColumnHidden(2, width() < 1050);
 }

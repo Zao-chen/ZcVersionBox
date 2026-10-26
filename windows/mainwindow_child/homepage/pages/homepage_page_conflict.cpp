@@ -174,9 +174,9 @@ void HomePageConflictPage::setBackup(const QString &id, const QString &returnBra
 }
 Route HomePageConflictPage::returnRoute() const
 {
-    Route route{m_returnBranchRef.isEmpty() ? (m_cloudSession ? PageId::Collaboration : PageId::History) : PageId::Branches, m_id};
-    route.branchRef = m_returnBranchRef;
-    return route;
+    // A local merge was started from the 方案 list, so it returns there.
+    if (!m_returnBranchRef.isEmpty()) return {PageId::Branches, m_id};
+    return {m_cloudSession ? PageId::Collaboration : PageId::History, m_id};
 }
 void HomePageConflictPage::load(bool restart, bool resumePreview)
 {

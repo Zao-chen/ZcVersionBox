@@ -1,5 +1,4 @@
 #include "homepage_page_branches.h"
-#include "homepage_page_backup.h"
 #include "ui_homepage_page_branches.h"
 #include "windows/mainwindow_dialog.h"
 #include "windows/mainwindow_presentation.h"
@@ -52,36 +51,24 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     : QWidget(parent), ui(new Ui::HomePageBranchesPage), m_service(service)
 {
     ui->setupUi(this);
-    UiStyle::text(ui->branchName, UiStyle::FontRole::Object);
     UiStyle::text(ui->listHint, UiStyle::FontRole::Caption, true);
     ui->branchList->setModel(&m_listModel);
     ui->branchList->setSpacing(2);
-    m_history = new HomePageBackupPage(service, ui->historyContainer);
-    ui->historyLayout->addWidget(m_history);
     m_refresh = UiStyle::action(this, "refreshBranchesAction", "刷新", "refresh");
     m_refresh->setProperty("iconOnly", true);
     connect(m_refresh, &QAction::triggered, this, &HomePageBranchesPage::refresh);
-    connect(ui->useBranch, &QPushButton::clicked, this, [this] { useBranch(m_branch); });
     connect(ui->listUse, &QPushButton::clicked, this, [this] { useBranch(selectedBranch()); });
     connect(ui->listCreate, &QPushButton::clicked, this, [this] { createFrom(m_id); });
-    connect(ui->operations, &QPushButton::clicked, this, [this] { showOperations(ui->operations); });
-    connect(ui->listOperations, &QPushButton::clicked, this, [this] { showOperations(ui->listOperations); });
+    connect(ui->listOperations, &QPushButton::clicked, this, &HomePageBranchesPage::showOperations);
     connect(ui->branchList->selectionModel(), &QItemSelectionModel::currentChanged, this, &HomePageBranchesPage::updateActions);
+    // Viewing one 方案 reuses the history page's scope filter instead of a separate page.
     connect(ui->branchList, &QListView::activated, this, [this](const QModelIndex &index)
     {
         const auto ref = index.data(RefRole).toString();
         if (ref.isEmpty()) return;
-        Route route{PageId::Branches, m_id}; route.branchRef = ref; emit navigate(route);
+        Route route{PageId::History, m_id}; route.branchRef = ref; emit navigate(route);
     });
     connect(ui->cancelTask, &QPushButton::clicked, this, [this] { if (m_task) m_service->cancel(m_task); });
-    connect(m_history, &HomePageBackupPage::navigate, this, &HomePageBranchesPage::navigate);
-    connect(m_history, &HomePageBackupPage::notification, this, &HomePageBranchesPage::notification);
-    connect(m_history, &HomePageBackupPage::createBranchRequested, this, &HomePageBranchesPage::createFrom);
-    connect(m_history, &HomePageBackupPage::branchRequested, this, [this](const QString &ref)
-    {
-        if (!ref.isEmpty() && ref != m_branchRef) { Route route{PageId::Branches, m_id}; route.branchRef = ref; emit navigate(route); }
-    });
-    connect(m_history, &HomePageBackupPage::commonAncestorsExpansionChanged, this, [this](bool expanded) { m_historyExpanded = expanded; });
     connect(service, &BackupService::repositoryChanged, this, [this](const QString &id)
     {
         if (id == m_id && isVisible() && !m_busy) refresh();
@@ -93,7 +80,6 @@ QList<QAction *> HomePageBranchesPage::toolbarActions() const { return {m_refres
 QWidget *HomePageBranchesPage::dialogOwner() const { return const_cast<HomePageBranchesPage *>(this); }
 BranchInfo HomePageBranchesPage::selectedBranch() const
 {
-    if (!listMode()) return m_branch;
     const auto ref = ui->branchList->currentIndex().data(RefRole).toString();
     for (const auto &branch : m_snapshot.branches)
         if (!ref.isEmpty() && branch.ref == ref) return branch;
@@ -108,23 +94,15 @@ BranchRequest HomePageBranchesPage::request(const BranchInfo &branch) const
     result.endpoint = branch.endpoint;
     return result;
 }
-void HomePageBranchesPage::setBackup(const QString &id, const QString &branchRef)
+void HomePageBranchesPage::setBackup(const QString &id)
 {
-    if (m_id != id || m_branchRef != branchRef)
+    if (m_id != id)
     {
         ++m_generation;
         m_snapshot = {};
-        m_branch = {};
+        m_listModel.clear();
     }
     m_id = id;
-    m_branchRef = branchRef;
-    m_historyExpanded = false;
-    ui->stack->setCurrentWidget(listMode() ? ui->listPage : ui->detailPage);
-    if (m_history)
-    {
-        if (listMode()) m_history->deactivate();
-        else m_history->setBranchDetail(id, branchRef, false);
-    }
     refresh();
 }
 void HomePageBranchesPage::refresh()
@@ -132,24 +110,12 @@ void HomePageBranchesPage::refresh()
     if (m_id.isEmpty() || m_busy) return;
     const auto generation = ++m_generation;
     const auto id = m_id;
-    const auto ref = m_branchRef;
-    m_service->branches(id, this, [this, id, ref, generation](const BackupResult<BranchSnapshot> &reply)
+    m_service->branches(id, this, [this, id, generation](const BackupResult<BranchSnapshot> &reply)
     {
-        if (id != m_id || ref != m_branchRef || generation != m_generation) return;
+        if (id != m_id || generation != m_generation) return;
         if (!reply.result.success) { emit notification(reply.result); return; }
         m_snapshot = reply.value;
-        m_branch = {};
-        if (listMode()) { populateList(); updateActions(); return; }
-        for (const auto &branch : reply.value.branches)
-            if (branch.ref == ref) { m_branch = branch; break; }
-        if (m_branch.ref.isEmpty())
-        {
-            emit notification(OperationResult::warn("方案不存在", "该方案可能已被删除或云端列表已变化。"));
-            emit replaceRoute({PageId::Branches, id});
-            return;
-        }
-        ui->branchName->setText(displayName(m_branch));
-        if (m_history) m_history->setBranchDetail(id, ref, m_historyExpanded);
+        populateList();
         updateActions();
     });
 }
@@ -207,16 +173,12 @@ void HomePageBranchesPage::updateActions()
     const bool tracking = !m_id.isEmpty() && m_service->contains(m_id) && m_service->syncState(m_id) == BackupSyncState::Tracking;
     const bool editable = available && !m_busy && tracking;
     m_refresh->setEnabled(!m_id.isEmpty() && !m_busy);
-    for (auto *use : {ui->useBranch, ui->listUse})
-    {
-        use->setEnabled(editable && !selected.current);
-        use->setText(selected.remoteBranch ? "加入并使用…" : selected.current ? "正在使用" : "使用此方案…");
-    }
-    ui->operations->setEnabled(editable);
+    ui->listUse->setEnabled(editable && !selected.current);
+    ui->listUse->setText(selected.remoteBranch ? "加入并使用…" : selected.current ? "正在使用" : "使用此方案…");
     ui->listOperations->setEnabled(editable);
     ui->listCreate->setEnabled(!m_busy && tracking);
     const auto reason = tracking ? QString() : QString("当前状态：%1。处理完成后才能管理方案。").arg(m_id.isEmpty() ? QString() : backupStateText(m_service->syncState(m_id)));
-    for (auto *button : {ui->useBranch, ui->listUse, ui->listCreate}) button->setToolTip(reason);
+    for (auto *button : {ui->listUse, ui->listCreate}) button->setToolTip(reason);
     ui->cancelTask->setVisible(m_busy);
 }
 void HomePageBranchesPage::useBranch(const BranchInfo &branch)
@@ -292,7 +254,7 @@ void HomePageBranchesPage::requestSwitch(const QString &id, const QString &ref, 
         });
     });
 }
-void HomePageBranchesPage::showOperations(QPushButton *anchor)
+void HomePageBranchesPage::showOperations()
 {
     const auto selected = selectedBranch();
     if (selected.ref.isEmpty()) return;
@@ -314,7 +276,7 @@ void HomePageBranchesPage::showOperations(QPushButton *anchor)
     {
         mergeAction = advanced->addAction("把这个方案的修改合并到正在使用的方案…"); mergeAction->setEnabled(!selected.current);
     }
-    const auto chosen = menu.exec(anchor->mapToGlobal(QPoint(0, anchor->height())));
+    const auto chosen = menu.exec(ui->listOperations->mapToGlobal(QPoint(0, ui->listOperations->height())));
     if (!guard || !chosen) return;
     if (chosen == compareAction) compare(selected, selectedRequest, branches);
     else if (chosen == mergeAction) merge(selectedRequest);
@@ -329,20 +291,12 @@ void HomePageBranchesPage::rename(const BranchInfo &selected)
     const auto name = UiDialog::getText(dialogOwner(), "重命名方案", "新名称（只修改本机名称，云端名称保持不变）", selected.name, &ok);
     if (!guard || !ok) return;
     auto renamed = request(selected); renamed.name = name; m_busy = true; updateActions();
-    m_task = m_service->renameBranch(renamed, this, [this, name, id = renamed.context.id, ref = renamed.ref](const OperationResult &result)
-    {
-        complete(result);
-        if (result.success && m_id == id && m_branchRef == ref)
-        {
-            Route route{PageId::Branches, id}; route.branchRef = "refs/heads/" + name;
-            emit replaceRoute(route);
-        }
-    });
+    m_task = m_service->renameBranch(renamed, this, [this](const OperationResult &result) { complete(result); });
 }
 void HomePageBranchesPage::remove(const BranchInfo &selected, bool force)
 {
     auto removed = request(selected); removed.force = force; m_busy = true; updateActions();
-    m_task = m_service->deleteBranch(removed, this, [this, selected, id = removed.context.id, ref = removed.ref, force](const OperationResult &result) {
+    m_task = m_service->deleteBranch(removed, this, [this, selected, force](const OperationResult &result) {
         if (!result.success && !force && result.title == QString::fromUtf8(BranchNotMergedTitle))
         {
             m_busy = false; m_task = 0; updateActions();
@@ -351,14 +305,7 @@ void HomePageBranchesPage::remove(const BranchInfo &selected, bool force)
                 remove(selected, true);
             return;
         }
-        const bool leaving = result.success && m_id == id && m_branchRef == ref;
-        if (leaving)
-        {
-            ++m_generation;
-            m_history->deactivate();
-        }
-        complete(result, !leaving);
-        if (leaving) emit replaceRoute({PageId::Branches, id});
+        complete(result);
     });
 }
 void HomePageBranchesPage::compare(const BranchInfo &selected, const BranchRequest &request, const QVector<BranchInfo> &branches)
