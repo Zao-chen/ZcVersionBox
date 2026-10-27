@@ -3,7 +3,9 @@
 #include "homepage_diff_view.h"
 #include "ui_homepage_page_conflict.h"
 #include "windows/mainwindow_presentation.h"
+#include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 #include <QFileInfo>
+#include <QLabel>
 #include <QPushButton>
 #include <QPointer>
 #include <QResizeEvent>
@@ -12,6 +14,7 @@
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTimer>
+#include <QVBoxLayout>
 
 namespace
 {
@@ -36,6 +39,22 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
     : QWidget(parent), ui(new Ui::HomePageConflictPage), m_service(service)
 {
     ui->setupUi(this);
+    m_loadingPage = new QWidget(ui->modeStack);
+    m_loadingPage->setObjectName("conflictLoadingPage");
+    auto *loadingLayout = new QVBoxLayout(m_loadingPage);
+    loadingLayout->addStretch();
+    m_loadingSpinner = new oclero::qlementine::LoadingSpinner(m_loadingPage);
+    m_loadingSpinner->setObjectName("conflictSpinner");
+    m_loadingSpinner->setAccessibleName("正在读取差异");
+    m_loadingSpinner->setFixedSize(32, 32);
+    auto *loadingLabel = new QLabel(QStringLiteral("正在读取差异…"), m_loadingPage);
+    loadingLabel->setObjectName("conflictLoadingLabel");
+    loadingLabel->setAlignment(Qt::AlignCenter);
+    UiStyle::text(loadingLabel, UiStyle::FontRole::Caption, true);
+    loadingLayout->addWidget(m_loadingSpinner, 0, Qt::AlignHCenter);
+    loadingLayout->addWidget(loadingLabel);
+    loadingLayout->addStretch();
+    ui->modeStack->addWidget(m_loadingPage);
     UiStyle::text(ui->pageTitle, UiStyle::FontRole::Object);
     for (auto *label : {ui->progressLabel, ui->resultScope})
         UiStyle::text(label, UiStyle::FontRole::Caption, true);
@@ -596,11 +615,25 @@ void HomePageConflictPage::apply()
         else load();
     });
 }
+void HomePageConflictPage::setLoading(bool loading)
+{
+    if (m_loading == loading) return;
+    m_loading = loading;
+    emit loadingChanged(loading);
+}
 void HomePageConflictPage::updateActions()
 {
     const bool valid = m_active && !m_session.id.isEmpty();
     const bool editable = valid && !m_busy && !m_session.stale;
     const bool question = !m_session.files.isEmpty();
+    const bool showingWork = (!m_preview && question) || (m_preview && !m_prepared.commit.isEmpty());
+    const bool loading = m_active && m_busy && !showingWork;
+    setLoading(loading);
+    if (m_loadingSpinner) m_loadingSpinner->setSpinning(loading);
+    if (loading)
+        ui->modeStack->setCurrentWidget(m_loadingPage);
+    else if (ui->modeStack->currentWidget() == m_loadingPage)
+        ui->modeStack->setCurrentWidget(m_preview ? ui->previewPage : ui->questionPage);
     ui->progressLabel->setText(valid ? QString("已处理 %1 / %2 处").arg(m_session.total() - m_session.remaining()).arg(m_session.total()) : QString());
     ui->reanalyzeButton->setVisible(m_session.stale);
     ui->reanalyzeButton->setEnabled(m_active && !m_busy && m_service->syncState(m_id) == BackupSyncState::ResolutionPending);
@@ -620,7 +653,7 @@ void HomePageConflictPage::updateActions()
     ui->nextButton->setText(!question || canAdvance ? QStringLiteral("下一处") : QStringLiteral("预览结果"));
     ui->nextButton->setEnabled(valid && !m_busy && question && (canAdvance || previewReady));
     ui->nextButton->setToolTip(canAdvance ? QString() : previewTip);
-    ui->previewButton->setVisible(!m_preview && !question);
+    ui->previewButton->setVisible(!m_preview && !question && !loading);
     ui->previewButton->setEnabled(previewReady);
     ui->previewButton->setToolTip(previewTip);
     ui->editChoicesButton->setVisible(m_preview && question);

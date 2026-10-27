@@ -6,6 +6,7 @@
 #include <memory>
 
 namespace Ui { class HomePageConflictPage; }
+namespace oclero::qlementine { class LoadingSpinner; }
 class QPlainTextEdit;
 class HomePageConflictPage : public QWidget
 {
@@ -19,6 +20,7 @@ class HomePageConflictPage : public QWidget
   signals:
     void navigate(const Route &route);
     void notification(const OperationResult &result);
+    void loadingChanged(bool loading);
   protected:
     void resizeEvent(QResizeEvent *event) override;
   private:
@@ -35,7 +37,9 @@ class HomePageConflictPage : public QWidget
     QString m_returnBranchRef;
     quint64 m_repository{0}, m_context{0}, m_contentRequest{0};
     int m_file{0}, m_hunk{0};
-    bool m_active{false}, m_busy{false}, m_preview{false}, m_cloudSession{true};
+    bool m_active{false}, m_busy{false}, m_preview{false}, m_cloudSession{true}, m_loading{false};
+    QWidget *m_loadingPage{nullptr};
+    oclero::qlementine::LoadingSpinner *m_loadingSpinner{nullptr};
     QString m_currentLocalText, m_currentRemoteText;
     bool m_hasLocalText{false}, m_hasRemoteText{false};
     Context context() const;
@@ -53,6 +57,7 @@ class HomePageConflictPage : public QWidget
     void apply();
     void loadContent(QPlainTextEdit *editor, const QString &path, ConflictSide side, quint64 request);
     void updateActions();
+    void setLoading(bool loading);
     void updateLayout();
     Route returnRoute() const;
 };

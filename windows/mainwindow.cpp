@@ -417,6 +417,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     reportLoading(m_dashboard);
     reportLoading(m_collaboration);
     reportLoading(m_diff);
+    reportLoading(m_conflict);
     connect(new QShortcut(QKeySequence(Qt::Key_Escape), this), &QShortcut::activated, this, [this]
             {
         // A single window shortcut avoids ambiguous Escape registrations when
