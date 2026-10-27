@@ -83,20 +83,6 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
         showQuestion();
     });
     connect(ui->laterButton, &QPushButton::clicked, this, [this] { emit navigate(returnRoute()); });
-    auto *cancel = new QPushButton("取消本次处理", this);
-    cancel->setObjectName("cancelResolutionButton");
-    ui->laterButton->parentWidget()->layout()->addWidget(cancel);
-    connect(cancel, &QPushButton::clicked, this, [this] {
-        const auto ctx = context(); const auto session = m_session.id;
-        const QPointer<HomePageConflictPage> guard(this);
-        if (m_busy || session.isEmpty() || !confirmAction(this, m_cloudSession ? "取消本次同步并关闭自动同步？已有选择将清除，源文件保持原样，本地自动备份恢复。" : "取消本次处理？已有选择将清除，源文件保持原样。", "取消处理") || !guard || !current(ctx)) return;
-        m_busy = true; updateActions();
-        m_service->cancelResolution(ctx.id, session, this, [this, ctx](const OperationResult &r) {
-            if (!current(ctx)) return;
-            m_busy = false; emit notification(r);
-            if (r.success) emit navigate(returnRoute()); else updateActions();
-        }, m_cloudSession);
-    });
     connect(ui->reanalyzeButton, &QPushButton::clicked, this, [this]
     {
         const auto ctx = context();
@@ -612,11 +598,6 @@ void HomePageConflictPage::updateActions()
 {
     const bool valid = m_active && !m_session.id.isEmpty();
     const bool editable = valid && !m_busy && !m_session.stale;
-    if (auto *cancel = findChild<QPushButton *>("cancelResolutionButton"))
-    {
-        cancel->setEnabled(valid && !m_busy);
-        cancel->setText(m_cloudSession ? "取消本次并关闭自动同步" : "取消本次处理");
-    }
     const bool question = !m_session.files.isEmpty();
     ui->progressLabel->setText(valid ? QString("已处理 %1 / %2 处").arg(m_session.total() - m_session.remaining()).arg(m_session.total()) : QString());
     ui->reanalyzeButton->setVisible(m_session.stale);

@@ -750,13 +750,9 @@ BackupTaskId BackupService::switchBranch(const PreparedBranchSwitch &r, QObject 
 
 BackupTaskId BackupService::prepareBranchMerge(const BranchRequest &r, QObject *c, Reply<SyncResolutionSession> f)
 { return d->submit<SyncResolutionSession>(r.context.id, c, std::move(f), [r](BackupEngine &e) { return e.prepareBranchMerge(r); }); }
-BackupTaskId BackupService::cancelResolution(const QString &id, const QString &session, QObject *c, Completion f, bool disableAutomatic)
+BackupTaskId BackupService::cancelResolution(const QString &id, const QString &session, QObject *c, Completion f)
 {
-    return d->mutate(id, c, std::move(f), [=](BackupEngine &e) {
-        const auto result = e.cancelResolution(id, session);
-        if (result.success && disableAutomatic) return e.setAutoSync(id, false);
-        return result;
-    });
+    return d->mutate(id, c, std::move(f), [=](BackupEngine &e) { return e.cancelResolution(id, session); });
 }
 
 BackupTaskId BackupService::uploadBranch(const BranchRequest &r, QObject *c, Completion f)
