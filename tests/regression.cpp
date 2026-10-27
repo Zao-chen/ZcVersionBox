@@ -3159,7 +3159,7 @@ class Regression : public QObject
         QTRY_COMPARE(selector->text(), QString("方案：main"));
         QStringList entries;
         for (auto *action : selector->menu()->actions()) if (!action->isSeparator()) entries.append(action->text());
-        QCOMPARE(entries, QStringList({"main", "全部共享", "试验方案", "新建方案…", "管理全部方案"}));
+        QCOMPARE(entries, QStringList({"main", "全部共享", "试验方案", "管理全部方案"}));
         selector->menu()->actions().last()->trigger(); settle(service);
         QVERIFY(page->isVisible());
         QCOMPARE(head(service, id), main);

@@ -364,6 +364,7 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
     connect(m_history, &HomePageBackupPage::createBranchRequested, m_branches, &HomePageBranchesPage::createFrom);
     m_branchMenu = new QMenu(ui->branchSelector);
     m_branchMenu->setObjectName("branchSelectorMenu");
+    m_branchMenu->setToolTipsVisible(true);
     ui->branchSelector->setMenu(m_branchMenu);
     wire(m_general);
     wire(m_actions);
@@ -1118,26 +1119,30 @@ void MainWindow::updateBranchSelector()
         ui->branchSelector->setText("方案：" + current);
         ui->branchSelector->setToolTip("正在使用：" + current + reason);
         m_branchMenu->clear();
-        m_branchMenu->addSection("切换方案");
+        // A switcher, not a set of options: a check marks the current 方案, the others switch on click.
+        bool others = false;
         for (const auto &branch : result.value.branches)
         {
             if (branch.remoteBranch) continue;
-            auto *action = m_branchMenu->addAction(branch.name);
-            action->setCheckable(true);
-            action->setChecked(branch.current);
-            action->setEnabled(tracking || branch.current);
-            const auto ref = branch.ref;
-            connect(action, &QAction::triggered, this, [this, id, ref, action]
+            if (branch.current)
             {
-                if (ref == m_backups->branchContext(id).ref) { action->setChecked(true); return; }
-                action->setChecked(false);
+                auto *current = new QAction(UiStyle::icon("check"), branch.name, m_branchMenu);
+                current->setToolTip("正在使用");
+                m_branchMenu->insertAction(m_branchMenu->actions().value(0), current);
+                continue;
+            }
+            others = true;
+            auto *action = m_branchMenu->addAction(branch.name);
+            action->setEnabled(tracking);
+            action->setToolTip(reason.trimmed());
+            const auto ref = branch.ref;
+            connect(action, &QAction::triggered, this, [this, id, ref]
+            {
                 m_preview->requestLeave([this, id, ref] { m_branches->requestSwitch(id, ref); });
             });
         }
+        if (!others) m_branchMenu->addAction("还没有其他方案")->setEnabled(false);
         m_branchMenu->addSeparator();
-        auto *create = m_branchMenu->addAction("新建方案…");
-        create->setEnabled(tracking);
-        connect(create, &QAction::triggered, this, [this, id] { m_branches->createFrom(id); });
         m_branchMenu->addAction("管理全部方案", this, [this, id] { navigate({PageId::Branches, id}); });
     });
 }

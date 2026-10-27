@@ -18,6 +18,7 @@
   <file alias="restore.svg">res/icons/restore.svg</file>
   <file alias="copy.svg">res/icons/copy.svg</file>
   <file alias="close.svg">res/icons/close.svg</file>
+  <file alias="check.svg">res/icons/check.svg</file>
   <file alias="window_minimize.svg">res/icons/window_minimize.svg</file>
   <file alias="window_maximize.svg">res/icons/window_maximize.svg</file>
   <file alias="window_restore.svg">res/icons/window_restore.svg</file>
