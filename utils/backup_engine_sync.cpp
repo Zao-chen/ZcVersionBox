@@ -148,10 +148,17 @@ BackupResult<SyncResult> BackupEngine::synchronize(const QString &id, const Sync
         const auto directory = BackupSchemes::read(record, git);
         if (!directory.result.success) return failure(directory.result);
         auto plan = directory.value;
+        const auto beforeSchemes = record;
         record.operation = "reconcile-schemes";
         saved = m_catalog.save(record); if (!saved.success) return failure(saved);
-        result = BackupSchemes::reconcile(record, git, plan);
-        if (!result.success) return failure(attention(record, result.message));
+        bool writesStarted = false;
+        result = BackupSchemes::reconcile(record, git, plan, writesStarted);
+        if (!result.success)
+        {
+            if (writesStarted) return failure(attention(record, result.message));
+            saved = m_catalog.save(beforeSchemes);
+            return failure(saved.success ? result : saved);
+        }
         record.operation.clear();
         saved = m_catalog.save(record); if (!saved.success) return failure(saved);
         schemeWarnings += plan.warnings;

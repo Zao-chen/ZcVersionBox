@@ -1,5 +1,7 @@
 #include "backup_schemes.h"
 #include <QDir>
+#include <QCryptographicHash>
+#include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
@@ -25,6 +27,18 @@ OperationResult associate(const GitRepository &git, const QString &name, const Q
 {
     auto result = GitRepository::outcome(git.run({"config", "branch." + name + ".remote", remote}));
     return result.success ? GitRepository::outcome(git.run({"config", "branch." + name + ".merge", ref(target)})) : result;
+}
+void recordPublication(BackupRecord &record, const QMap<QString, SharedScheme> &directory, const QString &endpoint, const QString &revision)
+{
+    record.schemes = directory; record.schemeBase = directory; record.schemeRevision = revision;
+    for (const auto &scheme : directory)
+    {
+        if (scheme.deleted) continue;
+        const auto key = QString::fromLatin1(QCryptographicHash::hash(endpoint.toUtf8() + '\0' + ref(scheme.name).toUtf8(), QCryptographicHash::Sha256).toHex());
+        auto &baseline = record.branchRemotes[key];
+        baseline.lastUploadedHead = scheme.head;
+        baseline.rebuildHead.clear(); baseline.rebuildExpected.clear();
+    }
 }
 
 }
@@ -149,8 +163,9 @@ BackupResult<SchemePlan> BackupSchemes::read(const BackupRecord &record, const G
     return {OperationResult::ok({}), plan};
 }
 
-OperationResult BackupSchemes::reconcile(BackupRecord &record, const GitRepository &git, SchemePlan &plan)
+OperationResult BackupSchemes::reconcile(BackupRecord &record, const GitRepository &git, SchemePlan &plan, bool &writesStarted)
 {
+    writesStarted = false;
     const auto originalBranch = record.branchRef;
     auto result = track(record, git);
     if (!result.success) return result;
@@ -260,6 +275,7 @@ OperationResult BackupSchemes::reconcile(BackupRecord &record, const GitReposito
         if (ref(it.value()) != record.branchRef && worktrees.output.split('\n').contains("branch " + ref(it.value())))
             return invalid("方案“" + it.value() + "”正在其他 Git 工作目录使用，请先关闭该工作目录再同步。");
     }
+    writesStarted = true;
     for (auto it = oldNames.cbegin(); it != oldNames.cend(); ++it)
     {
         const auto target = desired.value(it.key());
@@ -335,7 +351,7 @@ OperationResult BackupSchemes::publish(BackupRecord &record, const GitRepository
     const auto previous = revision.isEmpty() ? GitResult{} : git.run({"show", revision + ":schemes.json"});
     if (!revision.isEmpty() && previous.success() && previous.bytes == data && targets == plan.remoteHeads)
     {
-        record.schemes = directory; record.schemeBase = directory; record.schemeRevision = revision;
+        recordPublication(record, directory, plan.endpoint, revision);
         return OperationResult::ok({});
     }
     if (revision.isEmpty() || !previous.success() || previous.bytes != data)
@@ -382,9 +398,7 @@ OperationResult BackupSchemes::publish(BackupRecord &record, const GitRepository
         }
     const auto pinned = git.run({"update-ref", "refs/zcversionbox/schemes-published", revision});
     if (!pinned.success()) return GitRepository::outcome(pinned);
-    record.schemes = directory;
-    record.schemeBase = directory;
-    record.schemeRevision = revision;
+    recordPublication(record, directory, plan.endpoint, revision);
     return OperationResult::ok({});
 }
 
@@ -398,11 +412,32 @@ BackupResult<QString> BackupSchemes::merge(const GitRepository &git, const QStri
     auto command = git.run({"clone", "--no-hardlinks", "--no-checkout", "--", repository, path});
     if (!command.success()) return {GitRepository::outcome(command)};
     GitRepository candidate(path, runner, std::move(cancel));
-    for (const auto &args : QVector<QStringList>{{"config", "user.name", "ZcVersionBox"}, {"config", "user.email", "backup@zcversionbox.local"}, {"checkout", "--detach", ours}})
+    for (const auto &args : QVector<QStringList>{{"config", "user.name", "ZcVersionBox"}, {"config", "user.email", "backup@zcversionbox.local"}})
     {
         command = candidate.run(args);
         if (!command.success()) return {GitRepository::outcome(command)};
     }
+    for (const auto *key : {"core.autocrlf", "core.eol", "core.filemode", "core.ignorecase", "core.attributesfile", "core.excludesfile"})
+    {
+        const auto value = git.run({"config", "--get", key});
+        if (value.success())
+        {
+            command = candidate.run({"config", key, value.output.trimmed()});
+            if (!command.success()) return {GitRepository::outcome(command)};
+        }
+        else if (value.exitCode != 1) return {GitRepository::outcome(value)};
+    }
+    for (const auto *name : {"attributes", "exclude"})
+    {
+        const auto from = repository + "/.git/info/" + name, to = path + "/.git/info/" + name;
+        if (QFile::exists(from))
+        {
+            if (QFile::exists(to) && !QFile::remove(to)) return {OperationResult::fail("整理方案失败", "无法准备隔离仓库配置。")};
+            if (!QFile::copy(from, to)) return {OperationResult::fail("整理方案失败", "无法复制仓库的文件规则。")};
+        }
+    }
+    command = candidate.run({"checkout", "--detach", ours});
+    if (!command.success()) return {GitRepository::outcome(command)};
     command = candidate.run({"merge", "--no-edit", "--no-gpg-sign", theirs});
     if (!command.success())
     {

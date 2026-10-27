@@ -18,7 +18,7 @@ class BackupSchemes
     static OperationResult track(BackupRecord &record, const GitRepository &git);
     static BackupResult<SchemePlan> read(const BackupRecord &record, const GitRepository &git);
     // Caller persists an operation marker before applying any local changes.
-    static OperationResult reconcile(BackupRecord &record, const GitRepository &git, SchemePlan &plan);
+    static OperationResult reconcile(BackupRecord &record, const GitRepository &git, SchemePlan &plan, bool &writesStarted);
     static OperationResult publish(BackupRecord &record, const GitRepository &git, SchemePlan &plan);
     static BackupResult<QString> merge(const GitRepository &git, const QString &repository,
                                       const QString &ours, const QString &theirs,

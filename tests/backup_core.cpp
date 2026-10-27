@@ -212,6 +212,7 @@ class BackupCoreRegression : public QObject
         RemoteFixture f;
         CHECK_OK(f.service->createBranch(f.id, "方案甲"));
         CHECK_OK(f.service->syncAll(f.id).result);
+        QCOMPARE(record(*f.service, f.id).branchRemotes.value(GitRepository(f.service->repoPath(f.id)).branchEndpoint().value).lastUploadedHead, head(*f.service, f.id));
         TestDirectory secondDir;
         const auto secondPaths = pathsIn(secondDir);
         const auto source = secondDir.path() + "/source.txt";
@@ -389,6 +390,20 @@ class BackupCoreRegression : public QObject
         QCOMPARE(second.branchContext(id).ref, "refs/heads/" + names[1]);
         QCOMPARE(GitRepository(second.repoPath(id)).branchRef().value, second.branchContext(id).ref);
         QCOMPARE(head(second, id), originalHead); QCOMPARE(readFile(source), contents);
+    }
+
+    void sharedSchemesMappingErrorDoesNotPauseBackup()
+    {
+        RemoteFixture f; CHECK_OK(f.service->createBranch(f.id, "topic"));
+        const auto repo = f.service->repoPath(f.id);
+        git(repo, {"config", "branch.topic.remote", "origin"});
+        git(repo, {"config", "branch.topic.merge", "refs/heads/main"});
+        const auto rejected = f.service->syncAll(f.id); QVERIFY(!rejected.result.success);
+        QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
+        writeFile(f.source, "work after configuration error\n"); CHECK_OK(f.service->backup(f.id));
+        git(repo, {"config", "branch.topic.merge", "refs/heads/topic"});
+        CHECK_OK(f.service->syncAll(f.id).result);
+        QCOMPARE(runGit(f.remote, {"show", "main:source.txt"}).bytes, QByteArray("work after configuration error\n"));
     }
 
     void sharedSchemesRejectMissingDirectory()
