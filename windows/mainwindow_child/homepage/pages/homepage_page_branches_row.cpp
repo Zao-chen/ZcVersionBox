@@ -38,7 +38,7 @@ HomePageBranchRow::HomePageBranchRow(const BranchInfo &branch, const QString &na
 {
     setObjectName("branchRow");
     setProperty("ref", branch.ref);
-    setFocusPolicy(Qt::StrongFocus);
+    setFocusPolicy(Qt::TabFocus); // clicks never leave a row looking selected.
     const auto sharing = branch.remoteBranch ? QStringLiteral("仅在云端，尚未加入") : branch.upstream.isEmpty() ? QStringLiteral("仅在本机") : QStringLiteral("已共享到云端");
     setAccessibleName(name + "，" + (branch.current ? QStringLiteral("正在使用，") : QString()) + sharing);
     setToolTip("点击查看这个方案的历史版本");
@@ -105,7 +105,9 @@ void HomePageBranchRow::setActionsEnabled(bool enabled, const QString &reason)
 
 void HomePageBranchRow::updateHover()
 {
-    m_hovered = underMouse() || hasFocus() || isAncestorOf(QApplication::focusWidget());
+    // Focus only highlights a row while navigating by keyboard; there is no selected state.
+    const bool focused = hasFocus() || isAncestorOf(QApplication::focusWidget());
+    m_hovered = underMouse() || (focused && UiStyle::isKeyboardNavigationActive());
     // Cloud-only 方案 always show how to join; local ones reveal the switch on demand.
     if (m_use) m_use->setVisible(m_branch.remoteBranch || m_hovered);
     update();
