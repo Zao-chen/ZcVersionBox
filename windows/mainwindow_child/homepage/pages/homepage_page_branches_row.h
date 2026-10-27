@@ -27,7 +27,7 @@ class HomePageBranchRow : public QFrame
     void leaveEvent(QEvent *event) override;
     void focusInEvent(QFocusEvent *event) override;
     void focusOutEvent(QFocusEvent *event) override;
-    void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void contextMenuEvent(QContextMenuEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;

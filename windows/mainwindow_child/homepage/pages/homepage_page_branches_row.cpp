@@ -41,7 +41,8 @@ HomePageBranchRow::HomePageBranchRow(const BranchInfo &branch, const QString &na
     setFocusPolicy(Qt::StrongFocus);
     const auto sharing = branch.remoteBranch ? QStringLiteral("仅在云端，尚未加入") : branch.upstream.isEmpty() ? QStringLiteral("仅在本机") : QStringLiteral("已共享到云端");
     setAccessibleName(name + "，" + (branch.current ? QStringLiteral("正在使用，") : QString()) + sharing);
-    setToolTip("双击查看这个方案的历史版本");
+    setToolTip("点击查看这个方案的历史版本");
+    setCursor(Qt::PointingHandCursor);
 
     auto *layout = new QHBoxLayout(this);
     layout->setContentsMargins(14, 8, 8, 8);
@@ -162,10 +163,10 @@ bool HomePageBranchRow::eventFilter(QObject *watched, QEvent *event)
     return QFrame::eventFilter(watched, event);
 }
 
-void HomePageBranchRow::mouseDoubleClickEvent(QMouseEvent *event)
+void HomePageBranchRow::mouseReleaseEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton) emit historyRequested();
-    else QFrame::mouseDoubleClickEvent(event);
+    if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint())) emit historyRequested();
+    else QFrame::mouseReleaseEvent(event);
 }
 
 void HomePageBranchRow::keyPressEvent(QKeyEvent *event)

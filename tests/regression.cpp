@@ -3136,15 +3136,12 @@ class Regression : public QObject
         QCOMPARE(historyTable->model()->rowCount(), 8);
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
-        // A single click on a 方案 row stays on the list; double-click opens its history without switching.
+        // Clicking a 方案 row opens its history without switching.
         QVERIFY(service.createBranch(id, "全部共享", topic).success);
         window.navigate({PageId::Branches, id}); settle(service);
         auto *page = window.findChild<HomePageBranchesPage *>(); QVERIFY(page && page->isVisible());
         auto *trial = branchRow(page, "refs/heads/试验方案"); QVERIFY(trial && trial->isVisible());
         QTest::mouseClick(trial, Qt::LeftButton, Qt::NoModifier, QPoint(40, trial->height() / 2)); settle(service);
-        QVERIFY(page->isVisible());
-        QVERIFY(window.findChild<QToolButton *>("branchesTab")->isChecked());
-        QTest::mouseDClick(trial, Qt::LeftButton, Qt::NoModifier, QPoint(40, trial->height() / 2)); settle(service);
         QVERIFY(history->isVisible());
         QCOMPARE(scope->currentData().toString(), QString("refs/heads/试验方案"));
         QCOMPARE(head(service, id), main);
