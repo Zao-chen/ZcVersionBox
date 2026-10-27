@@ -882,7 +882,7 @@ void HomePageBackupPage::refresh()
         for (const auto &branch : reply.value.branches)
         {
             if (isLinkedRemote(branch, reply.value.branches)) continue;
-            const auto name = branch.remoteBranch && branch.remoteRef.startsWith("refs/heads/") ? branch.remoteRef.mid(11) + "（云端）" : branch.name;
+            const auto name = branch.remoteBranch && branch.remoteRef.startsWith("refs/heads/") ? branch.remoteRef.mid(11) : branch.name;
             ui->historyScope->addItem("只看：" + name, branch.ref);
         }
         ui->historyScope->setCurrentIndex(qMax(0, ui->historyScope->findData(m_branchRef)));

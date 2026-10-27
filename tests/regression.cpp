@@ -2799,7 +2799,7 @@ class Regression : public QObject
         const auto shown = HistoryGraph::userFacing({same, behind});
         QCOMPARE(shown[0].refs, QStringList({"main"}));
         QCOMPARE(shown[0].branchRefs, QStringList({"refs/heads/main"}));
-        QCOMPARE(shown[1].refs, QStringList({"topic（云端）"}));
+        QCOMPARE(shown[1].refs, QStringList({"topic"}));
         QCOMPARE(shown[1].branchRefs, QStringList({"refs/remotes/origin/topic"}));
     }
     void historyBranchBadgesKeepExactTargets()
@@ -3045,6 +3045,40 @@ class Regression : public QObject
         QTimer::singleShot(5000, &window, [&] { if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget())) menu->close(); });
         closer.start(); operations->click(); closer.stop();
         QCOMPARE(menuItems, QStringList({"查看历史", "切换到此方案…", "从此方案新建…", "与其他方案比较…", "合并到正在使用的方案…", "重命名…", "删除…"}));
+        QVERIFY(branchRow(branches, "refs/heads/cloud-only"));
+        QVERIFY(!branchRow(branches, "refs/remotes/origin/cloud-only"));
+        for (auto *label : branches->findChildren<QLabel *>("branchSection"))
+            QVERIFY(label->text() == "正在使用" || label->text() == "其他方案");
+        if (!output.isEmpty())
+            for (const auto theme : {ThemeMode::Light, ThemeMode::Dark})
+            {
+                m_theme->setMode(theme);
+                for (const auto size : {QSize(1080, 740), QSize(760, 520)})
+                {
+                    window.resize(size); QTest::qWait(80);
+                    QVERIFY(window.grab().save(output + QString("/schemes-%1-%2.png").arg(theme == ThemeMode::Light ? "light" : "dark").arg(size.width())));
+                }
+            }
+        // A just-fetched scheme uses the same switch confirmation, without a
+        // join/name dialog, even before the next automatic synchronization.
+        QVERIFY(runGit(remote, {"branch", "direct-switch", "main"}).success());
+        QVERIFY(awaitBackup<OperationResult>([&](auto done) { service.fetchBranches(service.branchContext(id), &service, done); }).success);
+        branches->refresh(); settle(service);
+        auto *direct = branchRow(branches, "refs/remotes/origin/direct-switch"); QVERIFY(direct);
+        QCOMPARE(direct->findChild<QPushButton *>("branchUse")->text(), QString("切换到此方案"));
+        int confirmations = 0;
+        QTimer confirm; confirm.setInterval(10);
+        connect(&confirm, &QTimer::timeout, &window, [&] {
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+            {
+                QCOMPARE(dialog->objectName(), QString("switchBranchDialog"));
+                ++confirmations; dialog->accept(); confirm.stop();
+            }
+        });
+        confirm.start(); branches->requestSwitch(id, "refs/remotes/origin/direct-switch");
+        QTRY_COMPARE_WITH_TIMEOUT(service.branchContext(id).ref, QString("refs/heads/direct-switch"), 20000);
+        settle(service); confirm.stop(); QCOMPARE(confirmations, 1);
+
     }
     void collaborationConnectionUsesExplicitSaveAndRejectsStaleReply()
     {

@@ -47,7 +47,8 @@ class HomePageBranchesPage : public QWidget
     void complete(const OperationResult &result, bool reload = true);
     void useBranch(const BranchInfo &branch);
     void showHistory(const BranchInfo &branch);
-    void create(const QString &id, const QString &commit, const BranchInfo &tracked);
+    void create(const QString &id, const QString &commit);
+    void ensureLocal(const QString &id, const BranchInfo &branch, std::function<void(const BranchInfo &)> continuation);
     void showOperations(const BranchInfo &selected, const QPoint &globalPos);
     void rename(const BranchInfo &selected);
     void remove(const BranchInfo &selected, bool force);

@@ -15,6 +15,10 @@ QColor color(int index)
 }
 QVector<Revision> userFacing(QVector<Revision> revisions)
 {
+    QSet<QString> localNames;
+    for (const auto &revision : revisions)
+        for (const auto &ref : revision.branchRefs)
+            if (ref.startsWith("refs/heads/")) localNames.insert(ref.mid(11));
     for (auto &revision : revisions)
     {
         QStringList names, refs;
@@ -26,8 +30,8 @@ QVector<Revision> userFacing(QVector<Revision> revisions)
             {
                 const auto slash = ref.indexOf('/', 13);
                 const auto branch = slash < 0 ? QString() : ref.mid(slash + 1);
-                if (!branch.isEmpty() && revision.branchRefs.contains("refs/heads/" + branch)) continue;
-                if (!branch.isEmpty()) name = branch + "（云端）";
+                if (localNames.contains(branch)) continue;
+                if (!branch.isEmpty()) name = branch;
             }
             names.append(name);
             refs.append(ref);
