@@ -11,6 +11,7 @@
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QVBoxLayout>
 
 namespace
@@ -40,7 +41,7 @@ QLabel *sectionLabel(const QString &text, QWidget *parent)
 {
     auto *label = new QLabel(text, parent);
     label->setObjectName("branchSection");
-    label->setContentsMargins(14, 10, 0, 2);
+    label->setContentsMargins(16, 10, 0, 2);
     UiStyle::text(label, UiStyle::FontRole::Caption, true);
     return label;
 }
@@ -78,6 +79,8 @@ BranchRequest HomePageBranchesPage::request(const BranchInfo &branch) const
 }
 void HomePageBranchesPage::setBackup(const QString &id)
 {
+    const auto narrow = width() < 640;
+    ui->layout->setContentsMargins(narrow ? 12 : 20, 8, narrow ? 16 : 24, 16);
     if (m_id != id)
     {
         ++m_generation;
@@ -350,4 +353,11 @@ void HomePageBranchesPage::merge(const BranchRequest &request)
             Route route{PageId::Conflict, id}; route.branchRef = source; emit navigate(route);
         }
     });
+}
+
+void HomePageBranchesPage::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    const auto narrow = width() < 640;
+    ui->layout->setContentsMargins(narrow ? 12 : 20, 8, narrow ? 16 : 24, 16);
 }

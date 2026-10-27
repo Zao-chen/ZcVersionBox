@@ -3,13 +3,17 @@
  <class>HomePageBranchesPage</class>
  <widget class="QWidget" name="HomePageBranchesPage">
   <layout class="QVBoxLayout" name="layout" stretch="0,1,0">
-   <property name="leftMargin"><number>24</number></property>
+   <property name="leftMargin"><number>20</number></property>
    <property name="topMargin"><number>8</number></property>
    <property name="rightMargin"><number>24</number></property>
    <property name="bottomMargin"><number>16</number></property>
    <property name="spacing"><number>12</number></property>
    <item>
     <layout class="QHBoxLayout" name="listActions">
+     <property name="leftMargin"><number>16</number></property>
+     <property name="topMargin"><number>0</number></property>
+     <property name="rightMargin"><number>0</number></property>
+     <property name="bottomMargin"><number>0</number></property>
      <property name="spacing"><number>8</number></property>
      <item><widget class="QPushButton" name="listCreate"><property name="text"><string>新建方案…</string></property></widget></item>
      <item><spacer name="listActionSpace"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
