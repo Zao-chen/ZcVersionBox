@@ -128,7 +128,7 @@ BackupResult<HistoryPage> GitRepository::branchHistory(const HistoryQuery &query
         if (!valid) return {OperationResult::fail("读取历史失败", "提交时间无效")};
         Revision revision{fields[i], fields[i + 3], QDateTime::fromSecsSinceEpoch(time, QTimeZone::UTC), fields[i + 1], {}};
         revision.parents = fields[i + 4].split(' ', Qt::SkipEmptyParts);
-        for (const auto &ref : refs.value) if (ref.head == revision.hash)
+        for (const auto &ref : refs.value) if (ref.head == revision.hash && !isLinkedRemote(ref, refs.value))
         {
             revision.refs.append(ref.name);
             revision.branchRefs.append(ref.ref);

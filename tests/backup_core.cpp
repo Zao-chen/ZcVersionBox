@@ -207,6 +207,218 @@ class BackupCoreRegression : public QObject
         qputenv("GIT_CONFIG_GLOBAL", (m_environment.path() + "/gitconfig").toUtf8());
         QVERIFY(runGit({}, {"--version"}).success());
     }
+    void sharedSchemesRenameDeleteAndOfflineRestart()
+    {
+        RemoteFixture f;
+        CHECK_OK(f.service->createBranch(f.id, "方案甲"));
+        CHECK_OK(f.service->syncAll(f.id).result);
+        QCOMPARE(record(*f.service, f.id).branchRemotes.value(GitRepository(f.service->repoPath(f.id)).branchEndpoint().value).lastUploadedHead, head(*f.service, f.id));
+        TestDirectory secondDir;
+        const auto secondPaths = pathsIn(secondDir);
+        const auto source = secondDir.path() + "/source.txt";
+        auto second = std::make_unique<TestBackupService>(secondPaths);
+        const auto imported = second->prepareImport(f.remote); CHECK_OK(imported.result);
+        CHECK_OK(second->finishImport(imported.value.sessionId, "source.txt", source));
+        const auto id = second->idForSource(source), repo = second->repoPath(id);
+        CHECK_OK(second->syncAll(id).result);
+        QVERIFY(runGit(repo, {"rev-parse", "refs/heads/方案甲"}).success());
+        CHECK_OK(second->switchBranch(id, "refs/heads/方案甲"));
+        CHECK_OK(f.service->renameBranch(f.id, "refs/heads/方案甲", "方案乙"));
+        f.service.reset(); f.service = std::make_unique<TestBackupService>(f.paths);
+        CHECK_OK(f.service->syncAll(f.id).result);
+        QVERIFY(!runGit(f.remote, {"rev-parse", "--verify", "refs/heads/方案甲"}).success());
+        CHECK_OK(second->syncAll(id).result);
+        QVERIFY(!runGit(repo, {"rev-parse", "--verify", "refs/heads/方案甲"}).success());
+        QVERIFY(runGit(repo, {"rev-parse", "refs/heads/方案乙"}).success());
+        QCOMPARE(second->branchContext(id).ref, QString("refs/heads/方案乙"));
+        QCOMPARE(readFile(source), QByteArray("initial\n"));
+        CHECK_OK(second->switchBranch(id, "refs/heads/main"));
+        CHECK_OK(f.service->deleteBranch(f.id, "refs/heads/方案乙", true));
+        CHECK_OK(f.service->syncAll(f.id).result);
+        second.reset(); second = std::make_unique<TestBackupService>(secondPaths);
+        CHECK_OK(second->syncAll(id).result);
+        QVERIFY(!runGit(repo, {"rev-parse", "--verify", "refs/heads/方案乙"}).success());
+        QVERIFY(!runGit(f.remote, {"rev-parse", "--verify", "refs/heads/方案乙"}).success());
+        CHECK_OK(second->syncAll(id).result); // An old device cannot resurrect it.
+        QVERIFY(!runGit(f.remote, {"rev-parse", "--verify", "refs/heads/方案乙"}).success());
+        CHECK_OK(f.service->createBranch(f.id, "方案乙")); // A new identity may reuse a retired name.
+        CHECK_OK(f.service->syncAll(f.id).result);
+        CHECK_OK(second->syncAll(id).result);
+        QVERIFY(runGit(repo, {"rev-parse", "refs/heads/方案乙"}).success());
+    }
+    void sharedSchemesPreserveDeletedOfflineWork_data()
+    {
+        QTest::addColumn<bool>("current");
+        QTest::newRow("inactive-with-new-work") << false;
+        QTest::newRow("currently-used") << true;
+    }
+    void sharedSchemesPreserveDeletedOfflineWork()
+    {
+        QFETCH(bool, current);
+        RemoteFixture f; CHECK_OK(f.service->createBranch(f.id, "topic")); CHECK_OK(f.service->syncAll(f.id).result);
+        TestDirectory secondDir; TestBackupService second(pathsIn(secondDir));
+        const auto source = secondDir.path() + "/source.txt";
+        const auto imported = second.prepareImport(f.remote); CHECK_OK(imported.result);
+        CHECK_OK(second.finishImport(imported.value.sessionId, "source.txt", source));
+        const auto id = second.idForSource(source), repo = second.repoPath(id);
+        CHECK_OK(second.syncAll(id).result); CHECK_OK(second.switchBranch(id, "refs/heads/topic"));
+        writeFile(source, "offline work\n"); CHECK_OK(second.backup(id));
+        const auto saved = head(second, id);
+        if (!current) CHECK_OK(second.switchBranch(id, "refs/heads/main"));
+        const auto contents = readFile(source);
+        CHECK_OK(f.service->deleteBranch(f.id, "refs/heads/topic", true)); CHECK_OK(f.service->syncAll(f.id).result);
+        const auto synced = second.syncAll(id); CHECK_OK(synced.result);
+        QVERIFY(synced.result.warning.contains("保留"));
+        QVERIFY(!runGit(repo, {"rev-parse", "--verify", "refs/heads/topic"}).success());
+        QVERIFY(!runGit(f.remote, {"rev-parse", "--verify", "refs/heads/topic"}).success());
+        const auto kept = runGit(repo, {"for-each-ref", "--format=%(refname)", "refs/heads/topic-保留-*"}).output.trimmed();
+        QVERIFY(!kept.isEmpty()); QCOMPARE(runGit(repo, {"rev-parse", kept}).output.trimmed(), saved);
+        QCOMPARE(readFile(source), contents);
+        QCOMPARE(second.branchContext(id).ref, current ? kept : QString("refs/heads/main"));
+        CHECK_OK(f.service->syncAll(f.id).result);
+        QCOMPARE(runGit(f.remote, {"rev-parse", kept}).output.trimmed(), saved);
+    }
+    void sharedSchemesDeleteRejectsUnseenUpdates()
+    {
+        RemoteFixture f; CHECK_OK(f.service->createBranch(f.id, "topic")); CHECK_OK(f.service->syncAll(f.id).result);
+        CHECK_OK(f.service->deleteBranch(f.id, "refs/heads/topic", true));
+        git(f.writer, {"fetch"}); git(f.writer, {"checkout", "-b", "topic", "origin/topic"});
+        const auto changed = f.commitRemote("unseen work\n");
+        const auto synced = f.service->syncAll(f.id); CHECK_OK(synced.result);
+        QVERIFY(synced.result.warning.contains("未删除"));
+        QCOMPARE(runGit(f.remote, {"rev-parse", "topic"}).output.trimmed(), changed);
+        QCOMPARE(runGit(f.service->repoPath(f.id), {"rev-parse", "topic"}).output.trimmed(), changed);
+    }
+    void sharedSchemesMergeInactiveWithoutTouchingSource()
+    {
+        RemoteFixture f; CHECK_OK(f.service->createBranch(f.id, "topic")); CHECK_OK(f.service->syncAll(f.id).result);
+        git(f.writer, {"fetch"}); git(f.writer, {"checkout", "-b", "topic", "origin/topic"});
+        const auto remote = f.commitRemote("remote addition\n", "remote.txt");
+        CHECK_OK(f.service->switchBranch(f.id, "refs/heads/topic"));
+        writeFile(f.source, "local addition\n"); CHECK_OK(f.service->backup(f.id));
+        const auto local = head(*f.service, f.id);
+        CHECK_OK(f.service->switchBranch(f.id, "refs/heads/main"));
+        const auto before = readFile(f.source);
+        const auto headBefore = head(*f.service, f.id);
+        const auto synced = f.service->syncAll(f.id); CHECK_OK(synced.result); QCOMPARE(synced.value.status.state, SyncState::Synced);
+        QCOMPARE(readFile(f.source), before); QCOMPARE(head(*f.service, f.id), headBefore);
+        const auto merged = runGit(f.remote, {"rev-parse", "topic"}).output.trimmed();
+        QCOMPARE(runGit(f.remote, {"show", "topic:source.txt"}).bytes, QByteArray("local addition\n"));
+        QCOMPARE(runGit(f.remote, {"show", "topic:remote.txt"}).bytes, QByteArray("remote addition\n"));
+        QVERIFY(runGit(f.remote, {"merge-base", "--is-ancestor", local, merged}).success());
+        QVERIFY(runGit(f.remote, {"merge-base", "--is-ancestor", remote, merged}).success());
+    }
+
+    void sharedSchemesMigrateExistingUpstreamName()
+    {
+        RemoteFixture f;
+        CHECK_OK(f.service->createBranch(f.id, "topic"));
+        CHECK_OK(f.service->synchronize(f.id, true));
+        CHECK_OK(f.service->renameBranch(f.id, "refs/heads/topic", "中文名称"));
+        CHECK_OK(f.service->syncAll(f.id).result);
+        QVERIFY(!runGit(f.remote, {"rev-parse", "--verify", "refs/heads/topic"}).success());
+        QVERIFY(runGit(f.remote, {"rev-parse", "refs/heads/中文名称"}).success());
+        QCOMPARE(runGit(f.service->repoPath(f.id), {"config", "branch.中文名称.merge"}).output.trimmed(), QString("refs/heads/中文名称"));
+        QCOMPARE(runGit(f.remote, {"for-each-ref", "--format=%(refname)", "refs/heads/"}).output.split('\n', Qt::SkipEmptyParts).size(), 2);
+    }
+    void sharedSchemesRejectedPublicationRestartsSafely()
+    {
+        bool reject = false;
+        BackupDependencies dependencies;
+        dependencies.git = [&](const QString &path, const QStringList &args, const GitOptions &options) {
+            if (reject && args.contains("push") && args.join(' ').contains(":refs/zcversionbox/schemes"))
+            { auto result = failedGit(); result.error = "remote rejected: shared directory denied"; return result; }
+            return runGit(path, args, options);
+        };
+        RemoteFixture f(dependencies);
+        CHECK_OK(f.service->createBranch(f.id, "topic")); CHECK_OK(f.service->syncAll(f.id).result);
+        const auto before = runGit(f.remote, {"rev-parse", "refs/zcversionbox/schemes"}).output;
+        CHECK_OK(f.service->renameBranch(f.id, "refs/heads/topic", "renamed")); reject = true;
+        QVERIFY(!f.service->syncAll(f.id).result.success);
+        QCOMPARE(runGit(f.remote, {"rev-parse", "refs/zcversionbox/schemes"}).output, before);
+        QVERIFY(runGit(f.remote, {"rev-parse", "refs/heads/topic"}).success());
+        QVERIFY(!runGit(f.remote, {"rev-parse", "--verify", "refs/heads/renamed"}).success());
+        QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
+        f.service.reset(); f.service = std::make_unique<TestBackupService>(f.paths, nullptr, nullptr, dependencies);
+        reject = false; CHECK_OK(f.service->syncAll(f.id).result);
+        QVERIFY(!runGit(f.remote, {"rev-parse", "--verify", "refs/heads/topic"}).success());
+        QVERIFY(runGit(f.remote, {"rev-parse", "refs/heads/renamed"}).success());
+    }
+    void sharedSchemesConcurrentRenameKeepsOneIdentity()
+    {
+        RemoteFixture f; CHECK_OK(f.service->createBranch(f.id, "topic")); CHECK_OK(f.service->syncAll(f.id).result);
+        TestDirectory secondDir; TestBackupService second(pathsIn(secondDir));
+        const auto source = secondDir.path() + "/source.txt";
+        const auto imported = second.prepareImport(f.remote); CHECK_OK(imported.result);
+        CHECK_OK(second.finishImport(imported.value.sessionId, "source.txt", source));
+        const auto id = second.idForSource(source); CHECK_OK(second.syncAll(id).result);
+        CHECK_OK(f.service->renameBranch(f.id, "refs/heads/topic", "first-name"));
+        CHECK_OK(second.renameBranch(id, "refs/heads/topic", "second-name"));
+        CHECK_OK(f.service->syncAll(f.id).result);
+        const auto synced = second.syncAll(id); CHECK_OK(synced.result); QVERIFY(synced.result.warning.contains("采用共享名称"));
+        QVERIFY(runGit(second.repoPath(id), {"rev-parse", "refs/heads/first-name"}).success());
+        QVERIFY(!runGit(second.repoPath(id), {"rev-parse", "--verify", "refs/heads/second-name"}).success());
+        QCOMPARE(runGit(f.remote, {"for-each-ref", "--format=%(refname)", "refs/heads/"}).output.split('\n', Qt::SkipEmptyParts).size(), 2);
+    }
+    void sharedSchemesExchangeNamesKeepsCurrentIdentity()
+    {
+        RemoteFixture f;
+        for (const auto &name : {QString("alpha"), QString("beta")})
+        {
+            CHECK_OK(f.service->createBranch(f.id, name));
+            CHECK_OK(f.service->switchBranch(f.id, "refs/heads/" + name));
+            writeFile(f.source, name.toUtf8()); CHECK_OK(f.service->backup(f.id));
+            CHECK_OK(f.service->switchBranch(f.id, "refs/heads/main"));
+        }
+        CHECK_OK(f.service->syncAll(f.id).result);
+        TestDirectory secondDir; TestBackupService second(pathsIn(secondDir));
+        const auto source = secondDir.path() + "/source.txt";
+        const auto imported = second.prepareImport(f.remote); CHECK_OK(imported.result);
+        CHECK_OK(second.finishImport(imported.value.sessionId, "source.txt", source));
+        const auto id = second.idForSource(source); CHECK_OK(second.syncAll(id).result);
+        QStringList names;
+        for (const auto &scheme : record(second, id).schemes)
+            if (scheme.name != "main") names.append(scheme.name);
+        QCOMPARE(names.size(), 2);
+        CHECK_OK(second.switchBranch(id, "refs/heads/" + names[0]));
+        const auto originalHead = head(second, id);
+        const auto contents = readFile(source);
+        CHECK_OK(f.service->renameBranch(f.id, "refs/heads/" + names[0], "temporary"));
+        CHECK_OK(f.service->renameBranch(f.id, "refs/heads/" + names[1], names[0]));
+        CHECK_OK(f.service->renameBranch(f.id, "refs/heads/temporary", names[1]));
+        CHECK_OK(f.service->syncAll(f.id).result); CHECK_OK(second.syncAll(id).result);
+        QCOMPARE(second.branchContext(id).ref, "refs/heads/" + names[1]);
+        QCOMPARE(GitRepository(second.repoPath(id)).branchRef().value, second.branchContext(id).ref);
+        QCOMPARE(head(second, id), originalHead); QCOMPARE(readFile(source), contents);
+    }
+
+    void sharedSchemesMappingErrorDoesNotPauseBackup()
+    {
+        RemoteFixture f; CHECK_OK(f.service->createBranch(f.id, "topic"));
+        const auto repo = f.service->repoPath(f.id);
+        git(repo, {"config", "branch.topic.remote", "origin"});
+        git(repo, {"config", "branch.topic.merge", "refs/heads/main"});
+        const auto rejected = f.service->syncAll(f.id); QVERIFY(!rejected.result.success);
+        QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
+        writeFile(f.source, "work after configuration error\n"); CHECK_OK(f.service->backup(f.id));
+        git(repo, {"config", "branch.topic.merge", "refs/heads/topic"});
+        CHECK_OK(f.service->syncAll(f.id).result);
+        QCOMPARE(runGit(f.remote, {"show", "main:source.txt"}).bytes, QByteArray("work after configuration error\n"));
+    }
+
+    void sharedSchemesRejectMissingDirectory()
+    {
+        RemoteFixture f; CHECK_OK(f.service->syncAll(f.id).result);
+        const auto directory = runGit(f.remote, {"rev-parse", "refs/zcversionbox/schemes"}).output.trimmed();
+        git(f.remote, {"update-ref", "-d", "refs/zcversionbox/schemes", directory});
+        CHECK_OK(f.service->createBranch(f.id, "offline"));
+        const auto stopped = f.service->syncAll(f.id); QVERIFY(!stopped.result.success);
+        QVERIFY(stopped.result.message.contains("目录已被移除"));
+        QVERIFY(!runGit(f.remote, {"rev-parse", "--verify", "refs/heads/offline"}).success());
+        git(f.remote, {"update-ref", "refs/zcversionbox/schemes", directory});
+        CHECK_OK(f.service->syncAll(f.id).result);
+    }
+
     void fullSyncPublishesReceivesAndAvoidsEmptyWork()
     {
         int pushes = 0, candidates = 0;

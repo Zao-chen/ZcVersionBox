@@ -39,8 +39,7 @@ HomePageBranchRow::HomePageBranchRow(const BranchInfo &branch, const QString &na
     setObjectName("branchRow");
     setProperty("ref", branch.ref);
     setFocusPolicy(Qt::TabFocus); // clicks never leave a row looking selected.
-    const auto sharing = branch.remoteBranch ? QStringLiteral("仅在云端，尚未加入") : branch.upstream.isEmpty() ? QStringLiteral("仅在本机") : QStringLiteral("已共享到云端");
-    setAccessibleName(name + "，" + (branch.current ? QStringLiteral("正在使用，") : QString()) + sharing);
+    setAccessibleName(name + (branch.current ? QStringLiteral("，正在使用") : QString()));
     setToolTip("点击查看这个方案的历史版本");
     setCursor(Qt::PointingHandCursor);
 
@@ -55,14 +54,6 @@ HomePageBranchRow::HomePageBranchRow(const BranchInfo &branch, const QString &na
     title->setObjectName("branchName");
     UiStyle::text(title, UiStyle::FontRole::Body);
     titleLine->addWidget(title, 1);
-    if (branch.remoteBranch || !branch.upstream.isEmpty())
-    {
-        auto *cloud = new QLabel(this);
-        cloud->setObjectName("branchSharing");
-        cloud->setPixmap(UiStyle::icon("cloud").pixmap(14, 14));
-        cloud->setToolTip(sharing);
-        titleLine->addWidget(cloud);
-    }
     titleLine->addStretch(0);
     texts->addLayout(titleLine);
     auto detail = branch.message.isEmpty() ? QStringLiteral("（无提交说明）") : branch.message;
@@ -75,7 +66,7 @@ HomePageBranchRow::HomePageBranchRow(const BranchInfo &branch, const QString &na
 
     if (!branch.current)
     {
-        m_use = new QPushButton(branch.remoteBranch ? "加入…" : "切换到此方案", this);
+        m_use = new QPushButton("切换到此方案", this);
         m_use->setObjectName("branchUse");
         auto policy = m_use->sizePolicy();
         policy.setRetainSizeWhenHidden(true);
@@ -108,8 +99,7 @@ void HomePageBranchRow::updateHover()
     // Focus only highlights a row while navigating by keyboard; there is no selected state.
     const bool focused = hasFocus() || isAncestorOf(QApplication::focusWidget());
     m_hovered = underMouse() || (focused && UiStyle::isKeyboardNavigationActive());
-    // Cloud-only 方案 always show how to join; local ones reveal the switch on demand.
-    if (m_use) m_use->setVisible(m_branch.remoteBranch || m_hovered);
+    if (m_use) m_use->setVisible(m_hovered);
     update();
 }
 

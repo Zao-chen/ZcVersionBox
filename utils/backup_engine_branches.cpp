@@ -1,8 +1,10 @@
 #include "backup_engine.h"
+#include "backup_schemes.h"
 #include <QDir>
 #include <QCryptographicHash>
 #include <QFileInfo>
 #include <QSet>
+#include <algorithm>
 
 namespace
 {
@@ -24,9 +26,16 @@ BackupResult<BranchSnapshot> BackupEngine::branches(const QString &id)
     const auto checked = require(id);
     if (!checked.result.success) return {checked.result};
     const auto git = repository(id);
-    const auto branches = git.branches();
+    auto branches = git.branches();
     if (!branches.result.success) return {branches.result};
     const auto &r = checked.value;
+    branches.value.erase(std::remove_if(branches.value.begin(), branches.value.end(), [&](const BranchInfo &branch) {
+        if (!branch.remoteBranch) return false;
+        for (auto it = r.schemes.cbegin(); it != r.schemes.cend(); ++it)
+            if (it->deleted && (branch.remoteRef == "refs/heads/" + it->name ||
+                branch.remoteRef == "refs/heads/" + r.schemeBase.value(it.key()).name)) return true;
+        return false;
+    }), branches.value.end());
     return {OperationResult::ok({}), {{id, r.branchRef, r.lastCommit, r.generation, r.branchVersion}, branches.value, r.branchesFetchedAt}};
 }
 
@@ -57,6 +66,7 @@ OperationResult BackupEngine::createBranch(const BranchRequest &request)
         result = checkBranchTarget(target, true); if (!result.success) return result;
     }
     auto r = record.value;
+    result = BackupSchemes::track(r, git); if (!result.success) return result;
     r.operation = "create-branch";
     result = m_catalog.save(r); if (!result.success) return result;
     // branch refuses an existing name and preserves the actual HEAD/worktree.
@@ -64,6 +74,7 @@ OperationResult BackupEngine::createBranch(const BranchRequest &request)
     result = GitRepository::outcome(git.run(args), "新建方案失败");
     if (result.success && !request.upstream.isEmpty())
         result = GitRepository::outcome(git.run({"branch", "--set-upstream-to=" + request.upstream, "--", request.name}), "方案已创建，但云端关联失败");
+    if (result.success) result = BackupSchemes::track(r, git);
     r.operation.clear(); ++r.branchVersion;
     const auto saved = m_catalog.save(r);
     return !saved.success ? saved : !result.success ? result : OperationResult::ok("方案已创建", request.name);
@@ -76,7 +87,11 @@ OperationResult BackupEngine::renameBranch(const BranchRequest &request)
     auto result = checkBranchTarget(request); if (!result.success) return result;
     const auto git = repository(request.context.id);
     result = git.validateBranchName(request.name); if (!result.success) return result;
-    auto r = record.value; r.operation = "rename-branch";
+    auto r = record.value;
+    result = BackupSchemes::track(r, git); if (!result.success) return result;
+    for (auto &scheme : r.schemes)
+        if (!scheme.deleted && scheme.name == request.ref.mid(11)) scheme.name = request.name;
+    r.operation = "rename-branch";
     result = m_catalog.save(r); if (!result.success) return result;
     result = GitRepository::outcome(git.run({"branch", "-m", "--", request.ref.mid(11), request.name}), "改名失败");
     if (!result.success)
@@ -88,7 +103,7 @@ OperationResult BackupEngine::renameBranch(const BranchRequest &request)
     if (r.branchRef == request.ref) r.branchRef = "refs/heads/" + request.name;
     r.operation.clear(); ++r.branchVersion;
     result = m_catalog.save(r);
-    return result.success ? OperationResult::ok("方案已改名", "云端分支名称保持原样，原有对应关系已保留。") : result;
+    return result.success ? OperationResult::ok("方案已改名", "连接共享仓库后，名称会同步到其他设备。") : result;
 }
 
 OperationResult BackupEngine::deleteBranch(const BranchRequest &request)
@@ -105,13 +120,8 @@ OperationResult BackupEngine::deleteBranch(const BranchRequest &request)
     if (!request.force)
     {
         auto target = record.value.lastCommit;
-        const auto values = git.branches(); if (!values.result.success) return values.result;
-        for (const auto &branch : values.value)
-            if (branch.ref == request.ref && !branch.upstream.isEmpty())
-            {
-                const auto upstream = git.resolve(branch.upstream);
-                if (upstream.result.success) target = upstream.value;
-            }
+        // A shared copy is not an independent surviving scheme. Only another
+        // local scheme can make deleting this scheme's history non-destructive.
         const auto merged = git.run({"merge-base", "--is-ancestor", request.expectedHead, target});
         if (!merged.success())
         {
@@ -119,11 +129,28 @@ OperationResult BackupEngine::deleteBranch(const BranchRequest &request)
             return OperationResult::warn(BranchNotMergedTitle, "有些版本只存在于这个方案中，删除后可能无法找回。");
         }
     }
-    auto r = record.value; r.operation = "delete-branch";
+    auto r = record.value;
+    result = BackupSchemes::track(r, git); if (!result.success) return result;
+    QString deletedId;
+    for (auto it = r.schemes.begin(); it != r.schemes.end(); ++it)
+        if (!it->deleted && it->name == request.ref.mid(11))
+        { it->deleted = true; it->head = request.expectedHead; deletedId = it.key(); }
+    r.operation = "delete-branch";
     result = m_catalog.save(r); if (!result.success) return result;
+    result = GitRepository::outcome(git.run({"update-ref", "refs/zcversionbox/deleted/" + deletedId, request.expectedHead}), "无法保留待同步的删除版本");
+    if (!result.success)
+    {
+        const auto restored = m_catalog.save(record.value);
+        return restored.success ? result : restored;
+    }
     // Equivalent merge/checked-out checks to branch -d/-D, with an expected-OID
     // transaction so an external commit cannot be lost between confirmation and deletion.
     result = GitRepository::outcome(git.run({"update-ref", "-d", request.ref, request.expectedHead}), "方案未删除");
+    if (!result.success)
+    {
+        const auto restored = m_catalog.save(record.value);
+        return restored.success ? result : restored;
+    }
     if (result.success)
     {
         const auto config = git.run({"config", "--remove-section", "branch." + request.ref.mid(11)});
@@ -132,7 +159,7 @@ OperationResult BackupEngine::deleteBranch(const BranchRequest &request)
     r.operation.clear(); ++r.branchVersion;
     const auto saved = m_catalog.save(r); if (!saved.success) return saved;
     if (!result.success) return result;
-    auto completed = OperationResult::ok("方案已删除", "其他方案与云端分支保持原样。"); completed.warning = result.warning; return completed;
+    auto completed = OperationResult::ok("方案已删除", "连接共享仓库后，此删除会同步到其他设备。"); completed.warning = result.warning; return completed;
 }
 
 OperationResult BackupEngine::fetchBranches(const BranchContext &context)

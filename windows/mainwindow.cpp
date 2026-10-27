@@ -1124,7 +1124,7 @@ void MainWindow::updateBranchSelector()
         bool others = false;
         for (const auto &branch : result.value.branches)
         {
-            if (branch.remoteBranch) continue;
+            if (isLinkedRemote(branch, result.value.branches)) continue;
             if (branch.current)
             {
                 auto *current = new QAction(UiStyle::icon("check"), branch.name, m_branchMenu);
@@ -1133,7 +1133,7 @@ void MainWindow::updateBranchSelector()
                 continue;
             }
             others = true;
-            auto *action = m_branchMenu->addAction(branch.name);
+            auto *action = m_branchMenu->addAction(branch.remoteBranch ? branch.remoteRef.mid(11) : branch.name);
             action->setEnabled(tracking);
             action->setToolTip(reason.trimmed());
             const auto ref = branch.ref;

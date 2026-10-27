@@ -11,6 +11,27 @@
 
 namespace
 {
+QJsonObject schemeJson(const QMap<QString, SharedScheme> &schemes)
+{
+    QJsonObject json;
+    for (auto it = schemes.cbegin(); it != schemes.cend(); ++it)
+        json.insert(it.key(), QJsonObject{{"name", it->name}, {"head", it->head}, {"deleted", it->deleted}});
+    return json;
+}
+bool readSchemes(const QJsonValue &value, QMap<QString, SharedScheme> &schemes)
+{
+    if (value.isUndefined()) return true;
+    if (!value.isObject()) return false;
+    const auto json = value.toObject();
+    for (auto it = json.begin(); it != json.end(); ++it)
+    {
+        const auto entry = it.value().toObject();
+        if (!BackupCatalog::validId(it.key()) || entry["name"].toString().isEmpty() ||
+            !entry["head"].isString() || !entry["deleted"].isBool()) return false;
+        schemes.insert(it.key(), {entry["name"].toString(), entry["head"].toString(), entry["deleted"].toBool()});
+    }
+    return true;
+}
 QJsonObject tagMapJson(const QMap<QString, QString> &map)
 {
     QJsonObject json;
@@ -195,6 +216,10 @@ OperationResult BackupCatalog::load()
         for (const auto &branch : sync["branches"].toArray()) r.sync.branches.append(branch.toString());
         r.sync.lastSuccess = QDateTime::fromString(sync["lastSuccess"].toString(), Qt::ISODateWithMs);
         r.syncContinuation = sync["continuation"].toBool();
+        r.schemeEndpoint = obj["schemeEndpoint"].toString();
+        r.schemeRevision = obj["schemeRevision"].toString();
+        if (!readSchemes(obj["schemes"], r.schemes) || !readSchemes(obj["schemeBase"], r.schemeBase))
+        { invalid.append(entry.filePath()); continue; }
         r.resolutionSession = obj["resolutionSession"].toString();
         r.resolutionHead = obj["resolutionHead"].toString();
         if (!r.resolutionSession.isEmpty() && !validId(r.resolutionSession))
@@ -229,6 +254,10 @@ OperationResult BackupCatalog::save(const BackupRecord &r)
     QJsonObject obj{{"format", 1}, {"id", r.id}, {"sourcePath", r.sourcePath}, {"repositoryPath", r.repositoryPath}, {"directory", r.directory}, {"generation", QString::number(r.generation)}, {"state", int(r.state)}, {"stateDetail", r.stateDetail}, {"lastCommit", r.lastCommit}, {"pendingCommit", r.pendingCommit}, {"operation", r.operation}, {"resolutionSession", r.resolutionSession}, {"resolutionHead", r.resolutionHead}, {"fingerprint", fingerprint}, {"recoveryPaths", QJsonArray::fromStringList(r.recoveryPaths)}};
     obj.insert("tags", tagStateJson(r));
     obj.insert("branchRef", r.branchRef);
+    obj.insert("schemeEndpoint", r.schemeEndpoint);
+    obj.insert("schemeRevision", r.schemeRevision);
+    obj.insert("schemes", schemeJson(r.schemes));
+    obj.insert("schemeBase", schemeJson(r.schemeBase));
     obj.insert("branchVersion", QString::number(r.branchVersion));
     BackupRecord branchState;
     branchState.tagRemotes = r.branchRemotes;

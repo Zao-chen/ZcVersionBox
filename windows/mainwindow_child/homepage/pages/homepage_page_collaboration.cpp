@@ -127,7 +127,7 @@ void HomePageCollaborationPage::refresh()
     switch (status.state)
     {
     case SyncState::Disconnected: title = "尚未连接共享仓库"; summary = "连接共享仓库，与他人同步文件。"; break;
-    case SyncState::Waiting: title = status.automatic ? "等待同步" : "手动同步"; break;
+    case SyncState::Waiting: title = "已保存，等待同步"; break;
     case SyncState::Running:
         title = "正在同步";
         switch (status.phase)
@@ -150,6 +150,11 @@ void HomePageCollaborationPage::refresh()
     if (state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending) { title = "需要处理差异"; summary = "处理期间自动备份暂停，完成后继续。"; }
     if (state == BackupSyncState::NeedsAttention) { title = "需要检查备份"; summary = "自动写入已暂停，请先检查备份。"; }
     QString line = summary;
+    if (!running && !status.detail.isEmpty())
+    {
+        if (status.state == SyncState::Synced && status.detail.contains('\n')) line = status.detail.section('\n', 1);
+        else if (status.state != SyncState::Synced && status.state != SyncState::Waiting) line = status.detail;
+    }
     if (line.isEmpty())
     {
         if (running) line = QStringLiteral("正在同步…");

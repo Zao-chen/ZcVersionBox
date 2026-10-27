@@ -124,7 +124,17 @@ void SyncScheduler::tick()
             entry.due = m_clock() + (entry.changes != captured.changes || reply.result.cancelled ? m_options.quietPeriodMs : m_options.checkIntervalMs);
         }
         const auto state = reply.value.status.state;
-        if (state == SyncState::Synced) entry.lastError.clear();
+        if (state == SyncState::Synced)
+        {
+            entry.lastError.clear();
+            if (!reply.result.warning.isEmpty())
+            {
+                auto notice = OperationResult::info("方案已同步，请留意", reply.result.warning);
+                notice.level = NotificationLevel::Warning;
+                for (const auto &item : m_service->trackedItems()) if (item.id == id) notice.title = item.name + "：" + notice.title;
+                emit notification(notice);
+            }
+        }
         else if (!reply.result.cancelled && state != SyncState::Editing && state != SyncState::Waiting)
         {
             const auto key = QString::number(int(state)) + ':' + reply.result.message;
