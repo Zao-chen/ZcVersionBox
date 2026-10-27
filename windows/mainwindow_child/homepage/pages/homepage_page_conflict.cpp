@@ -37,7 +37,7 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
 {
     ui->setupUi(this);
     UiStyle::text(ui->pageTitle, UiStyle::FontRole::Object);
-    for (auto *label : {ui->progressLabel, ui->resultScope, ui->selectionLabel})
+    for (auto *label : {ui->progressLabel, ui->resultScope})
         UiStyle::text(label, UiStyle::FontRole::Caption, true);
     for (auto *editor : {ui->localContent, ui->remoteContent, ui->resultContent})
     {
@@ -72,7 +72,10 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
     connect(ui->remoteChoice, &QPushButton::clicked, this, [this] { choose(ConflictChoice::Remote); });
     connect(ui->files->selectionModel(), &QItemSelectionModel::currentChanged, this, [this] { selectFile(); });
     connect(ui->previousButton, &QPushButton::clicked, this, [this] { moveQuestion(false); });
-    connect(ui->nextButton, &QPushButton::clicked, this, [this] { moveQuestion(true); });
+    connect(ui->nextButton, &QPushButton::clicked, this, [this] {
+        if (ui->nextButton->text() == QStringLiteral("预览结果")) preparePreview();
+        else moveQuestion(true);
+    });
     connect(ui->previewButton, &QPushButton::clicked, this, &HomePageConflictPage::preparePreview);
     connect(ui->applyButton, &QPushButton::clicked, this, &HomePageConflictPage::apply);
     connect(ui->editChoicesButton, &QPushButton::clicked, this, [this]
@@ -311,7 +314,6 @@ void HomePageConflictPage::showQuestion()
     const QSignalBlocker localBlock(ui->localChoice), remoteBlock(ui->remoteChoice);
     ui->localChoice->setChecked(hunk.choice == ConflictChoice::Local);
     ui->remoteChoice->setChecked(hunk.choice == ConflictChoice::Remote);
-    ui->selectionLabel->setText(hunk.choice == ConflictChoice::Unresolved ? "尚未选择" : "已选择：" + (hunk.choice == ConflictChoice::Local ? m_session.localLabel : m_session.remoteLabel));
     for (auto *editor : {ui->localContent, ui->remoteContent}) editor->setExtraSelections({});
     if (file.wholeFile)
     {
@@ -612,10 +614,15 @@ void HomePageConflictPage::updateActions()
     ui->previousButton->setEnabled(valid && !m_busy && question && (m_file > 0 || m_hunk > 0));
     const bool laterQuestion = m_file + 1 < m_session.files.size() || m_hunk + 1 < m_session.files.value(m_file).hunks.size();
     const bool otherUnresolved = m_session.remaining() > (m_session.files.value(m_file).hunks.value(m_hunk).choice == ConflictChoice::Unresolved ? 1 : 0);
-    ui->nextButton->setEnabled(valid && !m_busy && question && (laterQuestion || otherUnresolved));
-    ui->previewButton->setVisible(!m_preview);
-    ui->previewButton->setEnabled(editable && m_session.remaining() == 0);
-    ui->previewButton->setToolTip(m_session.remaining() ? QString("还有 %1 处未选择").arg(m_session.remaining()) : QString());
+    const bool canAdvance = laterQuestion || otherUnresolved;
+    const bool previewReady = editable && m_session.remaining() == 0;
+    const auto previewTip = m_session.remaining() ? QString("还有 %1 处未选择").arg(m_session.remaining()) : QString();
+    ui->nextButton->setText(!question || canAdvance ? QStringLiteral("下一处") : QStringLiteral("预览结果"));
+    ui->nextButton->setEnabled(valid && !m_busy && question && (canAdvance || previewReady));
+    ui->nextButton->setToolTip(canAdvance ? QString() : previewTip);
+    ui->previewButton->setVisible(!m_preview && !question);
+    ui->previewButton->setEnabled(previewReady);
+    ui->previewButton->setToolTip(previewTip);
     ui->editChoicesButton->setVisible(m_preview && question);
     ui->editChoicesButton->setEnabled(!m_busy);
     ui->applyButton->setVisible(m_preview);

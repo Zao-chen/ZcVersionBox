@@ -1993,7 +1993,8 @@ class Regression : public QObject
         if (conflicts) { preview->click(); settle(f.service); }
         QCOMPARE(failedAttempts, 1);
         QVERIFY(!page.findChild<QPushButton *>("reanalyzeButton")->isVisible());
-        QVERIFY(preview->isEnabled()); QVERIFY(preview->isVisible());
+        QVERIFY(preview->isEnabled());
+        QVERIFY(conflicts ? !preview->isVisible() : preview->isVisible());
         const auto resumed = f.service.syncResolution(f.id);
         QVERIFY(resumed.result.success); QCOMPARE(resumed.value.revision, session.value.revision);
         QCOMPARE(resumed.value.remaining(), 0);
