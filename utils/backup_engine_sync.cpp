@@ -1,4 +1,5 @@
 #include "backup_engine.h"
+#include "backup_schemes.h"
 #include <QScopeGuard>
 #include <QSet>
 
@@ -41,9 +42,12 @@ BackupResult<SyncResult> BackupEngine::synchronize(const QString &id, const Sync
     auto checked = require(id);
     if (!checked.result.success) return {checked.result};
     auto status = checked.value.sync;
+    QStringList schemeWarnings;
     status.branchRef.clear(); status.branches.clear();
     const auto finish = [&](OperationResult result, SyncState state, const QString &branch = QString()) -> BackupResult<SyncResult>
     {
+        schemeWarnings.removeDuplicates();
+        if (!schemeWarnings.isEmpty()) result.warning = (schemeWarnings + (result.warning.isEmpty() ? QStringList{} : QStringList{result.warning})).join('\n');
         auto record = *m_catalog.find(id);
         status.state = record.state == BackupSyncState::NeedsAttention ? SyncState::NeedsAttention : state;
         status.phase = SyncPhase::Idle;
@@ -141,59 +145,59 @@ BackupResult<SyncResult> BackupEngine::synchronize(const QString &id, const Sync
         if (!result.success) return failure(result);
         record = *m_catalog.find(id);
         phase(SyncPhase::Analyzing);
+        const auto directory = BackupSchemes::read(record, git);
+        if (!directory.result.success) return failure(directory.result);
+        auto plan = directory.value;
+        record.operation = "reconcile-schemes";
+        saved = m_catalog.save(record); if (!saved.success) return failure(saved);
+        result = BackupSchemes::reconcile(record, git, plan);
+        if (!result.success) return failure(attention(record, result.message));
+        record.operation.clear();
+        saved = m_catalog.save(record); if (!saved.success) return failure(saved);
+        schemeWarnings += plan.warnings;
         const auto snapshot = git.branches();
         if (!snapshot.result.success) return failure(snapshot.result);
-        QMap<QString, QString> cloud;
-        for (const auto &branch : snapshot.value)
-            if (branch.remoteBranch && branch.remote == remote.value) cloud[branch.remoteRef] = branch.head;
-        QSet<QString> targets;
         QString currentRemote;
         QStringList updates;
-        bool uploadNeeded = false;
         status.branches.clear();
         QMap<QString, int> rows;
-        QSet<QString> localTargets;
         for (const auto &branch : snapshot.value)
             if (!branch.remoteBranch)
             {
                 rows[branch.ref] = status.branches.size();
                 status.branches.append(branch.name + " · 等待检查");
-                localTargets.insert(branch.upstream.isEmpty() ? "refs/heads/" + branch.name : branch.remoteRef);
             }
-        for (const auto &branch : snapshot.value)
-            if (branch.remoteBranch && branch.remote == remote.value && !localTargets.contains(branch.remoteRef))
-                status.branches.append(branch.name + " · 云端方案已获取");
         const auto worktrees = git.run({"worktree", "list", "--porcelain"});
         if (!worktrees.success()) return failure(GitRepository::outcome(worktrees));
         for (const auto &branch : snapshot.value)
         {
             if (branch.remoteBranch) continue;
             auto &detail = status.branches[rows.value(branch.ref)];
-            if (!branch.remote.isEmpty() && branch.remote != remote.value)
-                return finish(OperationResult::warn("请检查共享仓库配置", "方案“" + branch.name + "”关联了其他云端，全部方案需要使用同一共享仓库。"), SyncState::NeedsAttention);
-            const auto target = branch.upstream.isEmpty() ? "refs/heads/" + branch.name : branch.remoteRef;
-            if (!target.startsWith("refs/heads/") || targets.contains(target))
-                return finish(OperationResult::warn("请检查方案对应关系", "多个本地方案指向同一个云端方案，无法整批同步。"), SyncState::NeedsAttention);
-            targets.insert(target);
-            uploadNeeded |= branch.upstream.isEmpty();
-            const auto theirs = cloud.value(target);
+            const auto theirs = plan.effectiveHeads.value(branch.name);
             if (branch.current) currentRemote = theirs;
-            if (theirs.isEmpty()) { uploadNeeded = true; detail = branch.name + " · 待首次共享"; continue; }
+            if (theirs.isEmpty()) { detail = branch.name + " · 待首次共享"; continue; }
             if (theirs == branch.head) { detail = branch.name + " · 版本一致"; continue; }
             const auto remoteBehind = git.run({"merge-base", "--is-ancestor", theirs, branch.head});
-            if (remoteBehind.success()) { uploadNeeded = true; detail = branch.name + " · 有本地更新"; continue; }
+            if (remoteBehind.success()) { detail = branch.name + " · 有本地更新"; continue; }
             if (!remoteBehind.finished || remoteBehind.exitCode != 1) return failure(GitRepository::outcome(remoteBehind));
             if (branch.current) { detail = branch.name + " · 正在整理双方更新"; continue; }
+            if (worktrees.output.split('\n').contains("branch " + branch.ref))
+                return finish(OperationResult::warn("方案正在其他工作目录使用", "请先关闭或切换使用“" + branch.name + "”的其他 Git 工作目录。"), SyncState::NeedsAttention, branch.ref);
             const auto localBehind = git.run({"merge-base", "--is-ancestor", branch.head, theirs});
+            QString merged = theirs;
             if (!localBehind.success())
             {
                 if (!localBehind.finished || localBehind.exitCode != 1) return failure(GitRepository::outcome(localBehind));
-                detail = branch.name + " · 需要先处理双方更新";
-                return finish(OperationResult::info("需要先同步另一个方案", "方案“" + branch.name + "”包含双方的更新。请切换到该方案处理，再一起发送全部方案。"), SyncState::NeedsBranch, branch.ref);
+                const auto combined = BackupSchemes::merge(git, m_catalog.repoPath(id), branch.head, theirs, m_dependencies.git, m_cancel);
+                if (!combined.result.success) return failure(combined.result);
+                if (combined.value.isEmpty())
+                {
+                    detail = branch.name + " · 内容有冲突";
+                    return finish(OperationResult::info("需要处理方案内容", "方案“" + branch.name + "”有内容冲突，请切换到该方案选择要保留的内容。"), SyncState::NeedsBranch, branch.ref);
+                }
+                merged = combined.value;
             }
-            if (worktrees.output.split('\n').contains("branch " + branch.ref))
-                return finish(OperationResult::warn("方案正在其他工作目录使用", "请先关闭或切换使用“" + branch.name + "”的其他 Git 工作目录。"), SyncState::NeedsAttention, branch.ref);
-            updates.append("update " + branch.ref + ' ' + theirs + ' ' + branch.head);
+            updates.append("update " + branch.ref + ' ' + merged + ' ' + branch.head);
             detail = branch.name + " · 等待接收云端更新";
         }
         if (!updates.isEmpty())
@@ -252,25 +256,19 @@ BackupResult<SyncResult> BackupEngine::synchronize(const QString &id, const Sync
                 phase(SyncPhase::Applying);
                 result = applySync(apply.value);
                 if (!result.success) return changedInput(result);
-                uploadNeeded |= apply.value.commit != currentRemote;
             }
         }
         if (git.remoteEndpoint(remote.value).value != endpoint.value || git.remoteName().value != remote.value)
             return finish(OperationResult::warn("共享仓库配置已变化", "请检查地址后重新同步。"), SyncState::NeedsAttention);
         phase(SyncPhase::Uploading);
-        // A distinct push URL may not have the refs observed by fetch. Let the normal, non-force push verify it.
-        const auto pushAddresses = git.run({"remote", "get-url", "--push", "--all", remote.value});
-        if (!pushAddresses.success()) return failure(GitRepository::outcome(pushAddresses));
-        uploadNeeded |= pushAddresses.output.trimmed() != status.remoteUrl;
-        if (uploadNeeded)
+        record = *m_catalog.find(id);
+        result = BackupSchemes::publish(record, git, plan);
+        if (!result.success)
         {
-            result = uploadBranches(*m_catalog.find(id));
-            if (!result.success)
-            {
-                if (transfer == TransferFailure::Changed && attempt == 0) continue;
-                return failure(result);
-            }
+            if (transfer == TransferFailure::Changed && attempt == 0) continue;
+            return failure(result);
         }
+        saved = m_catalog.save(record); if (!saved.success) return failure(saved);
         result = syncTags(id, true);
         if (!result.success)
         {

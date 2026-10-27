@@ -99,6 +99,7 @@ add_library(zc_services STATIC
     utils/backup_files.h utils/backup_files.cpp
     utils/backup_git.h utils/backup_git.cpp
     utils/backup_git_branches.cpp
+    utils/backup_schemes.h utils/backup_schemes.cpp
     utils/backup_engine_sync.cpp
     utils/backup_engine_branches.cpp
     utils/backup_engine_switch.cpp

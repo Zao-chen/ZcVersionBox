@@ -112,6 +112,13 @@ struct PreparedRebuild
     QMap<QString, QString> tags, remoteTags;
     QString remoteHead;
 };
+struct SharedScheme
+{
+    QString name, head;
+    bool deleted{false};
+    bool operator==(const SharedScheme &other) const
+    { return name == other.name && head == other.head && deleted == other.deleted; }
+};
 struct BackupRecord
 {
     QString id, sourcePath, repositoryPath;
@@ -133,6 +140,8 @@ struct BackupRecord
     QDateTime branchesFetchedAt;
     SyncStatus sync;
     bool syncContinuation{false};
+    QString schemeEndpoint, schemeRevision;
+    QMap<QString, SharedScheme> schemes, schemeBase;
     TrackedItem item() const;
 };
 
@@ -183,7 +192,7 @@ inline bool isLinkedRemote(const BranchInfo &remote, const QVector<BranchInfo> &
 {
     if (!remote.remoteBranch) return false;
     for (const auto &branch : branches)
-        if (!branch.remoteBranch && branch.upstream == remote.ref) return true;
+        if (!branch.remoteBranch && (branch.upstream == remote.ref || branch.ref == remote.remoteRef)) return true;
     return false;
 }
 struct BranchRequest
