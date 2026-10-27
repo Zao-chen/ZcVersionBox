@@ -3078,6 +3078,30 @@ class Regression : public QObject
         confirm.start(); branches->requestSwitch(id, "refs/remotes/origin/direct-switch");
         QTRY_COMPARE_WITH_TIMEOUT(service.branchContext(id).ref, QString("refs/heads/direct-switch"), 20000);
         settle(service); confirm.stop(); QCOMPARE(confirmations, 1);
+        const auto otherSource = dir.path() + "/other.txt";
+        writeFile(otherSource, "other object\n"); QVERIFY(service.addLocal(otherSource).success);
+        const auto other = service.idForSource(otherSource);
+        QVERIFY(runGit(remote, {"branch", "late-adoption", "main"}).success());
+        QVERIFY(awaitBackup<OperationResult>([&](auto done) { service.fetchBranches(service.branchContext(id), &service, done); }).success);
+        window.navigate({PageId::Branches, id}); settle(service);
+        auto *late = branchRow(branches, "refs/remotes/origin/late-adoption"); QVERIFY(late);
+        bool navigated = false, unexpectedDialog = false;
+        const auto switchObject = connect(&service, &BackupService::taskStarted, &window, [&](BackupTaskId, const QString &target) {
+            if (!navigated && target == id) { navigated = true; window.navigate({PageId::Branches, other}); }
+        });
+        QTimer selectRename; selectRename.setInterval(10);
+        connect(&selectRename, &QTimer::timeout, &window, [&] {
+            if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget()))
+                for (auto *action : menu->actions()) if (action->text() == "重命名…")
+                { menu->setActiveAction(action); QTest::keyPress(menu, Qt::Key_Return); return; }
+            if (auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget()))
+            { unexpectedDialog = true; dialog->reject(); }
+        });
+        selectRename.start(); late->findChild<QToolButton *>("branchMore")->click(); settle(service);
+        selectRename.stop(); disconnect(switchObject);
+        QVERIFY(navigated); QVERIFY(!unexpectedDialog);
+        QCOMPARE(readFile(otherSource), QByteArray("other object\n"));
+        QVERIFY(!runGit(service.repoPath(other), {"rev-parse", "--verify", "refs/heads/late-adoption"}).success());
 
     }
     void collaborationConnectionUsesExplicitSaveAndRejectsStaleReply()

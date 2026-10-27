@@ -210,10 +210,11 @@ void HomePageBranchesPage::ensureLocal(const QString &id, const BranchInfo &bran
     adopted.startCommit = branch.head; adopted.upstream = branch.ref;
     m_task = m_service->createBranch(adopted, this, [this, id, name = adopted.name, continuation](const OperationResult &result) {
         if (!result.success) { complete(result); return; }
-        m_task = m_service->branches(id, this, [this, name, continuation](const BackupResult<BranchSnapshot> &snapshot) {
+        m_task = m_service->branches(id, this, [this, id, name, continuation](const BackupResult<BranchSnapshot> &snapshot) {
             m_busy = false; m_task = 0; updateActions();
             if (!snapshot.result.success) { complete(snapshot.result); return; }
-            m_snapshot = snapshot.value;
+            if (id == m_id) m_snapshot = snapshot.value;
+            else refresh();
             for (const auto &local : snapshot.value.branches)
                 if (!local.remoteBranch && local.name == name) { continuation(local); return; }
             complete(OperationResult::warn("方案已变化", "请刷新方案后重试。"));
@@ -317,10 +318,10 @@ void HomePageBranchesPage::showOperations(const BranchInfo &selected, const QPoi
     else if (chosen == useAction) useBranch(selected);
     else if (chosen == createAction) createFrom(m_id, selected.head);
     else if (chosen == compareAction) compare(selected, selectedRequest, branches);
-    else if (chosen == mergeAction) ensureLocal(m_id, selected, [this](const BranchInfo &local) { merge(request(local)); });
-    else if (chosen == renameAction) ensureLocal(m_id, selected, [this](const BranchInfo &local) { rename(local); });
+    else if (chosen == mergeAction) ensureLocal(m_id, selected, [this, id = m_id](const BranchInfo &local) { if (id == m_id) merge(request(local)); });
+    else if (chosen == renameAction) ensureLocal(m_id, selected, [this, id = m_id](const BranchInfo &local) { if (id == m_id) rename(local); });
     else if (chosen == removeAction && UiDialog::confirm(dialogOwner(), QString("删除方案“%1”？\n此删除会同步到共享仓库及所有协作者。其他方案不受影响。").arg(displayName(selected)), "删除共享方案") && guard)
-        ensureLocal(m_id, selected, [this](const BranchInfo &local) { remove(local, false); });
+        ensureLocal(m_id, selected, [this, id = m_id](const BranchInfo &local) { if (id == m_id) remove(local, false); });
 }
 void HomePageBranchesPage::rename(const BranchInfo &selected)
 {
