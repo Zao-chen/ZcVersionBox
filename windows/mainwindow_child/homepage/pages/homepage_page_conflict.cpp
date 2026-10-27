@@ -9,21 +9,12 @@
 #include <QPushButton>
 #include <QPointer>
 #include <QResizeEvent>
-#include <QScrollBar>
 #include <QSignalBlocker>
-#include <QTextCharFormat>
-#include <QTextCursor>
 #include <QTimer>
 #include <QVBoxLayout>
 
 namespace
 {
-QString displayBytes(const QByteArray &bytes)
-{
-    // QTextDocument normalizes line endings. Use the same text for both the
-    // display and cursor offsets; keep the original bytes in the saved choice.
-    return QString::fromUtf8(bytes).replace("\r\n", "\n").replace('\r', '\n');
-}
 QString choiceText(const ConflictFile &file, bool local)
 {
     if (!file.wholeFile) return local ? QStringLiteral("保留本地这段") : QStringLiteral("使用云端这段");
@@ -56,28 +47,16 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
     loadingLayout->addStretch();
     ui->modeStack->addWidget(m_loadingPage);
     UiStyle::text(ui->pageTitle, UiStyle::FontRole::Object);
-    for (auto *label : {ui->progressLabel, ui->resultScope})
+    UiStyle::text(ui->filesLabel, UiStyle::FontRole::Section);
+    UiStyle::text(ui->fileTitle, UiStyle::FontRole::Body);
+    for (auto *label : {ui->progressLabel, ui->filesCount, ui->positionLabel, ui->previewSummary, ui->staleLabel})
         UiStyle::text(label, UiStyle::FontRole::Caption, true);
-    for (auto *editor : {ui->localContent, ui->remoteContent, ui->resultContent})
-    {
-        UiStyle::text(editor, UiStyle::FontRole::Code);
-        editor->setLineWrapMode(QPlainTextEdit::WidgetWidth);
-        editor->setWordWrapMode(QTextOption::WrapAnywhere);
-        editor->setMaximumHeight(0);
-    }
-    ui->localTitle->setMaximumHeight(0);
-    ui->remoteTitle->setMaximumHeight(0);
-    ui->localTitle->setVisible(false);
-    ui->remoteTitle->setVisible(false);
-    ui->localLayout->setContentsMargins(0, 0, 0, 0);
-    ui->remoteLayout->setContentsMargins(0, 0, 0, 0);
-    setTabOrder(ui->localChoice, ui->remoteContent);
-    setTabOrder(ui->remoteContent, ui->remoteChoice);
+    // Long paths are elided in place; the header must not widen the splitter.
+    ui->fileTitle->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    ui->fileTitle->setMinimumWidth(40);
+    ui->staleBanner->setVisible(false);
+    ui->previewSummary->setVisible(false);
 
-    ui->localContent->setAccessibleName("此电脑上的内容");
-    ui->remoteContent->setAccessibleName("云端的内容");
-    ui->resultContent->setAccessibleName("最终文件内容");
-    ui->resultPath->setAccessibleName("预览文件路径");
     ui->files->setAccessibleName("同步差异文件");
     ui->files->setModel(&m_files);
     UiStyle::flatView(ui->files);
@@ -85,8 +64,6 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
     ui->splitter->setStretchFactor(0, 0);
     ui->splitter->setStretchFactor(1, 1);
     ui->splitter->setSizes({180, 560});
-    ui->localChoice->setCheckable(true);
-    ui->remoteChoice->setCheckable(true);
     connect(ui->localChoice, &QPushButton::clicked, this, [this] { choose(ConflictChoice::Local); });
     connect(ui->remoteChoice, &QPushButton::clicked, this, [this] { choose(ConflictChoice::Remote); });
     connect(ui->files->selectionModel(), &QItemSelectionModel::currentChanged, this, [this] { selectFile(); });
@@ -125,9 +102,8 @@ HomePageConflictPage::HomePageConflictPage(BackupService *service, QWidget *pare
             m_session = {};
             m_prepared = {};
             m_files.clear();
-            ui->localContent->clear();
-            ui->remoteContent->clear();
-            ui->resultContent->clear();
+            setFileTitle({});
+            ui->positionLabel->clear();
             ui->diffView->clear();
             ui->previewDiffView->clear();
             updateActions();
@@ -173,9 +149,8 @@ void HomePageConflictPage::setBackup(const QString &id, const QString &returnBra
     m_busy = false;
     m_preview = false;
     m_files.clear();
-    ui->localContent->clear();
-    ui->remoteContent->clear();
-    ui->resultContent->clear();
+    setFileTitle({});
+    ui->positionLabel->clear();
     ui->diffView->clear();
     ui->previewDiffView->clear();
     load();
@@ -229,8 +204,6 @@ void HomePageConflictPage::acceptSession(const SyncResolutionSession &session, b
     m_session = session;
     m_cloudSession = session.mergeRef.isEmpty();
     ui->pageTitle->setText(session.mergeRef.isEmpty() ? QStringLiteral("处理同步差异") : QString("把“%1”的修改合并到“%2”").arg(session.remoteLabel, session.localLabel));
-    ui->localContent->setAccessibleName(session.localLabel);
-    ui->remoteContent->setAccessibleName(session.remoteLabel);
     m_prepared = {};
     if (restorePosition)
     {
@@ -282,23 +255,27 @@ void HomePageConflictPage::populateFiles()
             m_files.appendRow(item);
         }
         if (m_files.rowCount()) ui->files->setCurrentIndex(m_files.index(0, 0));
+        ui->filesCount->setText(QString::number(m_files.rowCount()));
     }
     else
     {
+        int resolvedFiles = 0;
         for (const auto &file : m_session.files)
         {
             int done = 0;
             for (const auto &hunk : file.hunks) done += hunk.choice != ConflictChoice::Unresolved;
             const bool fileResolved = (done == file.hunks.size());
+            resolvedFiles += fileResolved;
             auto *item = new QStandardItem(file.path);
             item->setEditable(false);
             item->setData(file.path, DiffFileRole::PathRole);
             item->setData(fileResolved ? QStringLiteral("✓") : QStringLiteral("!"), DiffFileRole::StatusRole);
-            item->setData(QString("%1/%2 · %3").arg(done).arg(file.hunks.size()).arg(file.managed ? QStringLiteral("待处理") : QStringLiteral("仅影响备份仓库")), DiffFileRole::SummaryRole);
+            item->setData(QString("已选 %1 / %2 处%3").arg(done).arg(file.hunks.size()).arg(file.managed ? QString() : QStringLiteral(" · 仅影响备份仓库")), DiffFileRole::SummaryRole);
             item->setToolTip(QString("%1\n%2/%3 处已确认%4").arg(file.path).arg(done).arg(file.hunks.size()).arg(file.managed ? QString() : "\n仅影响备份仓库"));
             m_files.appendRow(item);
         }
         ui->files->setCurrentIndex(m_files.index(m_file, 0));
+        ui->filesCount->setText(m_session.files.isEmpty() ? QString() : QString("%1 / %2").arg(resolvedFiles).arg(m_session.files.size()));
     }
     ui->files->scrollTo(ui->files->currentIndex());
     ui->files->viewport()->update();
@@ -319,10 +296,18 @@ void HomePageConflictPage::showQuestion()
 {
     const auto request = ++m_contentRequest;
     ui->modeStack->setCurrentWidget(ui->questionPage);
-    if (m_session.files.isEmpty()) { updateActions(); return; }
+    if (m_session.files.isEmpty())
+    {
+        setFileTitle({});
+        ui->positionLabel->clear();
+        ui->diffView->showNotice(QStringLiteral("没有需要逐处选择的差异"), QStringLiteral("所有改动均可自动合并，点击“预览结果”查看最终改动。"));
+        updateActions();
+        return;
+    }
     const auto &file = m_session.files[m_file];
     const auto &hunk = file.hunks[m_hunk];
-    ui->questionTitle->setText(QString("%1 · 第 %2 / %3 处").arg(file.path).arg(m_hunk + 1).arg(file.hunks.size()));
+    setFileTitle(file.path);
+    ui->positionLabel->setText(QString("第 %1 / %2 处").arg(m_hunk + 1).arg(file.hunks.size()));
     ui->localChoice->setText((hunk.choice == ConflictChoice::Local ? QStringLiteral("✓ ") : QString()) + choiceText(file, true));
     ui->remoteChoice->setText((hunk.choice == ConflictChoice::Remote ? QStringLiteral("✓ ") : QString()) + choiceText(file, false));
     if (!m_session.mergeRef.isEmpty())
@@ -333,80 +318,44 @@ void HomePageConflictPage::showQuestion()
     const QSignalBlocker localBlock(ui->localChoice), remoteBlock(ui->remoteChoice);
     ui->localChoice->setChecked(hunk.choice == ConflictChoice::Local);
     ui->remoteChoice->setChecked(hunk.choice == ConflictChoice::Remote);
-    for (auto *editor : {ui->localContent, ui->remoteContent}) editor->setExtraSelections({});
     if (file.wholeFile)
     {
         ui->diffView->showNotice(QStringLiteral("正在读取内容…"), QStringLiteral("正在加载双方内容以生成对比…"));
-        m_hasLocalText = false;
-        m_hasRemoteText = false;
-        m_currentLocalText.clear();
-        m_currentRemoteText.clear();
-
-        const auto ctx = context();
-        const auto session = m_session.id;
-        const auto revision = m_session.revision;
-        const auto filePath = file.path;
-
-        ui->localContent->setPlainText("正在读取内容…");
-        ui->remoteContent->setPlainText("正在读取内容…");
-
-        m_service->syncContent(m_id, session, file.path, ConflictSide::Local, this,
-            [this, ctx, session, revision, request, filePath](const BackupResult<ConflictContent> &reply)
-        {
-            if (!current(ctx) || session != m_session.id || revision != m_session.revision || request != m_contentRequest) return;
-            ui->localContent->setPlainText(reply.result.success ? reply.value.text : reply.result.title + "：" + reply.result.message);
-            m_hasLocalText = true;
-            m_currentLocalText = reply.result.success ? reply.value.text : QString();
-            if (m_hasRemoteText)
-                ui->diffView->setTexts(m_currentLocalText, m_currentRemoteText, filePath, m_service->sourcePath(m_id),
-                                       m_session.localLabel, m_session.remoteLabel);
-        });
-
-        m_service->syncContent(m_id, session, file.path, ConflictSide::Remote, this,
-            [this, ctx, session, revision, request, filePath](const BackupResult<ConflictContent> &reply)
-        {
-            if (!current(ctx) || session != m_session.id || revision != m_session.revision || request != m_contentRequest) return;
-            ui->remoteContent->setPlainText(reply.result.success ? reply.value.text : reply.result.title + "：" + reply.result.message);
-            m_hasRemoteText = true;
-            m_currentRemoteText = reply.result.success ? reply.value.text : QString();
-            if (m_hasLocalText)
-                ui->diffView->setTexts(m_currentLocalText, m_currentRemoteText, filePath, m_service->sourcePath(m_id),
-                                       m_session.localLabel, m_session.remoteLabel);
-        });
+        loadTexts(ui->diffView, file.path, ConflictSide::Local, ConflictSide::Remote, m_session.localLabel, m_session.remoteLabel, request);
     }
     else
     {
-        const auto show = [&](QPlainTextEdit *editor, const QByteArray &part)
-        {
-            const auto before = displayBytes(hunk.before), text = displayBytes(part);
-            editor->setPlainText(before + text + displayBytes(hunk.after));
-            QTextEdit::ExtraSelection highlight;
-            highlight.cursor = editor->textCursor();
-            highlight.cursor.setPosition(before.size());
-            highlight.cursor.setPosition(before.size() + text.size(), QTextCursor::KeepAnchor);
-            highlight.format.setBackground(UiStyle::colors().selected);
-            editor->setExtraSelections({highlight});
-        };
-        show(ui->localContent, hunk.local);
-        show(ui->remoteContent, hunk.remote);
-
         ui->diffView->setHunk(hunk.before, hunk.local, hunk.remote, hunk.after, 1,
                               file.path, m_service->sourcePath(m_id),
                               m_session.localLabel, m_session.remoteLabel);
     }
     updateActions();
 }
-void HomePageConflictPage::loadContent(QPlainTextEdit *editor, const QString &path, ConflictSide side, quint64 request)
+void HomePageConflictPage::loadTexts(HomePageDiffView *view, const QString &path, std::optional<ConflictSide> oldSide, ConflictSide newSide,
+                                     const QString &oldHeader, const QString &newHeader, quint64 request)
 {
-    editor->setPlainText("正在读取内容…");
+    // Both sides arrive independently; render once with whichever texts were read.
+    struct Pair { QString texts[2]; QString error; int pending{0}; };
+    auto pair = std::make_shared<Pair>();
+    pair->pending = oldSide ? 2 : 1;
     const auto ctx = context();
     const auto session = m_session.id;
     const auto revision = m_session.revision;
-    m_service->syncContent(m_id, session, path, side, this, [this, ctx, session, revision, request, editor](const BackupResult<ConflictContent> &reply)
+    const auto read = [this, view, path, oldHeader, newHeader, request, pair, ctx, session, revision](ConflictSide side, int slot)
     {
-        if (!current(ctx) || session != m_session.id || revision != m_session.revision || request != m_contentRequest) return;
-        editor->setPlainText(reply.result.success ? reply.value.text : reply.result.title + "：" + reply.result.message);
-    });
+        m_service->syncContent(m_id, session, path, side, this,
+            [this, view, path, oldHeader, newHeader, request, pair, ctx, session, revision, slot](const BackupResult<ConflictContent> &reply)
+        {
+            if (!current(ctx) || session != m_session.id || revision != m_session.revision || request != m_contentRequest) return;
+            if (reply.result.success) pair->texts[slot] = reply.value.text;
+            else if (pair->error.isEmpty()) pair->error = reply.result.title + "：" + reply.result.message;
+            if (--pair->pending) return;
+            if (!pair->error.isEmpty()) view->showNotice(QStringLiteral("无法读取内容"), pair->error);
+            else view->setTexts(pair->texts[0], pair->texts[1], path, m_service->sourcePath(m_id), oldHeader, newHeader);
+        });
+    };
+    if (oldSide) read(*oldSide, 0);
+    read(newSide, 1);
 }
 void HomePageConflictPage::choose(ConflictChoice choice)
 {
@@ -489,97 +438,25 @@ void HomePageConflictPage::showResult()
         modified += change.status == "M";
         deleted += change.status == "D";
     }
-    ui->previewSummary->setText(QString("新增 %1 · 修改 %2 · 删除 %3\n包含自动合并的改动。%4").arg(added).arg(modified).arg(deleted).arg(m_cloudSession ? "确认后更新本机文件，并继续全量同步。" : "确认后更新源位置，并保存到正在使用的方案。"));
+    ui->previewSummary->setText(QString("新增 %1 · 修改 %2 · 删除 %3，包含自动合并的改动。%4").arg(added).arg(modified).arg(deleted).arg(m_cloudSession ? "确认后更新本机文件，并继续全量同步。" : "确认后更新源位置，并保存到正在使用的方案。"));
     const auto row = ui->files->currentIndex().row();
     const bool valid = row >= 0 && row < m_previewFiles.size();
     const auto change = m_previewFiles.value(row);
-    ui->resultPath->setText(change.path);
-    ui->resultPath->setCursorPosition(0);
-    ui->resultScope->setText(change.summary);
+    setFileTitle(change.path);
+    ui->positionLabel->setText(valid ? statusText(change.status) + (change.summary.isEmpty() ? QString() : " · " + change.summary) : QString());
     if (!valid)
-    {
-        ui->resultContent->setPlainText("源内容没有变化。确认后保存同步版本关系并恢复自动备份。");
         ui->previewDiffView->showNotice(QStringLiteral("源内容没有变化"), QStringLiteral("确认后保存同步版本关系并恢复自动备份。"));
-    }
     else if (change.status == "D")
-    {
-        ui->resultContent->setPlainText("此文件将在应用时删除。");
         ui->previewDiffView->showNotice(QStringLiteral("文件将被删除"), QStringLiteral("应用同步后，源位置中的此文件将被删除。"));
-    }
     else if (change.status == "-")
-    {
-        ui->resultContent->setPlainText("源位置中已不存在此文件，应用后继续保持删除。");
         ui->previewDiffView->showNotice(QStringLiteral("继续保持删除"), QStringLiteral("源位置中已不存在此文件，应用后继续保持删除。"));
-    }
     else if (change.status == "=")
-    {
-        ui->resultContent->setPlainText("此文件未做更改，保留当前源内容。");
         ui->previewDiffView->showNotice(QStringLiteral("文件内容保留"), QStringLiteral("此文件未做更改，保留当前源内容。"));
-    }
     else
     {
         ui->previewDiffView->showNotice(QStringLiteral("正在读取合并结果…"), QStringLiteral("正在加载合并前后的内容…"));
-        ui->resultContent->setPlainText("正在读取内容…");
-
-        const auto ctx = context();
-        const auto session = m_session.id;
-        const auto revision = m_session.revision;
-        const auto changePath = change.path;
-        const auto status = change.status;
-
-        if (status == "A")
-        {
-            m_service->syncContent(m_id, session, changePath, ConflictSide::Result, this,
-                [this, ctx, session, revision, request, changePath](const BackupResult<ConflictContent> &reply)
-            {
-                if (!current(ctx) || session != m_session.id || revision != m_session.revision || request != m_contentRequest) return;
-                const QString text = reply.result.success ? reply.value.text : reply.result.title + "：" + reply.result.message;
-                ui->resultContent->setPlainText(text);
-                ui->previewDiffView->setTexts(QString(), reply.result.success ? reply.value.text : QString(),
-                                              changePath, m_service->sourcePath(m_id),
-                                              QStringLiteral("修改前 (本地)"), QStringLiteral("合并后的内容"));
-            });
-        }
-        else
-        {
-            struct MergeDiffState {
-                QString localText;
-                QString resultText;
-                bool hasLocal{false};
-                bool hasResult{false};
-            };
-            auto mergeState = std::make_shared<MergeDiffState>();
-
-            m_service->syncContent(m_id, session, changePath, ConflictSide::Local, this,
-                [this, ctx, session, revision, request, changePath, mergeState](const BackupResult<ConflictContent> &reply)
-            {
-                if (!current(ctx) || session != m_session.id || revision != m_session.revision || request != m_contentRequest) return;
-                mergeState->hasLocal = true;
-                mergeState->localText = reply.result.success ? reply.value.text : QString();
-                if (mergeState->hasResult)
-                {
-                    ui->previewDiffView->setTexts(mergeState->localText, mergeState->resultText,
-                                                  changePath, m_service->sourcePath(m_id),
-                                                  QStringLiteral("修改前 (本地)"), QStringLiteral("合并后的内容"));
-                }
-            });
-
-            m_service->syncContent(m_id, session, changePath, ConflictSide::Result, this,
-                [this, ctx, session, revision, request, changePath, mergeState](const BackupResult<ConflictContent> &reply)
-            {
-                if (!current(ctx) || session != m_session.id || revision != m_session.revision || request != m_contentRequest) return;
-                const QString text = reply.result.success ? reply.value.text : reply.result.title + "：" + reply.result.message;
-                ui->resultContent->setPlainText(text);
-                mergeState->hasResult = true;
-                mergeState->resultText = reply.result.success ? reply.value.text : QString();
-                if (mergeState->hasLocal)
-                {
-                    ui->previewDiffView->setTexts(mergeState->localText, mergeState->resultText,
-                                                  changePath, m_service->sourcePath(m_id),
-                                                  QStringLiteral("修改前 (本地)"), QStringLiteral("合并后的内容"));
-                }
-            });
-        }
+        loadTexts(ui->previewDiffView, change.path, change.status == "A" ? std::nullopt : std::optional(ConflictSide::Local), ConflictSide::Result,
+                  QStringLiteral("修改前 (本地)"), QStringLiteral("合并后的内容"), request);
     }
     updateActions();
 }
@@ -621,6 +498,12 @@ void HomePageConflictPage::setLoading(bool loading)
     m_loading = loading;
     emit loadingChanged(loading);
 }
+void HomePageConflictPage::setFileTitle(const QString &path)
+{
+    m_fileTitle = path;
+    ui->fileTitle->setToolTip(path);
+    ui->fileTitle->setText(ui->fileTitle->fontMetrics().elidedText(path, Qt::ElideMiddle, qMax(0, ui->fileTitle->width())));
+}
 void HomePageConflictPage::updateActions()
 {
     const bool valid = m_active && !m_session.id.isEmpty();
@@ -635,23 +518,28 @@ void HomePageConflictPage::updateActions()
     else if (ui->modeStack->currentWidget() == m_loadingPage)
         ui->modeStack->setCurrentWidget(m_preview ? ui->previewPage : ui->questionPage);
     ui->progressLabel->setText(valid ? QString("已处理 %1 / %2 处").arg(m_session.total() - m_session.remaining()).arg(m_session.total()) : QString());
-    ui->reanalyzeButton->setVisible(m_session.stale);
+    ui->previewSummary->setVisible(m_preview && !loading);
+    ui->staleBanner->setVisible(m_session.stale);
+    ui->staleLabel->setText(m_session.staleReason.isEmpty() ? QStringLiteral("内容已在选择期间变化，需要重新分析后才能应用。")
+                                                             : "需要重新分析后才能应用：" + m_session.staleReason);
     ui->reanalyzeButton->setEnabled(m_active && !m_busy && m_service->syncState(m_id) == BackupSyncState::ResolutionPending);
-    ui->reanalyzeButton->setToolTip(m_session.stale ? m_session.staleReason : QString());
     ui->files->setEnabled(valid && !m_busy);
-    ui->questionPage->setSizePolicy(QSizePolicy::Preferred, m_preview ? QSizePolicy::Ignored : QSizePolicy::Preferred);
-    ui->previewPage->setSizePolicy(QSizePolicy::Preferred, m_preview ? QSizePolicy::Preferred : QSizePolicy::Ignored);
-    ui->questionPage->setVisible(!m_preview && question);
+    ui->choiceBar->setVisible(question);
     ui->localChoice->setEnabled(editable && question);
     ui->remoteChoice->setEnabled(editable && question);
-    ui->previousButton->setEnabled(valid && !m_busy && question && (m_file > 0 || m_hunk > 0));
+
+    // The footer reads as a wizard: 上一处 / 下一处 while choosing, 返回选择 / 应用 when previewing.
     const bool laterQuestion = m_file + 1 < m_session.files.size() || m_hunk + 1 < m_session.files.value(m_file).hunks.size();
     const bool otherUnresolved = m_session.remaining() > (m_session.files.value(m_file).hunks.value(m_hunk).choice == ConflictChoice::Unresolved ? 1 : 0);
     const bool canAdvance = laterQuestion || otherUnresolved;
     const bool previewReady = editable && m_session.remaining() == 0;
     const auto previewTip = m_session.remaining() ? QString("还有 %1 处未选择").arg(m_session.remaining()) : QString();
-    ui->nextButton->setText(!question || canAdvance ? QStringLiteral("下一处") : QStringLiteral("预览结果"));
-    ui->nextButton->setEnabled(valid && !m_busy && question && (canAdvance || previewReady));
+    const bool choosing = !m_preview && question;
+    ui->previousButton->setVisible(choosing);
+    ui->previousButton->setEnabled(valid && !m_busy && (m_file > 0 || m_hunk > 0));
+    ui->nextButton->setVisible(choosing);
+    ui->nextButton->setText(canAdvance ? QStringLiteral("下一处") : QStringLiteral("预览结果"));
+    ui->nextButton->setEnabled(valid && !m_busy && (canAdvance || previewReady));
     ui->nextButton->setToolTip(canAdvance ? QString() : previewTip);
     ui->previewButton->setVisible(!m_preview && !question && !loading);
     ui->previewButton->setEnabled(previewReady);
@@ -666,12 +554,6 @@ void HomePageConflictPage::refreshTheme()
     ui->diffView->refreshTheme();
     ui->previewDiffView->refreshTheme();
     ui->files->viewport()->update();
-    for (auto *editor : {ui->localContent, ui->remoteContent})
-    {
-        auto selections = editor->extraSelections();
-        for (auto &selection : selections) selection.format.setBackground(UiStyle::colors().selected);
-        editor->setExtraSelections(selections);
-    }
 }
 void HomePageConflictPage::resizeEvent(QResizeEvent *event)
 {
@@ -682,21 +564,22 @@ void HomePageConflictPage::updateLayout()
 {
     const bool narrow = width() < 720;
     const auto orientation = narrow ? Qt::Vertical : Qt::Horizontal;
-    ui->sidesLayout->setDirection(narrow ? QBoxLayout::TopToBottom : QBoxLayout::LeftToRight);
     ui->filesPane->setMaximumHeight(narrow ? 100 : QWIDGETSIZE_MAX);
     ui->filesPane->setMinimumWidth(narrow ? 0 : 160);
-    ui->filesLayout->setContentsMargins(0, 0, narrow ? 0 : 8, 0);
-    ui->scrollLayout->setContentsMargins(narrow ? 0 : 8, 0, 0, 0);
+    ui->filesLayout->setContentsMargins(0, 0, narrow ? 0 : 8, narrow ? 8 : 0);
+    ui->workLayout->setContentsMargins(narrow ? 0 : 8, narrow ? 8 : 0, 0, 0);
     if (ui->splitter->orientation() != orientation)
     {
         ui->splitter->setOrientation(orientation);
         ui->splitter->setSizes(narrow ? QList<int>{88, 500} : QList<int>{180, 560});
     }
     const int margin = narrow ? 16 : 24;
-    ui->pageLayout->setContentsMargins(margin, 12, margin, 16);
+    ui->pageLayout->setContentsMargins(margin, 12, margin, narrow ? 12 : 16);
+    ui->pageLayout->setSpacing(narrow ? 8 : 12);
     QTimer::singleShot(0, this, [this]
     {
-        // The list's viewport shrinks after the splitter/layout update.
+        // The list's viewport and the header width settle after the splitter/layout update.
         ui->files->scrollTo(ui->files->currentIndex());
+        setFileTitle(m_fileTitle);
     });
 }

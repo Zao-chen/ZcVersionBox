@@ -4,10 +4,11 @@
 #include <QStandardItemModel>
 #include <QWidget>
 #include <memory>
+#include <optional>
 
 namespace Ui { class HomePageConflictPage; }
 namespace oclero::qlementine { class LoadingSpinner; }
-class QPlainTextEdit;
+class HomePageDiffView;
 class HomePageConflictPage : public QWidget
 {
     Q_OBJECT
@@ -40,8 +41,7 @@ class HomePageConflictPage : public QWidget
     bool m_active{false}, m_busy{false}, m_preview{false}, m_cloudSession{true}, m_loading{false};
     QWidget *m_loadingPage{nullptr};
     oclero::qlementine::LoadingSpinner *m_loadingSpinner{nullptr};
-    QString m_currentLocalText, m_currentRemoteText;
-    bool m_hasLocalText{false}, m_hasRemoteText{false};
+    QString m_fileTitle;
     Context context() const;
     bool current(const Context &context) const;
     void rememberPosition();
@@ -55,7 +55,9 @@ class HomePageConflictPage : public QWidget
     void moveQuestion(bool next);
     void preparePreview();
     void apply();
-    void loadContent(QPlainTextEdit *editor, const QString &path, ConflictSide side, quint64 request);
+    void loadTexts(HomePageDiffView *view, const QString &path, std::optional<ConflictSide> oldSide, ConflictSide newSide,
+                   const QString &oldHeader, const QString &newHeader, quint64 request);
+    void setFileTitle(const QString &path);
     void updateActions();
     void setLoading(bool loading);
     void updateLayout();
