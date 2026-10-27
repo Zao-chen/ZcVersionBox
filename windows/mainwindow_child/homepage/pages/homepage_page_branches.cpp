@@ -1,22 +1,20 @@
 #include "homepage_page_branches.h"
+#include "homepage_page_branches_row.h"
 #include "ui_homepage_page_branches.h"
 #include "windows/mainwindow_dialog.h"
 #include "windows/mainwindow_presentation.h"
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
-#include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QSignalBlocker>
 #include <QVBoxLayout>
 
 namespace
 {
-constexpr int RefRole = Qt::UserRole + 1;
 QDialogButtonBox *dialogButtons(UiDialog::Dialog &dialog)
 {
     auto *buttons = dialog.buttonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -38,12 +36,13 @@ QString displayName(const BranchInfo &branch)
 {
     return branch.remoteBranch && branch.remoteRef.startsWith("refs/heads/") ? branch.remoteRef.mid(11) : branch.name;
 }
-QStandardItem *groupItem(const QString &text)
+QLabel *sectionLabel(const QString &text, QWidget *parent)
 {
-    auto *item = new QStandardItem(text);
-    item->setFlags(Qt::NoItemFlags);
-    auto font = item->font(); font.setBold(true); item->setFont(font);
-    return item;
+    auto *label = new QLabel(text, parent);
+    label->setObjectName("branchSection");
+    label->setContentsMargins(14, 10, 0, 2);
+    UiStyle::text(label, UiStyle::FontRole::Caption, true);
+    return label;
 }
 }
 
@@ -51,23 +50,13 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
     : QWidget(parent), ui(new Ui::HomePageBranchesPage), m_service(service)
 {
     ui->setupUi(this);
-    UiStyle::text(ui->listHint, UiStyle::FontRole::Caption, true);
-    ui->branchList->setModel(&m_listModel);
-    ui->branchList->setSpacing(2);
+    ui->branchScroll->viewport()->setAutoFillBackground(false);
+    ui->branchList->setAutoFillBackground(false);
+    ui->listCreate->setIcon(UiStyle::icon("add"));
     m_refresh = UiStyle::action(this, "refreshBranchesAction", "刷新", "refresh");
     m_refresh->setProperty("iconOnly", true);
     connect(m_refresh, &QAction::triggered, this, &HomePageBranchesPage::refresh);
-    connect(ui->listUse, &QPushButton::clicked, this, [this] { useBranch(selectedBranch()); });
     connect(ui->listCreate, &QPushButton::clicked, this, [this] { createFrom(m_id); });
-    connect(ui->listOperations, &QPushButton::clicked, this, &HomePageBranchesPage::showOperations);
-    connect(ui->branchList->selectionModel(), &QItemSelectionModel::currentChanged, this, &HomePageBranchesPage::updateActions);
-    // Viewing one 方案 reuses the history page's scope filter instead of a separate page.
-    connect(ui->branchList, &QListView::activated, this, [this](const QModelIndex &index)
-    {
-        const auto ref = index.data(RefRole).toString();
-        if (ref.isEmpty()) return;
-        Route route{PageId::History, m_id}; route.branchRef = ref; emit navigate(route);
-    });
     connect(ui->cancelTask, &QPushButton::clicked, this, [this] { if (m_task) m_service->cancel(m_task); });
     connect(service, &BackupService::repositoryChanged, this, [this](const QString &id)
     {
@@ -78,13 +67,6 @@ HomePageBranchesPage::HomePageBranchesPage(BackupService *service, QWidget *pare
 HomePageBranchesPage::~HomePageBranchesPage() = default;
 QList<QAction *> HomePageBranchesPage::toolbarActions() const { return {m_refresh}; }
 QWidget *HomePageBranchesPage::dialogOwner() const { return const_cast<HomePageBranchesPage *>(this); }
-BranchInfo HomePageBranchesPage::selectedBranch() const
-{
-    const auto ref = ui->branchList->currentIndex().data(RefRole).toString();
-    for (const auto &branch : m_snapshot.branches)
-        if (!ref.isEmpty() && branch.ref == ref) return branch;
-    return {};
-}
 BranchRequest HomePageBranchesPage::request(const BranchInfo &branch) const
 {
     BranchRequest result;
@@ -100,7 +82,7 @@ void HomePageBranchesPage::setBackup(const QString &id)
     {
         ++m_generation;
         m_snapshot = {};
-        m_listModel.clear();
+        clearList();
     }
     m_id = id;
     refresh();
@@ -110,53 +92,80 @@ void HomePageBranchesPage::refresh()
     if (m_id.isEmpty() || m_busy) return;
     const auto generation = ++m_generation;
     const auto id = m_id;
+    setLoading(true);
     m_service->branches(id, this, [this, id, generation](const BackupResult<BranchSnapshot> &reply)
     {
         if (id != m_id || generation != m_generation) return;
-        if (!reply.result.success) { emit notification(reply.result); return; }
+        setLoading(false);
+        if (!reply.result.success) { if (!reply.result.cancelled) emit notification(reply.result); return; }
         m_snapshot = reply.value;
         populateList();
         updateActions();
     });
 }
+void HomePageBranchesPage::setLoading(bool loading)
+{
+    if (m_loading != loading)
+    {
+        m_loading = loading;
+        emit loadingChanged(loading);
+    }
+    if (loading && m_rows.isEmpty()) clearList("正在读取方案…");
+    else if (!loading && m_snapshot.branches.isEmpty()) clearList();
+}
+void HomePageBranchesPage::clearList(const QString &placeholder)
+{
+    m_rows.clear();
+    while (auto *item = ui->branchRows->takeAt(0))
+    {
+        if (auto *widget = item->widget()) widget->deleteLater();
+        delete item;
+    }
+    if (placeholder.isEmpty()) return;
+    ui->branchRows->addWidget(sectionLabel(placeholder, ui->branchList));
+    ui->branchRows->addStretch(1);
+}
 void HomePageBranchesPage::populateList()
 {
-    const auto previous = ui->branchList->currentIndex().data(RefRole).toString();
-    m_listModel.clear();
-    QList<QStandardItem *> local, cloud;
+    const auto *focused = qobject_cast<HomePageBranchRow *>(focusWidget());
+    const auto focusedRef = focused ? focused->branch().ref : QString();
+    clearList();
+    QVector<BranchInfo> current, local, cloud;
     for (const auto &branch : m_snapshot.branches)
     {
         if (isLinkedRemote(branch, m_snapshot.branches)) continue;
-        QString status;
-        if (branch.remoteBranch) status = "仅在云端，可加入";
-        else status = (branch.current ? QStringLiteral("正在使用 · ") : QString()) + (branch.upstream.isEmpty() ? "仅本机" : "已共享");
-        auto *item = new QStandardItem(displayName(branch) + "　" + status + (branch.message.isEmpty() ? QString() : "\n" + branch.message));
-        item->setData(branch.ref, RefRole);
-        item->setData(displayName(branch) + "，" + status, Qt::AccessibleTextRole);
-        item->setToolTip("双击查看这个方案的历史版本");
-        item->setEditable(false);
-        if (branch.current) { auto font = item->font(); font.setBold(true); item->setFont(font); }
-        (branch.remoteBranch ? cloud : local).append(item);
+        (branch.current ? current : branch.remoteBranch ? cloud : local).append(branch);
     }
-    m_listModel.appendRow(groupItem("我的方案"));
-    for (auto *item : local) m_listModel.appendRow(item);
-    if (!cloud.isEmpty())
+    HomePageBranchRow *restore = nullptr;
+    const auto addSection = [&](const QString &title, const QVector<BranchInfo> &branches)
     {
-        m_listModel.appendRow(groupItem("云端其他方案"));
-        for (auto *item : cloud) m_listModel.appendRow(item);
-    }
-    QModelIndex select;
-    for (int row = 0; row < m_listModel.rowCount(); ++row)
-    {
-        const auto index = m_listModel.index(row, 0);
-        const auto ref = index.data(RefRole).toString();
-        if (ref.isEmpty()) continue;
-        if (ref == previous || (!select.isValid() && previous.isEmpty() && ref == m_snapshot.context.ref)) select = index;
-    }
-    if (!select.isValid())
-        for (int row = 0; row < m_listModel.rowCount() && !select.isValid(); ++row)
-            if (!m_listModel.index(row, 0).data(RefRole).toString().isEmpty()) select = m_listModel.index(row, 0);
-    ui->branchList->setCurrentIndex(select);
+        if (branches.isEmpty()) return;
+        ui->branchRows->addWidget(sectionLabel(title, ui->branchList));
+        for (const auto &branch : branches)
+        {
+            auto *row = new HomePageBranchRow(branch, displayName(branch), ui->branchList);
+            connect(row, &HomePageBranchRow::useRequested, this, [this, branch] { useBranch(branch); });
+            connect(row, &HomePageBranchRow::historyRequested, this, [this, branch] { showHistory(branch); });
+            connect(row, &HomePageBranchRow::menuRequested, this, [this, branch](const QPoint &pos) { showOperations(branch, pos); });
+            connect(row, &HomePageBranchRow::stepRequested, this, [this, row](int delta)
+            {
+                const auto next = m_rows.indexOf(row) + delta;
+                if (next >= 0 && next < m_rows.size())
+                {
+                    m_rows[next]->setFocus(Qt::TabFocusReason);
+                    ui->branchScroll->ensureWidgetVisible(m_rows[next]);
+                }
+            });
+            if (branch.ref == focusedRef) restore = row;
+            ui->branchRows->addWidget(row);
+            m_rows.append(row);
+        }
+    };
+    addSection("正在使用", current);
+    addSection("其他方案", local);
+    addSection("云端方案（尚未加入）", cloud);
+    ui->branchRows->addStretch(1);
+    if (restore) restore->setFocus(Qt::OtherFocusReason);
 }
 void HomePageBranchesPage::complete(const OperationResult &result, bool reload)
 {
@@ -168,41 +177,44 @@ void HomePageBranchesPage::complete(const OperationResult &result, bool reload)
 }
 void HomePageBranchesPage::updateActions()
 {
-    const auto selected = selectedBranch();
-    const bool available = !m_id.isEmpty() && !selected.ref.isEmpty() && m_service->contains(m_id);
     const bool tracking = !m_id.isEmpty() && m_service->contains(m_id) && m_service->syncState(m_id) == BackupSyncState::Tracking;
-    const bool editable = available && !m_busy && tracking;
-    m_refresh->setEnabled(!m_id.isEmpty() && !m_busy);
-    ui->listUse->setEnabled(editable && !selected.current);
-    ui->listUse->setText(selected.remoteBranch ? "加入并使用…" : selected.current ? "正在使用" : "使用此方案…");
-    ui->listOperations->setEnabled(editable);
-    ui->listCreate->setEnabled(!m_busy && tracking);
     const auto reason = tracking ? QString() : QString("当前状态：%1。处理完成后才能管理方案。").arg(m_id.isEmpty() ? QString() : backupStateText(m_service->syncState(m_id)));
-    for (auto *button : {ui->listUse, ui->listCreate}) button->setToolTip(reason);
+    m_refresh->setEnabled(!m_id.isEmpty() && !m_busy);
+    ui->listCreate->setEnabled(!m_busy && tracking);
+    ui->listCreate->setToolTip(reason);
+    for (auto *row : std::as_const(m_rows)) row->setActionsEnabled(!m_busy && tracking, reason);
     ui->cancelTask->setVisible(m_busy);
 }
 void HomePageBranchesPage::useBranch(const BranchInfo &branch)
 {
-    if (branch.ref.isEmpty()) return;
-    if (branch.remoteBranch) createFrom(m_id, branch.head);
+    if (branch.ref.isEmpty() || branch.current) return;
+    if (branch.remoteBranch) create(m_id, branch.head, branch);
     else requestSwitch(m_id, branch.ref);
 }
+// Viewing one 方案 reuses the history page's scope filter instead of a separate page.
+void HomePageBranchesPage::showHistory(const BranchInfo &branch)
+{
+    Route route{PageId::History, m_id}; route.branchRef = branch.ref; emit navigate(route);
+}
 void HomePageBranchesPage::createFrom(const QString &id, const QString &commit)
+{
+    create(id, commit, {});
+}
+void HomePageBranchesPage::create(const QString &id, const QString &commit, const BranchInfo &tracked)
 {
     if (m_busy || !m_service->contains(id)) return;
     const auto context = m_service->branchContext(id);
     const QPointer<HomePageBranchesPage> guard(this);
-    const auto selected = selectedBranch();
-    const bool tracking = id == m_id && selected.remoteBranch && selected.head == commit;
-    const auto upstream = tracking ? selected.ref : QString();
+    const bool tracking = tracked.remoteBranch;
+    const auto upstream = tracking ? tracked.ref : QString();
     UiDialog::Dialog dialog(dialogOwner(), "createBranchDialog", tracking ? "加入云端方案" : "新建方案");
-    const auto text = tracking ? QString("在本机加入云端方案“%1”。之后的修改会同步回这个云端方案。").arg(displayName(selected))
+    const auto text = tracking ? QString("在本机加入云端方案“%1”。之后的修改会同步回这个云端方案。").arg(displayName(tracked))
                     : commit.isEmpty() || commit == context.head ? QStringLiteral("从当前方案的最新版本开始一个新方案。原方案不受影响，随时可以切换回来。")
-                    : QStringLiteral("从所选的历史版本开始一个新方案。原方案不受影响，随时可以切换回来。");
+                    : QStringLiteral("从所选的版本开始一个新方案。原方案不受影响，随时可以切换回来。");
     auto *description = new QLabel(text, &dialog);
     description->setWordWrap(true); dialog.contentLayout()->addWidget(description);
     auto *name = new QLineEdit(&dialog); name->setObjectName("branchName"); name->setPlaceholderText("例如：尝试新排版");
-    if (tracking) name->setText(displayName(selected));
+    if (tracking) name->setText(displayName(tracked));
     dialog.contentLayout()->addWidget(name);
     auto *rule = new QLabel("可以使用中文；不能包含空格以及 ~ ^ : ? * [ \\ 等符号。", &dialog);
     rule->setWordWrap(true); UiStyle::text(rule, UiStyle::FontRole::Caption, true); dialog.contentLayout()->addWidget(rule);
@@ -254,31 +266,36 @@ void HomePageBranchesPage::requestSwitch(const QString &id, const QString &ref, 
         });
     });
 }
-void HomePageBranchesPage::showOperations()
+void HomePageBranchesPage::showOperations(const BranchInfo &selected, const QPoint &globalPos)
 {
-    const auto selected = selectedBranch();
     if (selected.ref.isEmpty()) return;
     const auto selectedRequest = request(selected);
     const auto branches = m_snapshot.branches;
     const QPointer<HomePageBranchesPage> guard(this);
+    const bool editable = !m_busy && m_service->contains(m_id) && m_service->syncState(m_id) == BackupSyncState::Tracking;
     QMenu menu(this);
-    QAction *renameAction = nullptr, *removeAction = nullptr, *mergeAction = nullptr;
+    QAction *useAction = nullptr, *mergeAction = nullptr, *renameAction = nullptr, *removeAction = nullptr;
+    auto *historyAction = menu.addAction("查看历史");
+    if (!selected.current) useAction = menu.addAction(selected.remoteBranch ? "加入…" : "切换到此方案…");
+    menu.addSeparator();
+    auto *createAction = menu.addAction("从此方案新建…");
+    auto *compareAction = menu.addAction("与其他方案比较…");
+    if (!selected.remoteBranch && !selected.current) mergeAction = menu.addAction("合并到正在使用的方案…");
     if (!selected.remoteBranch)
     {
+        menu.addSeparator();
         renameAction = menu.addAction("重命名…");
         removeAction = menu.addAction("删除…"); removeAction->setEnabled(!selected.current);
         if (selected.current) removeAction->setToolTip("正在使用的方案不能删除，请先切换到其他方案。");
-        menu.addSeparator();
     }
-    auto *advanced = menu.addMenu("高级");
-    auto *compareAction = advanced->addAction("与其他方案比较…");
-    if (!selected.remoteBranch)
-    {
-        mergeAction = advanced->addAction("把这个方案的修改合并到正在使用的方案…"); mergeAction->setEnabled(!selected.current);
-    }
-    const auto chosen = menu.exec(ui->listOperations->mapToGlobal(QPoint(0, ui->listOperations->height())));
+    for (auto *action : {useAction, createAction, mergeAction, renameAction, removeAction})
+        if (action && !editable) action->setEnabled(false);
+    const auto chosen = menu.exec(globalPos);
     if (!guard || !chosen) return;
-    if (chosen == compareAction) compare(selected, selectedRequest, branches);
+    if (chosen == historyAction) showHistory(selected);
+    else if (chosen == useAction) useBranch(selected);
+    else if (chosen == createAction) createFrom(m_id, selected.head);
+    else if (chosen == compareAction) compare(selected, selectedRequest, branches);
     else if (chosen == mergeAction) merge(selectedRequest);
     else if (chosen == renameAction) rename(selected);
     else if (chosen == removeAction && UiDialog::confirm(dialogOwner(), QString("删除方案“%1”？\n云端的同名方案不受影响。").arg(selected.name), "删除方案") && guard)

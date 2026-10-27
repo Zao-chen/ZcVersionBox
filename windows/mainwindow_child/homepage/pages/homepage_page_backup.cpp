@@ -656,6 +656,7 @@ void HomePageBackupPage::deactivate()
     m_refreshNeeded = true;
     ++m_contextGeneration;
     ++m_refreshGeneration;
+    setLoading(false);
     if (m_tagDialog) m_tagDialog->reject();
     closeRevisionMenu();
 }
@@ -665,6 +666,16 @@ void HomePageBackupPage::setBackup(const QString &id, const QString &commit, con
     ++m_contextGeneration;
     if (m_tagDialog) m_tagDialog->reject();
     closeRevisionMenu();
+    if (m_loadedId != id || m_branchRef != branchRef)
+    {
+        // Another object's or 方案's versions must not stay visible while this one loads.
+        QScopedValueRollback<bool> loading(m_loading, true);
+        m_model.clear();
+        m_loadedId.clear();
+        ui->emptyLabel->setText("正在读取历史版本…");
+        ui->emptyLabel->show();
+        ui->table->hide();
+    }
     m_id = id;
     const bool narrow = width() < 640;
     ui->pageLayout->setContentsMargins(narrow ? 28 : 36, 8, narrow ? 16 : 24, 16);
@@ -863,6 +874,7 @@ void HomePageBackupPage::refresh()
     const auto generation = m_service->repositoryGeneration(id);
     const auto working = m_service->branchContext(id);
     const auto request = ++m_refreshGeneration;
+    setLoading(true);
     m_service->branches(id, this, [this, id, request](const BackupResult<BranchSnapshot> &reply) {
         if (id != m_id || request != m_refreshGeneration || !reply.result.success) return;
         const QSignalBlocker blocker(ui->historyScope);
@@ -880,6 +892,7 @@ void HomePageBackupPage::refresh()
                        {
     if (id != m_id || generation != m_service->repositoryGeneration(id) || request != m_refreshGeneration)
         return;
+    setLoading(false);
     const auto current = m_service->branchContext(id);
     if (working.ref != current.ref || working.version != current.version) { refresh(); return; }
     if (m_editing)
@@ -903,7 +916,7 @@ void HomePageBackupPage::refresh()
     m_model.clear();
     m_model.setHorizontalHeaderLabels({"版本说明", "保存时间", "编号", {}});
     m_model.horizontalHeaderItem(ActionsColumn)->setData("版本操作", Qt::AccessibleTextRole);
-    if (!reply.result.success)
+    if (!reply.result.success && !reply.result.cancelled)
         emit notification(reply.result);
     int selectedRow = 0;
     for (const auto &revision : revisions)
@@ -993,6 +1006,13 @@ void HomePageBackupPage::refresh()
 QVector<VersionTag> HomePageBackupPage::revisionTags(const RevisionContext &context) const
 {
     return indexForRevision(context).data(TagsRole).value<QVector<VersionTag>>();
+}
+void HomePageBackupPage::setLoading(bool loading)
+{
+    if (m_reading == loading)
+        return;
+    m_reading = loading;
+    emit loadingChanged(loading);
 }
 void HomePageBackupPage::applyFilter()
 {

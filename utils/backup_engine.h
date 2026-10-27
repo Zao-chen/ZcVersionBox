@@ -23,6 +23,8 @@ class BackupEngine
     BackupEngine(AppPaths paths, BackupDependencies dependencies);
     ~BackupEngine();
     OperationResult begin(std::shared_ptr<std::atomic_bool> cancellation);
+    // Read-only queries refresh the catalog without the writer lock; Git and QSaveFile writes are atomic for readers.
+    OperationResult beginRead(std::shared_ptr<std::atomic_bool> cancellation);
     void end();
     QVector<BackupRecord> records() const;
     OperationResult reload();

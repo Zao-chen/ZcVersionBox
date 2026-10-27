@@ -44,6 +44,9 @@ HomePage::HomePage(BackupService *service, QWidget *parent, BackupListModel *mod
     connect(m_filter, &QAbstractItemModel::modelReset, this, &HomePage::updateEmptyState);
     if (m_ownsModel)
         connect(service, &BackupService::trackedItemsChanged, this, &HomePage::refresh);
+    connect(service, &BackupService::reloadStarted, this, &HomePage::refresh);
+    connect(service, &BackupService::reloadFinished, this, &HomePage::refresh);
+    connect(ui->retryButton, &QPushButton::clicked, this, [this] { m_service->reload(this); });
     if (!actions)
     {
         connect(m_actions, &BackupUiActions::notification, this, &HomePage::notification);
@@ -61,13 +64,37 @@ void HomePage::refresh()
 }
 void HomePage::updateEmptyState()
 {
+    const bool loading = m_service->isReloading();
+    if (m_loading != loading)
+    {
+        m_loading = loading;
+        emit loadingChanged(loading);
+    }
     const bool empty = m_model->rowCount() == 0;
-    ui->countLabel->setText(ui->filter->text().isEmpty() ? QString("%1 个备份").arg(m_model->rowCount())
+    const auto result = m_service->lastReloadResult();
+    const bool failed = !m_service->isReady() || !result.success || !result.warning.isEmpty();
+    ui->countLabel->setText(empty && loading ? "正在加载备份…"
+                           : empty && failed ? "备份清单未就绪"
+                           : ui->filter->text().isEmpty() ? QString("%1 个备份").arg(m_model->rowCount())
                                                          : QString("%1 / %2 个备份").arg(m_filter->rowCount()).arg(m_model->rowCount()));
     ui->listStack->setCurrentWidget(m_filter->rowCount() ? ui->listPage : ui->emptyPage);
-    ui->emptyLabel->setText(empty ? "还没有备份" : "没有匹配的备份");
-    ui->emptyHint->setText(empty ? "添加文件或文件夹，开始自动保存历史版本。" : "试试其他名称或路径，或清除筛选条件。");
-    ui->emptyAddButton->setVisible(empty);
+    if (empty && loading)
+    {
+        ui->emptyLabel->setText("正在加载备份");
+        ui->emptyHint->setText("正在读取备份清单并检查存储状态，请稍候。");
+    }
+    else if (empty && failed)
+    {
+        ui->emptyLabel->setText(result.success ? "备份记录无法完整读取" : "备份加载失败");
+        ui->emptyHint->setText((result.title + '\n' + result.message + '\n' + result.warning).trimmed());
+    }
+    else
+    {
+        ui->emptyLabel->setText(empty ? "还没有备份" : "没有匹配的备份");
+        ui->emptyHint->setText(empty ? "添加文件或文件夹，开始自动保存历史版本。" : "试试其他名称或路径，或清除筛选条件。");
+    }
+    ui->emptyAddButton->setVisible(empty && !loading && !failed);
+    ui->retryButton->setVisible(empty && !loading && failed);
 }
 void HomePage::resizeEvent(QResizeEvent *event)
 {

@@ -73,6 +73,18 @@ OperationResult BackupEngine::begin(std::shared_ptr<std::atomic_bool> cancellati
     }
     return result;
 }
+OperationResult BackupEngine::beginRead(std::shared_ptr<std::atomic_bool> cancellation)
+{
+    m_cancel = std::move(cancellation);
+    if (m_cancel && m_cancel->load())
+        return OperationResult::cancel("操作已取消");
+    const auto root = m_catalog.paths().backupRoot;
+    for (const auto &path : {root, root + "/items", root + "/staging"})
+        if (BackupFiles::hasLinkedAncestor(path))
+            return OperationResult::fail("操作已暂停", "备份存储路径已被链接替换：" + path);
+    // Records being written by another task are skipped; the next query sees them.
+    return m_catalog.load();
+}
 void BackupEngine::end()
 {
     m_lock.reset();

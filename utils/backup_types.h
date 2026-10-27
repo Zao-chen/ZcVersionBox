@@ -169,6 +169,7 @@ struct BranchContext
 struct BranchInfo
 {
     QString ref, name, head, upstream, remote, remoteRef, message, endpoint;
+    QDateTime committedAt;
     bool current{false}, remoteBranch{false};
 };
 struct BranchSnapshot

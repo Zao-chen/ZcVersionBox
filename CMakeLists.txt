@@ -131,7 +131,7 @@ add_library(zc_ui STATIC
     windows/mainwindow_child/homepage/homepage.h windows/mainwindow_child/homepage/homepage.cpp windows/mainwindow_child/homepage/homepage.ui
     windows/mainwindow_child/homepage/pages/homepage_page_collaboration.h windows/mainwindow_child/homepage/pages/homepage_page_collaboration.cpp windows/mainwindow_child/homepage/pages/homepage_page_collaboration.ui
     windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h windows/mainwindow_child/homepage/pages/homepage_page_dashboard.cpp windows/mainwindow_child/homepage/pages/homepage_page_dashboard.ui
-    windows/mainwindow_child/homepage/pages/homepage_page_branches.h windows/mainwindow_child/homepage/pages/homepage_page_branches.cpp windows/mainwindow_child/homepage/pages/homepage_page_branches.ui
+    windows/mainwindow_child/homepage/pages/homepage_page_branches.h windows/mainwindow_child/homepage/pages/homepage_page_branches.cpp windows/mainwindow_child/homepage/pages/homepage_page_branches.ui windows/mainwindow_child/homepage/pages/homepage_page_branches_row.h windows/mainwindow_child/homepage/pages/homepage_page_branches_row.cpp
     windows/mainwindow_child/homepage/pages/homepage_preview_widgets.h windows/mainwindow_child/homepage/pages/homepage_preview_widgets.cpp
     windows/mainwindow_child/homepage/pages/homepage_text_edit.h windows/mainwindow_child/homepage/pages/homepage_text_edit.cpp
     windows/mainwindow_child/homepage/pages/homepage_page_preview.h windows/mainwindow_child/homepage/pages/homepage_page_preview.cpp windows/mainwindow_child/homepage/pages/homepage_page_preview.ui

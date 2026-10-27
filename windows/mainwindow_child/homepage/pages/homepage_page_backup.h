@@ -32,6 +32,7 @@ class HomePageBackupPage : public QWidget
     void createBranchRequested(const QString &id, const QString &commit);
     void branchRequested(const QString &branchRef);
     void notification(const OperationResult &result);
+    void loadingChanged(bool loading);
 
   protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -72,6 +73,7 @@ class HomePageBackupPage : public QWidget
     QAction *m_refresh;
     QAction *m_tag;
     QAbstractButton *m_milestoneOnly;
+    bool m_reading{false};
     QPointer<QDialog> m_tagDialog;
     QPointer<QMenu> m_revisionMenu;
     quint64 m_contextGeneration{0};
@@ -84,6 +86,7 @@ class HomePageBackupPage : public QWidget
     void updateActions();
     void rememberState();
     void applyFilter();
+    void setLoading(bool loading);
     void manageTags(const RevisionContext &context);
     void resolveTagConflicts();
     QVector<VersionTag> revisionTags(const RevisionContext &context) const;

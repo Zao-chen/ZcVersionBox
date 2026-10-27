@@ -23,6 +23,7 @@ class HomePageDashboardPage : public QWidget
   signals:
     void navigate(const Route &route);
     void notification(const OperationResult &result);
+    void loadingChanged(bool loading);
 
   protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -44,6 +45,9 @@ class HomePageDashboardPage : public QWidget
     QLabel *m_syncState, *m_syncDetail;
     QPushButton *m_continueResolution, *m_recheck;
     QWidget *m_syncPanel{nullptr};
+    bool m_loading{false};
+    QString m_loadedId;
+    void setLoading(bool loading);
     void rememberState();
     void updateActions();
     bool isCurrent(const QString &id, quint64 generation, quint64 context) const;

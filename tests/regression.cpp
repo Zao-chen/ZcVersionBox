@@ -39,6 +39,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QLockFile>
 #include <QMenu>
 #include <QMimeData>
 #ifdef _WIN32
@@ -54,6 +55,7 @@
 #include <QRawFont>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QSemaphore>
 #include <QSettings>
 #include <QStyleHints>
 #include <QScopeGuard>
@@ -75,6 +77,7 @@
 #include <QToolTip>
 #include <QUrl>
 #include <algorithm>
+#include <atomic>
 #include <oclero/qlementine/widgets/Expander.hpp>
 #include <oclero/qlementine/widgets/LoadingSpinner.hpp>
 #include <oclero/qlementine/widgets/Popover.hpp>
@@ -110,17 +113,11 @@ void openHistoryMenu(QTableView *table, int row)
     QContextMenuEvent context(QContextMenuEvent::Mouse, point, table->viewport()->mapToGlobal(point));
     QApplication::sendEvent(table->viewport(), &context);
 }
-bool selectBranch(QWidget *page, const QString &ref)
+QWidget *branchRow(QWidget *page, const QString &ref)
 {
-    auto *list = page->findChild<QListView *>("branchList");
-    if (!list) return false;
-    for (int row = 0; row < list->model()->rowCount(); ++row)
-        if (list->model()->index(row, 0).data(Qt::UserRole + 1).toString() == ref)
-        {
-            list->setCurrentIndex(list->model()->index(row, 0));
-            return true;
-        }
-    return false;
+    for (auto *row : page->findChildren<QWidget *>("branchRow"))
+        if (row->property("ref").toString() == ref) return row;
+    return nullptr;
 }
 void hoverHistoryAction(QTableView *table, int row, int action)
 {
@@ -222,6 +219,140 @@ class Regression : public QObject
         QCoreApplication::setApplicationName("ZcVersionBox tests");
         QCoreApplication::setApplicationVersion("0.1.0");
         m_theme = new ThemeController(nullptr, this);
+    }
+    void startupHomeWaitsBeforeShowingEmptyState()
+    {
+        TestDirectory dir;
+        BackupService service(pathsIn(dir));
+        FakeAi gateway;
+        SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        auto *page = window.findChild<HomePage *>();
+        auto *spinner = window.findChild<oclero::qlementine::LoadingSpinner *>("pageSpinner");
+        QVERIFY(page && spinner);
+        QVERIFY(page->loading());
+        QVERIFY(!spinner->isHidden());
+        QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("正在加载备份"));
+        QVERIFY(!page->findChild<QLabel *>("countLabel")->text().contains("0"));
+        QVERIFY(page->findChild<QPushButton *>("emptyAddButton")->isHidden());
+        settle(service);
+        QVERIFY(!page->loading());
+        QVERIFY(spinner->isHidden());
+        QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("还没有备份"));
+        QCOMPARE(page->findChild<QLabel *>("countLabel")->text(), QString("0 个备份"));
+        QVERIFY(!page->findChild<QPushButton *>("emptyAddButton")->isHidden());
+        QVERIFY(page->findChild<QPushButton *>("retryButton")->isHidden());
+    }
+    void startupHomeDisplaysItemsBeforeSlowAuditFinishes()
+    {
+        TestDirectory dir;
+        const auto paths = pathsIn(dir);
+        const auto source = dir.path() + "/source.txt";
+        writeFile(source, "keep\n");
+        {
+            TestBackupService seed(paths);
+            QVERIFY(seed.addLocal(source).success);
+        }
+        struct Gate
+        {
+            std::atomic_bool hold{true};
+            QSemaphore entered, resume;
+        };
+        const auto gate = std::make_shared<Gate>();
+        BackupDependencies dependencies;
+        dependencies.git = [gate](const QString &repo, const QStringList &args, const GitOptions &options)
+        {
+            if (gate->hold.exchange(false))
+            {
+                gate->entered.release();
+                gate->resume.acquire();
+            }
+            return runGit(repo, args, options);
+        };
+        BackupService service(paths, nullptr, nullptr, dependencies);
+        const auto releaseOnFailure = qScopeGuard([&] { gate->resume.release(); });
+        FakeAi gateway;
+        SettingsService settings(paths, &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        auto *page = window.findChild<HomePage *>();
+        auto *spinner = window.findChild<oclero::qlementine::LoadingSpinner *>("pageSpinner");
+        auto *list = page->findChild<QListView *>("backupList");
+        QTRY_VERIFY(gate->entered.available() > 0);
+        QTRY_COMPARE(list->model()->rowCount(), 1);
+        QCOMPARE(page->findChild<QLabel *>("countLabel")->text(), QString("1 个备份"));
+        QVERIFY(!page->findChild<QWidget *>("listPage")->isHidden());
+        QVERIFY(!spinner->isHidden());
+        QVERIFY(!service.isReady());
+        window.navigate({PageId::GeneralSettings});
+        QVERIFY(spinner->isHidden());
+        window.navigate({});
+        QVERIFY(!spinner->isHidden());
+        gate->resume.release();
+        settle(service);
+        QVERIFY(spinner->isHidden());
+        QVERIFY(service.isReady());
+        QCOMPARE(list->model()->rowCount(), 1);
+    }
+    void startupHomeOffersRetryAfterLoadFailure_data()
+    {
+        QTest::addColumn<QString>("failure");
+        QTest::newRow("writer-lock") << QString("lock");
+        QTest::newRow("storage-unavailable") << QString("storage");
+        QTest::newRow("unreadable-record") << QString("record");
+    }
+    void startupHomeOffersRetryAfterLoadFailure()
+    {
+        QFETCH(QString, failure);
+        TestDirectory dir;
+        const auto paths = pathsIn(dir);
+        QLockFile lock(paths.backupRoot + "/.writer.lock");
+        const auto recordPath = paths.backupRoot + "/items/" + QUuid::createUuid().toString(QUuid::WithoutBraces) + "/record.json";
+        if (failure == "storage")
+            writeFile(paths.backupRoot, "not a directory");
+        else if (failure == "record")
+            writeFile(recordPath, "{invalid record");
+        else
+        {
+            QVERIFY(QDir().mkpath(paths.backupRoot));
+            QVERIFY(lock.tryLock(0));
+        }
+        BackupService service(paths);
+        settle(service);
+        FakeAi gateway;
+        SettingsService settings(paths, &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        auto *page = window.findChild<HomePage *>();
+        auto *retry = page->findChild<QPushButton *>("retryButton");
+        auto *spinner = window.findChild<oclero::qlementine::LoadingSpinner *>("pageSpinner");
+        QVERIFY(!retry->isHidden());
+        QVERIFY(!page->findChild<QLabel *>("emptyHint")->text().isEmpty());
+        QVERIFY(page->findChild<QPushButton *>("emptyAddButton")->isHidden());
+        QVERIFY(!page->findChild<QLabel *>("countLabel")->text().contains("0"));
+        QVERIFY(spinner->isHidden());
+        if (failure == "record")
+        {
+            QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("备份记录无法完整读取"));
+            QVERIFY(QFile::remove(recordPath));
+            QVERIFY(QDir().rmdir(QFileInfo(recordPath).absolutePath()));
+        }
+        else
+        {
+            QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("备份加载失败"));
+            if (failure == "storage")
+                QVERIFY(QFile::remove(paths.backupRoot));
+            else
+                lock.unlock();
+        }
+        retry->click();
+        QVERIFY(page->loading());
+        QVERIFY(!spinner->isHidden());
+        QVERIFY(retry->isHidden());
+        settle(service);
+        QVERIFY(service.isReady());
+        QVERIFY(spinner->isHidden());
+        QVERIFY(retry->isHidden());
+        QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("还没有备份"));
+        QVERIFY(!page->findChild<QPushButton *>("emptyAddButton")->isHidden());
     }
     void sourcePreviewUnsavedNavigationAndExternalEdits()
     {
@@ -2395,21 +2526,20 @@ class Regression : public QObject
         page.refreshTheme();
         QCOMPARE(QToolTip::palette().color(QPalette::ToolTipBase), toolTipBaseBefore);
         auto *analyze = page.findChild<QAction *>("analyzeAction");
-        auto *spinner = page.findChild<oclero::qlementine::LoadingSpinner *>("analysisSpinner");
         analyze->trigger();
         settle(service);
-        QVERIFY(spinner->spinning());
+        QVERIFY(page.isLoading());
         page.deactivate();
         page.hide();
-        QVERIFY(!spinner->spinning());
+        QVERIFY(!page.isLoading());
         gateway.summaries.last()("stale after leaving", {});
         QVERIFY(page.findChild<QPlainTextEdit *>("analysis")->toPlainText().isEmpty());
         page.show();
         analyze->trigger();
         settle(service);
-        QVERIFY(spinner->spinning());
+        QVERIFY(page.isLoading());
         gateway.summaries.last()("当前分析结果", {});
-        QVERIFY(!spinner->spinning());
+        QVERIFY(!page.isLoading());
         auto *expander = page.findChild<oclero::qlementine::Expander *>("analysisExpander");
         QVERIFY(expander->expanded());
         QTest::qWait(140);
@@ -2424,12 +2554,12 @@ class Regression : public QObject
         analyze->trigger();
         settle(service);
         gateway.summaries.last()({}, "模拟分析失败");
-        QVERIFY(!spinner->spinning());
+        QVERIFY(!page.isLoading());
         QCOMPARE(page.findChild<QPlainTextEdit *>("analysis")->toPlainText(), QString("模拟分析失败"));
         analyze->trigger();
         settle(service);
         QVERIFY(service.rebuild(id).success);
-        QVERIFY(!spinner->spinning());
+        QVERIFY(!page.isLoading());
         gateway.summaries.last()("stale after rebuilding", {});
         QVERIFY(page.findChild<QPlainTextEdit *>("analysis")->toPlainText().isEmpty());
 
@@ -2742,8 +2872,8 @@ class Regression : public QObject
         HomePageBranchesPage page(&service);
         page.resize(1080, 700); page.setAttribute(Qt::WA_DontShowOnScreen); page.show();
         page.setBackup(id); settle(service);
-        QVERIFY(selectBranch(&page, "refs/heads/topic"));
-        auto *operations = page.findChild<QPushButton *>("listOperations"); QVERIFY(operations && operations->isEnabled());
+        auto *row = branchRow(&page, "refs/heads/topic"); QVERIFY(row);
+        auto *operations = row->findChild<QToolButton *>("branchMore"); QVERIFY(operations && operations->isEnabled());
         QSignalSpy notifications(&page, &HomePageBranchesPage::notification);
         bool confirmed = false, updated = false;
         QTimer responder;
@@ -2811,8 +2941,8 @@ class Regression : public QObject
         HomePageBranchesPage page(&service);
         page.resize(1080, 700); page.setAttribute(Qt::WA_DontShowOnScreen); page.show();
         page.setBackup(id); settle(service);
-        QVERIFY(selectBranch(&page, "refs/heads/topic"));
-        auto *operations = page.findChild<QPushButton *>("listOperations"); QVERIFY(operations && operations->isEnabled());
+        auto *row = branchRow(&page, "refs/heads/topic"); QVERIFY(row);
+        auto *operations = row->findChild<QToolButton *>("branchMore"); QVERIFY(operations && operations->isEnabled());
         int dialogs = 0;
         QTimer responder; responder.setInterval(10);
         connect(&responder, &QTimer::timeout, &page, [&] {
@@ -2905,8 +3035,8 @@ class Regression : public QObject
         window.navigate({PageId::Branches, id}); settle(service);
         auto *branches = window.findChild<HomePageBranchesPage *>(); QVERIFY(branches && branches->isVisible());
         QVERIFY(!branches->findChild<QAction *>("fetchBranchesAction"));
-        QVERIFY(selectBranch(branches, "refs/heads/topic"));
-        auto *operations = branches->findChild<QPushButton *>("listOperations"); QVERIFY(operations && operations->isEnabled());
+        auto *topicRow = branchRow(branches, "refs/heads/topic"); QVERIFY(topicRow);
+        auto *operations = topicRow->findChild<QToolButton *>("branchMore"); QVERIFY(operations && operations->isEnabled());
         QStringList menuItems;
         QTimer closer;
         closer.setInterval(10);
@@ -2921,7 +3051,7 @@ class Regression : public QObject
         // Bound a failed popup detection so this test cannot leave a modal menu open.
         QTimer::singleShot(5000, &window, [&] { if (auto *menu = qobject_cast<QMenu *>(QApplication::activePopupWidget())) menu->close(); });
         closer.start(); operations->click(); closer.stop();
-        QCOMPARE(menuItems, QStringList({"重命名…", "删除…", "高级"}));
+        QCOMPARE(menuItems, QStringList({"查看历史", "切换到此方案…", "从此方案新建…", "与其他方案比较…", "合并到正在使用的方案…", "重命名…", "删除…"}));
     }
     void collaborationConnectionUsesExplicitSaveAndRejectsStaleReply()
     {
@@ -3006,39 +3136,32 @@ class Regression : public QObject
         QCOMPARE(historyTable->model()->rowCount(), 8);
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
-        // Double-clicking a 方案 in the list opens its history in the same history page.
+        // Clicking a 方案 row opens its history without switching.
         QVERIFY(service.createBranch(id, "全部共享", topic).success);
         window.navigate({PageId::Branches, id}); settle(service);
         auto *page = window.findChild<HomePageBranchesPage *>(); QVERIFY(page && page->isVisible());
-        auto *list = page->findChild<QListView *>("branchList"); QVERIFY(list && list->isVisible());
-        QVERIFY(selectBranch(page, "refs/heads/试验方案"));
-        emit list->activated(list->currentIndex()); settle(service);
+        auto *trial = branchRow(page, "refs/heads/试验方案"); QVERIFY(trial && trial->isVisible());
+        QTest::mouseClick(trial, Qt::LeftButton, Qt::NoModifier, QPoint(40, trial->height() / 2)); settle(service);
         QVERIFY(history->isVisible());
         QCOMPARE(scope->currentData().toString(), QString("refs/heads/试验方案"));
-        QCOMPARE(historyTable->model()->rowCount(), 8);
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
-        // The 方案 tab without a branch shows the list of all branches as a normal tab page.
+        // The 方案 tab lists every branch as a normal tab page; the current one offers no switch.
         window.navigate({PageId::Branches, id}); settle(service);
-        QVERIFY(list->isVisible());
         QVERIFY(window.findChild<QToolButton *>("branchesTab")->isChecked());
         QVERIFY(!window.findChild<QToolButton *>("returnHistoryButton")->isVisible());
-        QStringList listed;
-        for (int row = 0; row < list->model()->rowCount(); ++row) listed.append(list->model()->index(row, 0).data(Qt::UserRole + 1).toString());
-        QVERIFY(listed.contains("refs/heads/main") && listed.contains("refs/heads/试验方案") && listed.contains("refs/heads/全部共享"));
-        QCOMPARE(list->currentIndex().data(Qt::UserRole + 1).toString(), QString("refs/heads/试验方案"));
-        QVERIFY(selectBranch(page, "refs/heads/main"));
-        QVERIFY(!page->findChild<QPushButton *>("listUse")->isEnabled());
-        QCOMPARE(page->findChild<QPushButton *>("listUse")->text(), QString("正在使用"));
+        QVERIFY(branchRow(page, "refs/heads/main") && branchRow(page, "refs/heads/试验方案") && branchRow(page, "refs/heads/全部共享"));
+        QVERIFY(!branchRow(page, "refs/heads/main")->findChild<QPushButton *>("branchUse"));
+        QVERIFY(branchRow(page, "refs/heads/试验方案")->findChild<QPushButton *>("branchUse"));
         // The header menu button lists local branches and leads to the full list.
         window.navigate({PageId::History, id}); settle(service);
         auto *selector = window.findChild<QToolButton *>("branchSelector"); QVERIFY(selector && selector->isVisible());
         QTRY_COMPARE(selector->text(), QString("方案：main"));
         QStringList entries;
         for (auto *action : selector->menu()->actions()) if (!action->isSeparator()) entries.append(action->text());
-        QCOMPARE(entries, QStringList({"main", "全部共享", "试验方案", "新建方案…", "管理全部方案"}));
+        QCOMPARE(entries, QStringList({"main", "全部共享", "试验方案", "管理全部方案"}));
         selector->menu()->actions().last()->trigger(); settle(service);
-        QVERIFY(list->isVisible());
+        QVERIFY(page->isVisible());
         QCOMPARE(head(service, id), main);
         QCOMPARE(readFile(source), QByteArray("main\n"));
     }

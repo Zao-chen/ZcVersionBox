@@ -97,11 +97,28 @@ void HomePageDashboardPage::deactivate()
     m_active = false;
     ++m_contextGeneration;
     ++m_requestGeneration;
+    setLoading(false);
+}
+void HomePageDashboardPage::setLoading(bool loading)
+{
+    if (m_loading == loading)
+        return;
+    m_loading = loading;
+    emit loadingChanged(loading);
 }
 void HomePageDashboardPage::setBackup(const QString &id)
 {
     rememberState();
     m_id = id;
+    if (m_loadedId != id)
+    {
+        // Never show another object's figures while this one is loading.
+        for (auto *value : {ui->versionValue, ui->fileValue, ui->sizeValue, ui->cacheValue})
+            value->setText("—");
+        ui->stateValue->clear();
+        ui->sourcePathEdit->clear();
+        ui->repositoryPathEdit->clear();
+    }
     m_repositoryGeneration = m_service->repositoryGeneration(id);
     ++m_contextGeneration;
     m_active = true;
@@ -120,13 +137,16 @@ void HomePageDashboardPage::refresh()
     const auto generation = m_repositoryGeneration;
     const auto context = m_contextGeneration;
     const auto request = ++m_requestGeneration;
+    setLoading(true);
     m_service->statistics(id, this, [this, id, generation, context, request](const BackupResult<BackupStats> &reply)
                           {
     if (!isCurrent(id, generation, context) || request != m_requestGeneration)
         return;
+    setLoading(false);
     if (!reply.result.success)
     {
-        emit notification(reply.result);
+        if (!reply.result.cancelled)
+            emit notification(reply.result);
         updateActions();
         return;
     }
@@ -148,6 +168,7 @@ void HomePageDashboardPage::refresh()
     ui->sizeValue->setText(formatBytes(stats.fileSize));
     ui->cacheValue->setText(formatBytes(stats.cacheSize));
     ui->stateValue->setText(stats.sourceState);
+    m_loadedId = id;
     const bool hasState = !m_syncState->text().isEmpty();
     const bool hasType = !stats.sourceState.isEmpty();
     ui->headerDot->setVisible(hasState && hasType);
