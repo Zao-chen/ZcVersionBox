@@ -382,8 +382,8 @@ class BackupCoreRegression : public QObject
         const auto previous = f.service->syncResolution(f.id); CHECK_OK(previous.result);
         f.service.reset(); f.service = std::make_unique<TestBackupService>(f.paths);
         const auto restored = f.service->syncResolution(f.id); CHECK_OK(restored.result); QCOMPARE(restored.value.id, previous.value.id);
-        CHECK_OK(awaitBackup<OperationResult>([&](auto done) { f.service->cancelResolution(f.id, restored.value.id, this, done, true); }));
-        QVERIFY(!f.service->syncStatus(f.id).automatic); QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
+        CHECK_OK(awaitBackup<OperationResult>([&](auto done) { f.service->cancelResolution(f.id, restored.value.id, this, done); }));
+        QVERIFY(f.service->syncStatus(f.id).automatic); QCOMPARE(f.service->syncState(f.id), BackupSyncState::Tracking);
         QCOMPARE(readFile(f.source), QByteArray("local\n"));
     }
 

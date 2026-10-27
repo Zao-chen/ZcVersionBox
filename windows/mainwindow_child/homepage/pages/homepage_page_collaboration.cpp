@@ -15,7 +15,7 @@ HomePageCollaborationPage::HomePageCollaborationPage(BackupService *service, QWi
 {
     ui->setupUi(this);
     for (auto *label : {ui->stateLabel, ui->automaticTitle, ui->remoteTitle}) UiStyle::text(label, UiStyle::FontRole::Section);
-    for (auto *label : {ui->summary, ui->lastSync, ui->automaticHint}) UiStyle::text(label, UiStyle::FontRole::Caption, true);
+    for (auto *label : {ui->lastSync, ui->automaticHint}) UiStyle::text(label, UiStyle::FontRole::Caption, true);
     UiStyle::text(ui->remoteUrl, UiStyle::FontRole::Body);
     ui->syncButton->setProperty("primary", true);
     ui->syncButton->setIcon(UiStyle::icon("refresh"));
@@ -149,21 +149,15 @@ void HomePageCollaborationPage::refresh()
     }
     if (state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending) { title = "需要处理差异"; summary = "处理期间自动备份暂停，完成后继续。"; }
     if (state == BackupSyncState::NeedsAttention) { title = "需要检查备份"; summary = "自动写入已暂停，请先检查备份。"; }
-    QString lastSyncText;
-    if (running)
+    QString line = summary;
+    if (line.isEmpty())
     {
-        lastSyncText = summary.isEmpty() ? QStringLiteral("正在同步…") : summary;
-        summary.clear();
-    }
-    else
-    {
-        lastSyncText = status.lastSuccess.isValid() ? "最近同步：" + status.lastSuccess.toLocalTime().toString("yyyy-MM-dd HH:mm:ss") : "尚未同步";
+        if (running) line = QStringLiteral("正在同步…");
+        else if (connected) line = status.lastSuccess.isValid() ? "最近同步：" + status.lastSuccess.toLocalTime().toString("yyyy-MM-dd HH:mm:ss") : "尚未同步";
     }
     ui->stateLabel->setText(title);
-    ui->summary->setText(summary);
-    ui->summary->setVisible(!summary.isEmpty());
-    ui->lastSync->setText(lastSyncText);
-    ui->lastSync->setVisible(connected);
+    ui->lastSync->setText(line);
+    ui->lastSync->setVisible(!line.isEmpty());
     ui->syncButton->setText(state == BackupSyncState::NeedsAttention ? "重新检查" : state == BackupSyncState::ResolutionPending || state == BackupSyncState::RemotePending ? "处理差异" : status.state == SyncState::NeedsBranch ? "切换方案并处理" : status.state == SyncState::NeedsTags ? "处理里程碑" : running ? "同步中…" : "立即同步");
     ui->syncButton->setAccessibleName(ui->syncButton->text() == "立即同步" ? "立即同步全部方案" : ui->syncButton->text());
     ui->syncButton->setEnabled(connected && !running && !m_connecting);

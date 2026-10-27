@@ -94,7 +94,7 @@ class BackupService : public QObject
     BackupTaskId prepareBranchSwitch(const BranchRequest &request, QObject *context, Reply<PreparedBranchSwitch> callback);
     BackupTaskId switchBranch(const PreparedBranchSwitch &request, QObject *context, Completion callback);
     BackupTaskId prepareBranchMerge(const BranchRequest &request, QObject *context, Reply<SyncResolutionSession> callback);
-    BackupTaskId cancelResolution(const QString &id, const QString &session, QObject *context, Completion callback, bool disableAutomatic = false);
+    BackupTaskId cancelResolution(const QString &id, const QString &session, QObject *context, Completion callback);
     void cancel(BackupTaskId task);
 
   signals:

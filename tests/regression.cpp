@@ -12,6 +12,7 @@
 #include "windows/mainwindow_child/homepage/pages/homepage_page_branches.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_history_graph.h"
 #include <QTabWidget>
+#include <QTextBrowser>
 #include <QTreeView>
 #include <QTimer>
 #include "windows/mainwindow_child/homepage/pages/homepage_page_dashboard.h"
@@ -1749,16 +1750,16 @@ class Regression : public QObject
         QVERIFY(!local->isChecked());
         QVERIFY(!remote->isChecked());
         select("project/使用说明.txt");
-        QVERIFY(page.findChild<QPlainTextEdit *>("localContent")->toPlainText().contains("本地第一段"));
+        QVERIFY(page.findChild<QWidget *>("diffView")->findChild<QTextBrowser *>()->toPlainText().contains("本地第一段"));
         QTest::keyClick(local, Qt::Key_Space);
         settle(f.service);
         QVERIFY(local->isChecked());
-        QVERIFY(page.findChild<QLabel *>("questionTitle")->text().contains("第 1 / 2"));
+        QVERIFY(page.findChild<QLabel *>("positionLabel")->text().contains("第 1 / 2"));
         remote->click(); settle(f.service);
         QVERIFY(remote->isChecked()); QVERIFY(!local->isChecked());
         local->click(); settle(f.service);
         page.findChild<QPushButton *>("nextButton")->click();
-        QVERIFY(page.findChild<QLabel *>("questionTitle")->text().contains("第 2 / 2"));
+        QVERIFY(page.findChild<QLabel *>("positionLabel")->text().contains("第 2 / 2"));
         remote->click(); settle(f.service);
         page.findChild<QPushButton *>("previousButton")->click();
         QVERIFY(local->isChecked());
@@ -1781,7 +1782,7 @@ class Regression : public QObject
         for (int i = 0; i < files->model()->rowCount(); ++i)
         {
             files->setCurrentIndex(files->model()->index(i, 0)); settle(f.service);
-            QVERIFY(!page.findChild<QPlainTextEdit *>("resultContent")->toPlainText().contains("<<<<<<<"));
+            QVERIFY(!page.findChild<QWidget *>("previewDiffView")->findChild<QTextBrowser *>()->toPlainText().contains("<<<<<<<"));
         }
         auto *apply = page.findChild<QPushButton *>("applyButton");
         bool defaultCancel = false, correctScope = false;
@@ -1826,11 +1827,11 @@ class Regression : public QObject
         QVERIFY(!window.findChild<QToolButton *>("overviewTab")->isVisible());
         auto *local = page->findChild<QPushButton *>("localChoice");
         local->click(); settle(f.service);
-        const auto firstTitle = page->findChild<QLabel *>("questionTitle")->text();
+        const auto firstTitle = page->findChild<QLabel *>("positionLabel")->text();
         window.navigate({PageId::GeneralSettings}); settle(f.service);
         window.findChild<QToolButton *>("returnApplicationButton")->click(); settle(f.service);
         QVERIFY(page->isVisible()); QVERIFY(local->isChecked());
-        QCOMPARE(page->findChild<QLabel *>("questionTitle")->text(), firstTitle);
+        QCOMPARE(page->findChild<QLabel *>("positionLabel")->text(), firstTitle);
         window.findChild<QToolButton *>("backButton")->click(); settle(f.service);
         QVERIFY(window.findChild<SettingPage *>()->isVisible());
         window.findChild<QToolButton *>("forwardButton")->click(); settle(f.service);
@@ -1993,7 +1994,8 @@ class Regression : public QObject
         if (conflicts) { preview->click(); settle(f.service); }
         QCOMPARE(failedAttempts, 1);
         QVERIFY(!page.findChild<QPushButton *>("reanalyzeButton")->isVisible());
-        QVERIFY(preview->isEnabled()); QVERIFY(preview->isVisible());
+        QVERIFY(preview->isEnabled());
+        QVERIFY(conflicts ? !preview->isVisible() : preview->isVisible());
         const auto resumed = f.service.syncResolution(f.id);
         QVERIFY(resumed.result.success); QCOMPARE(resumed.value.revision, session.value.revision);
         QCOMPARE(resumed.value.remaining(), 0);
@@ -2014,14 +2016,10 @@ class Regression : public QObject
                 files->setCurrentIndex(files->model()->index(i, 0));
         page.findChild<QPushButton *>("localChoice")->click(); settle(f.service);
         page.findChild<QPushButton *>("nextButton")->click();
-        QVERIFY(page.findChild<QLabel *>("questionTitle")->text().contains("第 2 / 2"));
-        for (const auto &name : {QString("localContent"), QString("remoteContent")})
-        {
-            const auto selections = page.findChild<QPlainTextEdit *>(name)->extraSelections();
-            QCOMPARE(selections.size(), 1);
-            const auto selected = selections[0].cursor.selectedText().replace(QChar::ParagraphSeparator, '\n');
-            QCOMPARE(selected, name == "localContent" ? QString("本地第二段\n") : QString("云端第二段\n"));
-        }
+        QVERIFY(page.findChild<QLabel *>("positionLabel")->text().contains("第 2 / 2"));
+        const auto shown = page.findChild<QWidget *>("diffView")->findChild<QTextBrowser *>()->toPlainText();
+        QVERIFY(shown.contains("本地第二段")); QVERIFY(shown.contains("云端第二段"));
+        QVERIFY(!shown.contains('\r'));
     }
     void conflictKeyboardNavigation()
     {
@@ -2036,16 +2034,12 @@ class Regression : public QObject
         page.resize(520, 540); page.show(); page.activateWindow();
         page.setBackup(f.id); settle(f.service);
         auto *local = page.findChild<QPushButton *>("localChoice");
-        auto *scroll = page.findChild<QScrollArea *>("contentScroll");
-        scroll->ensureWidgetVisible(local);
         local->setFocus(Qt::TabFocusReason);
         QTRY_VERIFY(local->hasFocus());
         QTest::keyClick(local, Qt::Key_Space); settle(f.service);
         QVERIFY(local->isChecked());
         local->setFocus(Qt::TabFocusReason);
         QTest::keyClick(local, Qt::Key_Tab);
-        QVERIFY(page.findChild<QPlainTextEdit *>("remoteContent")->hasFocus());
-        QTest::keyClick(QApplication::focusWidget(), Qt::Key_Tab);
         auto *remote = page.findChild<QPushButton *>("remoteChoice");
         QVERIFY(remote->hasFocus());
         QTest::keyClick(remote, Qt::Key_Space); settle(f.service);
@@ -2076,12 +2070,12 @@ class Regression : public QObject
                 const auto selectedRect = fileList->visualRect(fileList->currentIndex());
                 QVERIFY2(selectedRect.top() >= 0 && selectedRect.bottom() < fileList->viewport()->height(),
                          qPrintable(QString("selected row y=%1..%2, viewport height=%3").arg(selectedRect.top()).arg(selectedRect.bottom()).arg(fileList->viewport()->height())));
-                auto *scroll = page->findChild<QScrollArea *>("contentScroll");
-                QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
                 QCOMPARE(page->findChild<QSplitter *>("splitter")->orientation(), size.width() == 760 ? Qt::Vertical : Qt::Horizontal);
-                scroll->ensureWidgetVisible(page->findChild<QPushButton *>("remoteChoice"));
-                QVERIFY(!page->findChild<QPushButton *>("remoteChoice")->visibleRegion().isEmpty());
-                scroll->verticalScrollBar()->setValue(0);
+                // Without an outer scroll area every control must fit the page.
+                for (const auto *name : {"remoteChoice", "nextButton", "laterButton"})
+                    QVERIFY2(!page->findChild<QPushButton *>(name)->visibleRegion().isEmpty(), name);
+                const auto diffHeight = page->findChild<QWidget *>("diffView")->height();
+                QVERIFY2(diffHeight >= 120, qPrintable(QString("diff view height=%1 at width %2").arg(diffHeight).arg(size.width())));
                 if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/conflict-%1-%2.png").arg(theme).arg(size.width())));
             }
             m_theme->toggle();
@@ -2102,8 +2096,7 @@ class Regression : public QObject
             {
                 window.resize(size); QTest::qWait(120);
                 QCOMPARE(window.size(), size);
-                QCOMPARE(page->findChild<QScrollArea *>("contentScroll")->horizontalScrollBar()->maximum(), 0);
-                QVERIFY(page->findChild<QPushButton *>("applyButton")->isVisible());
+                QVERIFY(!page->findChild<QPushButton *>("applyButton")->visibleRegion().isEmpty());
                 if (!output.isEmpty()) QVERIFY(window.grab().save(output + QString("/conflict-preview-%1-%2.png").arg(theme).arg(size.width())));
             }
             m_theme->toggle();

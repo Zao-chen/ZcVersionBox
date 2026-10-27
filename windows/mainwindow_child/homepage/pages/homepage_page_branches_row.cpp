@@ -45,7 +45,7 @@ HomePageBranchRow::HomePageBranchRow(const BranchInfo &branch, const QString &na
     setCursor(Qt::PointingHandCursor);
 
     auto *layout = new QHBoxLayout(this);
-    layout->setContentsMargins(14, 8, 8, 8);
+    layout->setContentsMargins(16, 8, 8, 8);
     layout->setSpacing(8);
     auto *texts = new QVBoxLayout;
     texts->setSpacing(2);
@@ -129,7 +129,7 @@ void HomePageBranchRow::paintEvent(QPaintEvent *)
     {
         painter.setPen(Qt::NoPen);
         painter.setBrush(colors.added);
-        painter.drawRoundedRect(QRectF(row.left() + 2, row.top() + 10, 3, row.height() - 20), 1.5, 1.5);
+        painter.drawRoundedRect(QRectF(row.left() + 8, row.top() + 10, 3, row.height() - 20), 1.5, 1.5);
     }
     if (hasFocus() && UiStyle::isKeyboardNavigationActive())
     {
