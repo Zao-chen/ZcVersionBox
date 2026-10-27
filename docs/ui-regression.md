@@ -9,7 +9,8 @@
 | 方案引用与身份 | 中文名称、创建/改名、同 OID 分支、外部切换、普通/强制删除、删除前并发提交的 OID 校验 |
 | 保存后切换 | 修改只提交到原方案、无变化不新增、忽略文件与源 `.git` 保留、覆盖碰撞、确认过期、源/外部分支变化及写入故障恢复 |
 | 原生合并与云端方案 | 快进、已包含、双亲提交、重启继续、取消、重命名自动合并/冲突与 Git 树对照；fetch、upstream、非当前分支上传、新名发布、远程删除 lease、端点变化与非快进拒绝 |
-| 多人协作统一同步 | 首次发布、全部方案与里程碑、无冲突自动应用及删除、非当前方案快进、分叉整批等待和处理后续接、重复同步不产生额外版本；显式保存连接、对象切换及过期回调 |
+| 多人协作统一同步 | 首次发布、全部方案与里程碑、无冲突自动应用及删除、非当前方案快进或无冲突合并、真正内容冲突等待和续接、重复同步不产生额外版本；显式保存连接、对象切换及过期回调 |
+| 共享方案生命周期 | 固定身份、全局改名/删除、离线重启不复活、未同步工作保留、同名新身份、并发改名、交换名称保持当前身份、拒绝发送后恢复、旧 upstream 迁移、目录丢失保护、配置错误不暂停本地备份 |
 | 自动同步 | 3 秒合并事件、30 秒检查、网络失败退避、编辑保护、通知去重、停止与重启、手动任务保留、其他对象继续 |
 | 方案界面 | 浏览与切换分离、真实提交关系图、浅深色和 760/1080 像素宽度、实际点击新建/切换确认及取消按钮 |
 | 多方案重建保护 | 本地多分支、云端分支、独立推送地址含其他分支、离线及确认后断网时保留原仓库 |
@@ -300,3 +301,24 @@ ctest --test-dir build -R '^(backup_core|regression)$' --parallel 2 --output-on-
 UI 测试使用 `QT_QPA_PLATFORM=offscreen`；通过 `ZC_TEST_SCREENSHOTS` 保存页面截图，已检查 `build/collaboration-screenshots/collaboration-final-{light,dark}-{1080,760}.png`。窄窗口没有整页横向滚动；较长页面使用纵向滚动。测试中只有预期的 offscreen 窗口提示及已有 Qt 弃用警告。
 
 测试远程为临时 bare 仓库，网络与认证错误通过注入 Git 结果验证。没有实际运行 Windows/Linux 原生构建、真实托管仓库认证或跨机器协作；这些项目按 [双端验收步骤](collaboration.md#双端验收) 人工验收。
+
+
+## 统一方案重构
+
+在 Windows 11 / MSVC 2022 / Qt 6.8.3 上复用 `build/backup-core` 的 Release 构建，应用、`zc_backup_tests` 和 `zc_tests` 编译链接通过。只运行新增及直接受影响的 Qt Test 函数，没有运行全量 CTest，也没有启动正常应用操作真实备份。
+
+核心定向检查共覆盖 24 个独立数据场景，界面覆盖 8 个独立数据场景（不计初始化、清理及同一场景的补充执行），均通过。
+
+| 检查 | 证据 |
+| --- | --- |
+| 自动接收、全局改名/删除、离线重启、未同步工作保留、同名新建、并发改名、旧 upstream 迁移、发送拒绝恢复、目录移除保护 | `sharedSchemes*` 用例，日志 `build/unified-schemes-core-final.txt` |
+| 两个不同内容的方案交换名称，当前身份与源文件保持；上传基线保留；配置错误不阻断备份；非当前方案合并继承仓库规则 | `sharedSchemesExchangeNamesKeepsCurrentIdentity`、`sharedSchemesRenameDeleteAndOfflineRestart`、`sharedSchemesMergeInactiveWithoutTouchingSource`、`sharedSchemesMappingErrorDoesNotPauseBackup`；日志 `build/unified-schemes-followup.txt` |
+| 当前/非当前内容冲突续接、连续远端并发、网络退避、编辑和源变化保护、里程碑部分失败、调度不循环、切换与删除确认保护 | 定向 `fullSync*`、`automaticSyncDebouncesPollsAndDoesNotLoop`、`automaticSyncBackoffAndEditing`、两项方案切换测试和 `branchDeletionRejectsConcurrentCommit`；日志 `build/unified-schemes-core-final.txt` |
+| 单一列表、直接切换、图标签、两次删除确认、方案浏览、协作入口 | `historyMergesCloudCopyOfSameBranch`、`historyBranchBadgesKeepExactTargets`、`branchDeletionKeepsConfirmedVersion`、`branchDeletionAsksAgainForUniqueVersions`、`collaborationProvidesFullSyncControls`、`branchUiBrowsingGraphAndConfirmation`；日志 `build/unified-schemes-ui.txt` |
+| 方案准备期间切换备份对象，旧回调不打开错误对象的改名对话框 | `collaborationProvidesFullSyncControls` 补充场景；日志 `build/unified-schemes-ui-followup.txt` |
+
+使用隔离测试窗口在 Windows 原生平台执行协作及方案操作，保存 `build/unified-schemes-native/{schemes,collaboration}-{light,dark}-{1080,760}.png`。已检查中文、方案分区、浅深色及窄窗口布局；原生执行日志为 `build/unified-schemes-native.txt`。offscreen 首轮缺少系统字体，不用于最终视觉验收。
+
+原 Ninja 构建目录存在没有头文件依赖的旧对象，首次测试曾因混入旧布局对象而崩溃；相关生成对象已失效重建，并确认恢复头文件依赖跟踪。最终测试和可运行验收程序使用上述 Visual Studio 构建，程序位于 `build/backup-core/Release/ZcVersionBox.exe`。
+
+远程端均使用临时 bare 仓库。真实托管仓库的自定义引用权限、默认/受保护分支规则及跨机器网络尚未验证；按 [双端验收](collaboration.md#双端验收) 使用临时共享项目验收，开启全局改名/删除前升级所有协作者。
