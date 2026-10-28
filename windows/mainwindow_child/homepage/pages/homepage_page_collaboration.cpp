@@ -41,19 +41,19 @@ HomePageCollaborationPage::HomePageCollaborationPage(BackupService *service, QWi
         const auto id = m_id; const auto generation = m_generation, context = m_context;
         const QPointer<HomePageCollaborationPage> guard(this);
         if (!confirmAction(this, "断开后停止云端同步，本地文件和版本历史仍然保留。", "断开共享仓库") || !guard || !current(id, generation, context)) return;
-        m_service->removeRemote(id, this, [this, id, generation, context](const OperationResult &result) {
+        m_service->describe(m_service->removeRemote(id, this, [this, id, generation, context](const OperationResult &result) {
             if (!current(id, generation, context)) return;
             if (result.success) { ui->remoteUrl->clear(); ui->remoteUrl->setModified(false); }
             emit notification(result); refresh();
-        });
+        }), "正在断开共享仓库");
     });
     connect(m_automatic, &QAbstractButton::toggled, this, [this](bool enabled) {
         const auto id = m_id; const auto generation = m_generation, context = m_context;
-        m_service->setAutoSync(id, enabled, this, [this, id, generation, context](const OperationResult &result) {
+        m_service->describe(m_service->setAutoSync(id, enabled, this, [this, id, generation, context](const OperationResult &result) {
             if (!current(id, generation, context)) return;
             if (!result.success) emit notification(result);
             refresh();
-        });
+        }), "正在保存同步设置");
     });
 }
 HomePageCollaborationPage::~HomePageCollaborationPage() = default;
@@ -83,16 +83,16 @@ void HomePageCollaborationPage::connectRemote()
     const auto id = m_id, url = ui->remoteUrl->text().trimmed();
     const auto generation = m_generation, context = m_context;
     m_connecting = true; refresh();
-    m_service->checkRemote(url, this, [this, id, url, generation, context](const OperationResult &checked) {
+    m_service->describe(m_service->checkRemote(url, this, [this, id, url, generation, context](const OperationResult &checked) {
         if (!current(id, generation, context)) return;
         if (!checked.success) { m_connecting = false; emit notification(checked); refresh(); return; }
-        m_service->setRemote(id, url, this, [this, id, generation, context](const OperationResult &saved) {
+        m_service->describe(m_service->setRemote(id, url, this, [this, id, generation, context](const OperationResult &saved) {
             if (!current(id, generation, context)) return;
             m_connecting = false;
             if (saved.success) ui->remoteUrl->setModified(false);
             emit notification(saved); refresh();
-        });
-    });
+        }), "正在连接共享仓库");
+    }), "正在检查共享仓库");
 }
 void HomePageCollaborationPage::synchronize()
 {
@@ -105,17 +105,17 @@ void HomePageCollaborationPage::synchronize()
     if (!m_service->tagConflicts(id).isEmpty()) { emit navigate({PageId::History, id}); return; }
     if (backupState == BackupSyncState::NeedsAttention)
     {
-        m_service->recheck(id, this, [this, id, generation, context](const OperationResult &result) {
+        m_service->describe(m_service->recheck(id, this, [this, id, generation, context](const OperationResult &result) {
             if (!current(id, generation, context)) return;
             emit notification(result); refresh();
-        });
+        }), "正在重新检查");
         return;
     }
-    m_service->synchronize(id, SyncRequestOptions{}, this, [this, id, generation, context](const BackupResult<SyncResult> &result) {
+    m_service->describe(m_service->synchronize(id, SyncRequestOptions{}, this, [this, id, generation, context](const BackupResult<SyncResult> &result) {
         if (!current(id, generation, context)) return;
         emit notification(result.result); refresh();
         if (result.value.status.state == SyncState::NeedsResolution) emit navigate({PageId::Conflict, id});
-    });
+    }), "正在同步");
 }
 void HomePageCollaborationPage::refresh()
 {

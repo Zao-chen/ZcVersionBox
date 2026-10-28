@@ -7,6 +7,7 @@
 #include "utils/gitcommand.h"
 #include "utils/update_service.h"
 #include "windows/mainwindow.h"
+#include "windows/mainwindow_activity.h"
 #include "windows/mainwindow_child/homepage/homepage.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_backup.h"
 #include "windows/mainwindow_child/homepage/pages/homepage_page_branches.h"
@@ -229,16 +230,16 @@ class Regression : public QObject
         SettingsService settings(pathsIn(dir), &gateway);
         MainWindow window(&service, &settings, &gateway, m_theme, false);
         auto *page = window.findChild<HomePage *>();
-        auto *spinner = window.findChild<oclero::qlementine::LoadingSpinner *>("pageSpinner");
+        auto *spinner = window.findChild<ActivityIndicator *>("pageActivity");
         QVERIFY(page && spinner);
         QVERIFY(page->loading());
-        QVERIFY(!spinner->isHidden());
+        QVERIFY(spinner->isActive());
         QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("正在加载备份"));
         QVERIFY(!page->findChild<QLabel *>("countLabel")->text().contains("0"));
         QVERIFY(page->findChild<QPushButton *>("emptyAddButton")->isHidden());
         settle(service);
         QVERIFY(!page->loading());
-        QVERIFY(spinner->isHidden());
+        QVERIFY(!spinner->isActive());
         QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("还没有备份"));
         QCOMPARE(page->findChild<QLabel *>("countLabel")->text(), QString("0 个备份"));
         QVERIFY(!page->findChild<QPushButton *>("emptyAddButton")->isHidden());
@@ -276,21 +277,21 @@ class Regression : public QObject
         SettingsService settings(paths, &gateway);
         MainWindow window(&service, &settings, &gateway, m_theme, false);
         auto *page = window.findChild<HomePage *>();
-        auto *spinner = window.findChild<oclero::qlementine::LoadingSpinner *>("pageSpinner");
+        auto *spinner = window.findChild<ActivityIndicator *>("pageActivity");
         auto *list = page->findChild<QListView *>("backupList");
         QTRY_VERIFY(gate->entered.available() > 0);
         QTRY_COMPARE(list->model()->rowCount(), 1);
         QCOMPARE(page->findChild<QLabel *>("countLabel")->text(), QString("1 个备份"));
         QVERIFY(!page->findChild<QWidget *>("listPage")->isHidden());
-        QVERIFY(!spinner->isHidden());
+        QVERIFY(spinner->isActive());
         QVERIFY(!service.isReady());
         window.navigate({PageId::GeneralSettings});
-        QVERIFY(spinner->isHidden());
+        QVERIFY(!spinner->isActive());
         window.navigate({});
-        QVERIFY(!spinner->isHidden());
+        QVERIFY(spinner->isActive());
         gate->resume.release();
         settle(service);
-        QVERIFY(spinner->isHidden());
+        QVERIFY(!spinner->isActive());
         QVERIFY(service.isReady());
         QCOMPARE(list->model()->rowCount(), 1);
     }
@@ -324,12 +325,12 @@ class Regression : public QObject
         MainWindow window(&service, &settings, &gateway, m_theme, false);
         auto *page = window.findChild<HomePage *>();
         auto *retry = page->findChild<QPushButton *>("retryButton");
-        auto *spinner = window.findChild<oclero::qlementine::LoadingSpinner *>("pageSpinner");
+        auto *spinner = window.findChild<ActivityIndicator *>("pageActivity");
         QVERIFY(!retry->isHidden());
         QVERIFY(!page->findChild<QLabel *>("emptyHint")->text().isEmpty());
         QVERIFY(page->findChild<QPushButton *>("emptyAddButton")->isHidden());
         QVERIFY(!page->findChild<QLabel *>("countLabel")->text().contains("0"));
-        QVERIFY(spinner->isHidden());
+        QVERIFY(!spinner->isActive());
         if (failure == "record")
         {
             QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("备份记录无法完整读取"));
@@ -346,14 +347,40 @@ class Regression : public QObject
         }
         retry->click();
         QVERIFY(page->loading());
-        QVERIFY(!spinner->isHidden());
+        QVERIFY(spinner->isActive());
         QVERIFY(retry->isHidden());
         settle(service);
         QVERIFY(service.isReady());
-        QVERIFY(spinner->isHidden());
+        QVERIFY(!spinner->isActive());
         QVERIFY(retry->isHidden());
         QCOMPARE(page->findChild<QLabel *>("emptyLabel")->text(), QString("还没有备份"));
         QVERIFY(!page->findChild<QPushButton *>("emptyAddButton")->isHidden());
+    }
+    void describedTaskDrivesActivity()
+    {
+        TestDirectory dir;
+        const auto source = dir.path() + "/source.txt";
+        writeFile(source, "keep\n");
+        BackupService service(pathsIn(dir));
+        settle(service);
+        FakeAi gateway;
+        SettingsService settings(pathsIn(dir), &gateway);
+        MainWindow window(&service, &settings, &gateway, m_theme, false);
+        auto *activity = window.findChild<ActivityIndicator *>("pageActivity");
+        QVERIFY(activity && !activity->isActive());
+        QSignalSpy changed(&service, &BackupService::activityChanged);
+        const auto task = service.addLocal(source, &service);
+        QCOMPARE(service.describe(task, "正在添加备份"), task);
+        QCOMPARE(service.activity({}), QString("正在添加备份"));
+        QVERIFY(activity->isActive());
+        settle(service);
+        QVERIFY(service.activity({}).isEmpty());
+        QVERIFY(!activity->isActive());
+        QCOMPARE(changed.size(), 2);
+        // A finished task has nothing left to describe.
+        service.describe(task, "正在添加备份");
+        QVERIFY(service.activity({}).isEmpty());
+        QCOMPARE(changed.size(), 2);
     }
     void sourcePreviewUnsavedNavigationAndExternalEdits()
     {

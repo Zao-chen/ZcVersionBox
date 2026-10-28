@@ -31,6 +31,8 @@ QVariant BackupListModel::data(const QModelIndex &index, int role) const
         return static_cast<int>(item.state);
     case StateDetailRole:
         return item.stateDetail;
+    case ActivityRole:
+        return m_activities.value(item.id);
     case IdRole:
         return item.id;
     case PathRole:
@@ -52,6 +54,16 @@ QModelIndex BackupListModel::indexForId(const QString &id) const
         if (m_items[row].id == id)
             return index(row);
     return {};
+}
+void BackupListModel::setActivity(const QString &id, const QString &label)
+{
+    if (label.isEmpty() ? !m_activities.remove(id) : m_activities.value(id) == label)
+        return;
+    if (!label.isEmpty())
+        m_activities.insert(id, label);
+    const auto row = indexForId(id);
+    if (row.isValid())
+        emit dataChanged(row, row, {ActivityRole});
 }
 void BackupListModel::setItems(const QVector<TrackedItem> &items)
 {
@@ -109,6 +121,16 @@ BackupItemDelegate::BackupItemDelegate(QListView *view, bool sidebar) : QStyledI
 {
     view->viewport()->installEventFilter(this);
     view->installEventFilter(this);
+    m_frame.setInterval(80);
+    connect(&m_frame, &QTimer::timeout, this, [this]
+            {
+        if (!std::exchange(m_animated, false))
+        {
+            m_frame.stop();
+            return;
+        }
+        m_angle = (m_angle + 30) % 360;
+        m_view->viewport()->update(); });
 }
 QRect BackupItemDelegate::menuRect(const QRect &row) const
 {
@@ -174,11 +196,29 @@ void BackupItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &op
     }
     painter->setFont(captionFont);
     painter->setPen(colors.secondary);
-    auto path = QDir::toNativeSeparators(index.data(m_sidebar ? BackupListModel::ParentPathRole : BackupListModel::PathRole).toString());
-    if (pending)
-        path = "继续处理 · " + index.data(BackupListModel::StateDetailRole).toString();
-    painter->drawText(QRect(content.x(), content.y() + mainHeight + 2, content.width(), QFontMetrics(captionFont).height()), Qt::AlignLeft | Qt::AlignVCenter,
-                      QFontMetrics(captionFont).elidedText(path, pending ? Qt::ElideRight : Qt::ElideMiddle, content.width()));
+    auto caption = QRect(content.x(), content.y() + mainHeight + 2, content.width(), QFontMetrics(captionFont).height());
+    const auto activity = index.data(BackupListModel::ActivityRole).toString();
+    if (!activity.isEmpty())
+    {
+        // Running work replaces the path line until it finishes.
+        constexpr int arc = 10;
+        painter->setPen(QPen(option.palette.color(QPalette::Highlight), 1.5, Qt::SolidLine, Qt::RoundCap));
+        painter->drawArc(QRectF(caption.x() + .75, caption.center().y() - arc / 2 + .75, arc - 1.5, arc - 1.5), -m_angle * 16, 270 * 16);
+        caption.setLeft(caption.left() + arc + 6);
+        painter->setPen(colors.text);
+        painter->drawText(caption, Qt::AlignLeft | Qt::AlignVCenter, QFontMetrics(captionFont).elidedText(activity + "…", Qt::ElideRight, caption.width()));
+        m_animated = true;
+        if (!m_frame.isActive())
+            m_frame.start();
+    }
+    else
+    {
+        auto path = QDir::toNativeSeparators(index.data(m_sidebar ? BackupListModel::ParentPathRole : BackupListModel::PathRole).toString());
+        if (pending)
+            path = "继续处理 · " + index.data(BackupListModel::StateDetailRole).toString();
+        painter->drawText(caption, Qt::AlignLeft | Qt::AlignVCenter,
+                          QFontMetrics(captionFont).elidedText(path, pending ? Qt::ElideRight : Qt::ElideMiddle, content.width()));
+    }
     if (hovered || selected)
         UiStyle::icon("more").paint(painter, QRect(menuRect(row).center() - QPoint(8, 8), QSize(16, 16)));
     painter->restore();

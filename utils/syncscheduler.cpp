@@ -148,5 +148,6 @@ void SyncScheduler::tick()
         }
         arm();
     });
+    m_service->describe(m_task, "正在同步");
     m_dispatching = false;
 }

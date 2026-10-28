@@ -33,7 +33,7 @@ class QMenu;
 class QSystemTrayIcon;
 class QToolButton;
 class QVariantAnimation;
-namespace oclero::qlementine { class LoadingSpinner; }
+class ActivityIndicator;
 class UpdateService;
 
 class MainWindow : public QMainWindow
@@ -92,11 +92,11 @@ class MainWindow : public QMainWindow
     QVariantAnimation *m_sidebarAnimation{nullptr};
     QWidget *m_collaborationBadge{nullptr};
     QWidget *m_aboutBadge{nullptr};
-    // One header indicator for every page; pages only report whether they are loading.
-    oclero::qlementine::LoadingSpinner *m_pageSpinner{nullptr};
+    // One header indicator for every page: pages report loading, the service names running work.
+    ActivityIndicator *m_activity{nullptr};
     QSet<QWidget *> m_loadingPages;
     void setPageLoading(QWidget *page, bool loading);
-    void updatePageSpinner();
+    void updateActivity();
     bool m_hasUnreadUpdate{false};
     void displayRoute(const Route &route);
     void syncBackups();

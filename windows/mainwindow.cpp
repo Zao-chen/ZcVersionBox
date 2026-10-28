@@ -33,7 +33,7 @@
 #include <QTimer>
 #include <QVariantAnimation>
 #include <oclero/qlementine/style/QlementineStyle.hpp>
-#include <oclero/qlementine/widgets/LoadingSpinner.hpp>
+#include "windows/mainwindow_activity.h"
 #include <algorithm>
 #include <type_traits>
 #include <QWKWidgets/widgetwindowagent.h>
@@ -195,12 +195,9 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
             { ui->settingsSearch->setFocus(Qt::ShortcutFocusReason); });
     ui->headerLayout->setContentsMargins(24, 12, 8, 8);
     ui->tabsLayout->setContentsMargins(24, 0, 24, 8);
-    m_pageSpinner = new oclero::qlementine::LoadingSpinner(ui->header);
-    m_pageSpinner->setObjectName("pageSpinner");
-    m_pageSpinner->setAccessibleName("正在加载");
-    m_pageSpinner->setFixedSize(16, 16);
-    ui->headerLayout->insertWidget(ui->headerLayout->indexOf(ui->toolbarHost), m_pageSpinner, 0, Qt::AlignVCenter);
-    m_pageSpinner->hide();
+    m_activity = new ActivityIndicator(ui->header);
+    m_activity->setObjectName("pageActivity");
+    ui->headerLayout->insertWidget(ui->headerLayout->indexOf(ui->toolbarHost), m_activity, 0, Qt::AlignVCenter);
     ui->windowSplitter->setStretchFactor(0, 0);
     ui->windowSplitter->setStretchFactor(1, 1);
     ui->windowSplitter->setCollapsible(0, true);
@@ -345,11 +342,11 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         m_preview->requestLeave([this, id, ref, generation] {
             m_branches->requestSwitch(id, ref, [this, id, generation] {
                 if (!m_backups->contains(id) || m_backups->repositoryGeneration(id) != generation) return;
-                m_backups->synchronize(id, SyncRequestOptions{}, this, [this, id](const BackupResult<SyncResult> &reply) {
+                m_backups->describe(m_backups->synchronize(id, SyncRequestOptions{}, this, [this, id](const BackupResult<SyncResult> &reply) {
                     notify(reply.result);
                     if (m_route.page == PageId::Collaboration && m_route.backupId == id && reply.value.status.state == SyncState::NeedsResolution)
                         navigate({PageId::Conflict, id});
-                });
+                }), "正在同步");
             });
         });
     });
@@ -469,6 +466,10 @@ MainWindow::MainWindow(BackupService *backups, SettingsService *settings, AiGate
         m_conflict->refreshTheme();
         updateHeaderLayout(); });
     connect(backups, &BackupService::trackedItemsChanged, this, &MainWindow::syncBackups);
+    connect(backups, &BackupService::activityChanged, this, [this](const QString &id)
+            {
+        m_backupModel->setActivity(id, m_backups->activity(id));
+        updateActivity(); });
     connect(backups, &BackupService::syncStatusChanged, this, [this] { updateConflictBadge(); });
     connect(backups, &BackupService::repositoryChanged, this, [this](const QString &id)
             {
@@ -859,7 +860,7 @@ void MainWindow::displayRoute(const Route &route)
         break;
     }
     ui->pages->setCurrentWidget(page);
-    updatePageSpinner();
+    updateActivity();
     if (auto *focus = QApplication::focusWidget())
         focus->clearFocus();
     ui->backButton->setEnabled(m_navigation.canBack());
@@ -924,13 +925,20 @@ void MainWindow::setPageLoading(QWidget *page, bool loading)
         m_loadingPages.insert(page);
     else
         m_loadingPages.remove(page);
-    updatePageSpinner();
+    updateActivity();
 }
-void MainWindow::updatePageSpinner()
+void MainWindow::updateActivity()
 {
-    const bool loading = !isSettingsPage(m_route.page) && m_loadingPages.contains(ui->pages->currentWidget());
-    m_pageSpinner->setVisible(loading);
-    m_pageSpinner->setSpinning(loading && isVisible());
+    if (isSettingsPage(m_route.page))
+    {
+        m_activity->setActivity(false);
+        return;
+    }
+    // Object pages describe their own object; work without an object shows everywhere.
+    auto label = isObjectPage(m_route.page) ? m_backups->activity(m_route.backupId) : QString();
+    if (label.isEmpty())
+        label = m_backups->activity({});
+    m_activity->setActivity(!label.isEmpty() || m_loadingPages.contains(ui->pages->currentWidget()), label);
 }
 void MainWindow::updateHeaderLayout()
 {
@@ -944,6 +952,7 @@ void MainWindow::updateHeaderLayout()
         button->setToolButtonStyle(compact || button->defaultAction()->property("iconOnly").toBool() ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
     ui->headerLayout->setContentsMargins(margin, 12, 8, 8);
     ui->tabsLayout->setContentsMargins(margin, 0, margin, 8);
+    m_activity->setCaptionVisible(!compact);
     ui->contextTitle->setText(ui->contextTitle->fontMetrics().elidedText(m_contextTitle, Qt::ElideRight, qMax(0, ui->contextTitle->width())));
     updating = false;
 }
@@ -1096,7 +1105,6 @@ void MainWindow::changeEvent(QEvent *event)
 void MainWindow::showEvent(QShowEvent *event)
 {
     QMainWindow::showEvent(event);
-    updatePageSpinner();
 #ifdef Q_OS_MACOS
     disableSafeAreaInsets(this);
     if (QGuiApplication::platformName() == "cocoa")

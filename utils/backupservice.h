@@ -96,6 +96,10 @@ class BackupService : public QObject
     BackupTaskId prepareBranchMerge(const BranchRequest &request, QObject *context, Reply<SyncResolutionSession> callback);
     BackupTaskId cancelResolution(const QString &id, const QString &session, QObject *context, Completion callback);
     void cancel(BackupTaskId task);
+    // Labels a queued or running task for progress display until it finishes.
+    BackupTaskId describe(BackupTaskId task, const QString &label);
+    // The newest label for an object; an empty id holds tasks without an object.
+    QString activity(const QString &id) const;
 
   signals:
     void notification(const OperationResult &result);
@@ -112,6 +116,7 @@ class BackupService : public QObject
     void taskStarted(BackupTaskId task, const QString &id);
     void taskFinished(BackupTaskId task, const QString &id, const OperationResult &result);
     void busyChanged(bool busy);
+    void activityChanged(const QString &id);
 
   private:
     friend class TestBackupService;

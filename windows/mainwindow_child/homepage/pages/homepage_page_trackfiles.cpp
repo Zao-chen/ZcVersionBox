@@ -1,4 +1,5 @@
 #include "homepage_page_trackfiles.h"
+#include "windows/mainwindow_activity.h"
 #include "windows/mainwindow_dialog.h"
 #include "windows/mainwindow_presentation.h"
 #include <QAction>
@@ -99,14 +100,14 @@ void BackupUiActions::remove(const QString &id)
     if (generation != m_service->repositoryGeneration(id))
         emit notification(OperationResult::warn("操作已取消", "备份对象已变化，请重新打开此页面后再试"));
     else
-        m_service->removeBackup(id, this, [this](const OperationResult &result)
-                                { emit notification(result); });
+        m_service->describe(m_service->removeBackup(id, this, [this](const OperationResult &result)
+                                                    { emit notification(result); }), "正在删除备份");
 }
 void BackupUiActions::rebuild(const QString &id)
 {
     const auto generation = m_service->repositoryGeneration(id);
     if (!m_service->contains(id)) return;
-    m_service->prepareRebuild(id, this, [this, id, generation](const BackupResult<PreparedRebuild> &prepared)
+    const auto task = m_service->prepareRebuild(id, this, [this, id, generation](const BackupResult<PreparedRebuild> &prepared)
     {
         if (!m_service->contains(id) || generation != m_service->repositoryGeneration(id)) return;
         if (!prepared.result.success) { emit notification(prepared.result); return; }
@@ -120,16 +121,17 @@ void BackupUiActions::rebuild(const QString &id)
         if (!confirmAction(m_owner, question, "确认重建") || !guard) return;
         if (generation != m_service->repositoryGeneration(id))
             emit notification(OperationResult::warn("操作已取消", "备份对象已变化，请重新打开此页面后再试"));
-        else m_service->rebuild(prepared.value, this, [this](const OperationResult &result) { emit notification(result); });
+        else m_service->describe(m_service->rebuild(prepared.value, this, [this](const OperationResult &result) { emit notification(result); }), "正在重建备份");
     });
+    m_service->describe(task, "正在检查重建内容");
 }
 void BackupUiActions::addLocal(bool directory)
 {
     const auto path = directory ? QFileDialog::getExistingDirectory(m_owner, "选择文件夹", QDir::homePath(), QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks)
                                 : QFileDialog::getOpenFileName(m_owner, "选择文件", QDir::homePath(), "All Files (*.*)");
     if (!path.isEmpty())
-        m_service->addLocal(path, this, [this](const OperationResult &result)
-                            { emit notification(result); });
+        m_service->describe(m_service->addLocal(path, this, [this](const OperationResult &result)
+                                                { emit notification(result); }), "正在添加备份");
 }
 void BackupUiActions::importRemote()
 {
@@ -156,31 +158,37 @@ void BackupUiActions::importRemote()
     check->setFlat(true);
     auto *footer = dialog->footerLayout();
     footer->addStretch();
+    auto *activity = new ActivityIndicator(dialog);
+    footer->addWidget(activity);
     footer->addWidget(buttons);
-    connect(check, &QPushButton::clicked, dialog, [this, dialog, check, status, url]
+    connect(check, &QPushButton::clicked, dialog, [this, dialog, check, status, url, activity]
             {
         const auto address = url->text();
         check->setEnabled(false);
-        status->setText("正在检查…");
-        m_service->checkRemote(address, dialog, [check, status, url, address](const OperationResult &result)
+        status->clear();
+        activity->setActivity(true, "正在检查链接");
+        m_service->describe(m_service->checkRemote(address, dialog, [check, status, url, address, activity](const OperationResult &result)
         {
             check->setEnabled(true);
+            activity->setActivity(false);
             if (url->text() == address) status->setText(result.title + "：" + result.message);
-        }); });
-    connect(buttons, &QDialogButtonBox::accepted, dialog, [this, dialog, buttons, check, status, url]
+        }), "正在检查链接"); });
+    connect(buttons, &QDialogButtonBox::accepted, dialog, [this, dialog, buttons, check, status, url, activity]
             {
         buttons->button(QDialogButtonBox::Ok)->setEnabled(false);
         check->setEnabled(false);
         url->setReadOnly(true);
-        status->setText("正在读取仓库…");
+        status->clear();
+        activity->setActivity(true, "正在读取仓库");
         const QPointer<QDialog> guard(dialog);
-        const auto task = m_service->prepareImport(url->text(), this, [this, guard, buttons, check, status, url](const BackupResult<PreparedImport> &reply)
+        const auto task = m_service->describe(m_service->prepareImport(url->text(), this, [this, guard, buttons, check, status, url, activity](const BackupResult<PreparedImport> &reply)
         {
             if (!guard)
             {
                 if (reply.result.success) m_service->cancelImport(reply.value.sessionId);
                 return;
             }
+            activity->setActivity(false);
             if (!reply.result.success)
             {
                 buttons->button(QDialogButtonBox::Ok)->setEnabled(true);
@@ -191,7 +199,7 @@ void BackupUiActions::importRemote()
             }
             guard->accept();
             chooseImport(reply.value);
-        });
+        }), "正在读取仓库");
         connect(dialog, &QDialog::rejected, m_service, [service = m_service, task] { service->cancel(task); }); });
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
     dialog->resize(520, dialog->sizeHint().height());
@@ -261,8 +269,8 @@ void BackupUiActions::chooseImport(const PreparedImport &prepared)
             m_service->cancelImport(prepared.sessionId);
         return;
     }
-    m_service->finishImport(prepared.sessionId, entry.path, target, replace, this, [this, session = prepared.sessionId](const OperationResult &result)
-                            {
+    m_service->describe(m_service->finishImport(prepared.sessionId, entry.path, target, replace, this, [this, session = prepared.sessionId](const OperationResult &result)
+                                                {
         if (!result.success) m_service->cancelImport(session);
-        emit notification(result); });
+        emit notification(result); }), "正在导入备份");
 }

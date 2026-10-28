@@ -46,6 +46,8 @@ class BackupService::Private
     QMap<QString, SyncStatus> syncStatuses;
     QSet<QString> locallyDirty;
     QMap<QString, std::shared_ptr<std::atomic_bool>> editGuards;
+    struct Activity { BackupTaskId task; QString id, label; };
+    QVector<Activity> activities;
     quint64 observationSequence{0};
     QMap<QString, quint64> observationVersions;
     int foregroundStreak{0}, reloadCount{0};
@@ -385,7 +387,14 @@ class BackupService::Private
 };
 
 BackupService::BackupService(const AppPaths &paths, QObject *parent, AiGateway *gateway, BackupDependencies dependencies)
-    : QObject(parent), d(std::make_unique<Private>(this, paths, gateway, std::move(dependencies))) { reload(); }
+    : QObject(parent), d(std::make_unique<Private>(this, paths, gateway, std::move(dependencies)))
+{
+    connect(this, &BackupService::taskFinished, this, [this](BackupTaskId task, const QString &id)
+            {
+        if (d->activities.removeIf([task](const Private::Activity &a) { return a.task == task; }))
+            emit activityChanged(id); });
+    reload();
+}
 BackupService::~BackupService() = default;
 const AppPaths &BackupService::paths() const { return d->paths; }
 QVector<TrackedItem> BackupService::trackedItems() const
@@ -683,6 +692,31 @@ void BackupService::cancel(BackupTaskId task)
         for (const auto &job : *queue)
             if (job->task == task)
                 job->cancelled->store(true);
+}
+BackupTaskId BackupService::describe(BackupTaskId task, const QString &label)
+{
+    const auto record = [this, task, &label](const Private::JobPtr &job)
+    {
+        if (!job || job->task != task)
+            return false;
+        d->activities.append({task, job->id, label});
+        emit activityChanged(job->id);
+        return true;
+    };
+    if (record(d->active) || record(d->readActive))
+        return task;
+    // A finished task has nothing left to describe.
+    for (const auto *queue : {&d->foregroundQueue, &d->backgroundQueue, &d->readQueue})
+        if (std::any_of(queue->cbegin(), queue->cend(), record))
+            break;
+    return task;
+}
+QString BackupService::activity(const QString &id) const
+{
+    for (auto it = d->activities.crbegin(); it != d->activities.crend(); ++it)
+        if (it->id == id)
+            return it->label;
+    return {};
 }
 
 BackupTaskId BackupService::prepareSyncResolution(const QString &id, QObject *c, Reply<SyncResolutionSession> f, bool restart)

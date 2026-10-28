@@ -741,14 +741,14 @@ void HomePagePreviewPage::save(std::function<void()> continuation)
     SourceSaveRequest request{m_content.location, m_content.stamp, ui->editor->toPlainText(), m_newFile};
     m_saving = true; updateActions();
     status("正在保存…");
-    m_service->saveSourceFile(request, this, [this, request, continuation = std::move(continuation)](const OperationResult &result) {
+    m_service->describe(m_service->saveSourceFile(request, this, [this, request, continuation = std::move(continuation)](const OperationResult &result) {
         m_saving = false;
         if (!result.success) { status(result.title + "：" + result.message); emit notification(result); updateActions(); return; }
         discard(); m_statusText = "已保存到本地";
         if (continuation) continuation();
         else if (request.create) openPath(request.location.path);
         else refresh();
-    });
+    }), "正在保存文件");
 }
 void HomePagePreviewPage::createEntry(bool directory)
 {
@@ -795,11 +795,14 @@ void HomePagePreviewPage::mutateEntry(const SourceLocation &location, SourceMuta
 {
     if (m_mutating || m_saving) return;
     m_mutating = true; updateActions();
-    m_service->prepareSourceMutation(location, kind, name, this, [this](const BackupResult<SourceMutationRequest> &reply) {
+    const auto label = kind == SourceMutationKind::Delete ? QStringLiteral("正在删除")
+                       : kind == SourceMutationKind::Rename ? QStringLiteral("正在重命名")
+                                                            : QStringLiteral("正在新建文件夹");
+    const auto task = m_service->prepareSourceMutation(location, kind, name, this, [this, label](const BackupResult<SourceMutationRequest> &reply) {
         if (!reply.result.success) { m_mutating = false; updateActions(); emit notification(reply.result); return; }
         const auto request = reply.value;
-        const auto apply = [this, request] {
-            m_service->applySourceMutation(request, this, [this, request](const OperationResult &result) {
+        const auto apply = [this, request, label] {
+            m_service->describe(m_service->applySourceMutation(request, this, [this, request](const OperationResult &result) {
                 m_mutating = false; emit notification(result);
                 if (result.success && m_path == request.location.path && request.kind != SourceMutationKind::MakeDirectory)
                 {
@@ -810,7 +813,7 @@ void HomePagePreviewPage::mutateEntry(const SourceLocation &location, SourceMuta
                 }
                 else refresh();
                 updateActions();
-            });
+            }), label);
         };
         if (request.kind != SourceMutationKind::Delete) { apply(); return; }
         auto *dialog = new UiDialog::Dialog(this, QStringLiteral("previewDeleteDialog"), QStringLiteral("永久删除"));
@@ -840,4 +843,5 @@ void HomePagePreviewPage::mutateEntry(const SourceLocation &location, SourceMuta
         });
         dialog->open();
     });
+    m_service->describe(task, "正在检查");
 }
