@@ -609,14 +609,15 @@ HomePageBackupPage::HomePageBackupPage(BackupService *service, QWidget *parent) 
         }
         const auto id = m_id;
         const auto generation = m_service->repositoryGeneration(id);
-        m_service->editMessage(id, item->data(CommitRole).toString(), item->text(), this, [this, id, generation, context](const OperationResult &result)
+        const auto task = m_service->editMessage(id, item->data(CommitRole).toString(), item->text(), this, [this, id, generation, context](const OperationResult &result)
         {
             if (id == m_id && generation == m_service->repositoryGeneration(id) && isCurrentContext(context))
             {
                 emit notification(result);
                 refresh();
             }
-        }); });
+        });
+        m_service->describe(task, "正在保存版本说明"); });
     connect(service, &BackupService::repositoryChanged, this, [this](const QString &id)
             {
         if (id == m_id && isVisible())
@@ -711,19 +712,20 @@ void HomePageBackupPage::previewRevision(const RevisionContext &context)
 {
     if (!isCurrentContext(context))
         return;
-    m_service->preview(context.backupId, context.commit, this, [this, context](const OperationResult &result)
+    const auto task = m_service->preview(context.backupId, context.commit, this, [this, context](const OperationResult &result)
                        {
         if (!isCurrentContext(context))
             return;
         emit notification(result);
         if (result.success && !result.path.isEmpty())
             openLocalPath(this, result.path); });
+    m_service->describe(task, "正在打开版本");
 }
 void HomePageBackupPage::restoreRevision(const RevisionContext &context)
 {
     if (!isCurrentContext(context) || m_service->syncState(context.backupId) != BackupSyncState::Tracking)
         return;
-    m_service->prepareRestore(context.backupId, context.commit, this, [this, context](const BackupResult<RestoreRequest> &prepared)
+    const auto task = m_service->prepareRestore(context.backupId, context.commit, this, [this, context](const BackupResult<RestoreRequest> &prepared)
                               {
         if (!isCurrentContext(context))
             return;
@@ -742,11 +744,12 @@ void HomePageBackupPage::restoreRevision(const RevisionContext &context)
             emit notification(OperationResult::warn("操作已取消", "版本上下文已变化，请重新选择版本后再试。"));
             return;
         }
-        m_service->restore(prepared.value, this, [this, context](const OperationResult &result)
+        m_service->describe(m_service->restore(prepared.value, this, [this, context](const OperationResult &result)
         {
             if (isCurrentContext(context))
                 emit notification(result);
-        }); });
+        }), "正在恢复版本"); });
+    m_service->describe(task, "正在检查恢复内容");
 }
 bool HomePageBackupPage::canEditRevision(const RevisionContext &context) const
 {

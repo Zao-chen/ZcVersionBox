@@ -208,7 +208,7 @@ void HomePageBranchesPage::ensureLocal(const QString &id, const BranchInfo &bran
     BranchRequest adopted;
     adopted.context = m_service->branchContext(id); adopted.name = displayName(branch);
     adopted.startCommit = branch.head; adopted.upstream = branch.ref;
-    m_task = m_service->createBranch(adopted, this, [this, id, name = adopted.name, continuation](const OperationResult &result) {
+    m_task = m_service->describe(m_service->createBranch(adopted, this, [this, id, name = adopted.name, continuation](const OperationResult &result) {
         if (!result.success) { complete(result); return; }
         m_task = m_service->branches(id, this, [this, id, name, continuation](const BackupResult<BranchSnapshot> &snapshot) {
             m_busy = false; m_task = 0; updateActions();
@@ -219,7 +219,7 @@ void HomePageBranchesPage::ensureLocal(const QString &id, const BranchInfo &bran
                 if (!local.remoteBranch && local.name == name) { continuation(local); return; }
             complete(OperationResult::warn("方案已变化", "请刷新方案后重试。"));
         });
-    });
+    }), "正在准备方案");
 }
 void HomePageBranchesPage::create(const QString &id, const QString &commit)
 {
@@ -241,11 +241,11 @@ void HomePageBranchesPage::create(const QString &id, const QString &commit)
     BranchRequest request; request.context = context; request.name = name->text(); request.startCommit = commit.isEmpty() ? context.head : commit;
     const bool switchAfter = use->isChecked();
     m_busy = true; updateActions();
-    m_task = m_service->createBranch(request, this, [this, id, branch = request.name, switchAfter](const OperationResult &result)
+    m_task = m_service->describe(m_service->createBranch(request, this, [this, id, branch = request.name, switchAfter](const OperationResult &result)
     {
         complete(result);
         if (result.success && switchAfter) requestSwitch(id, "refs/heads/" + branch);
-    });
+    }), "正在新建方案");
 }
 void HomePageBranchesPage::requestSwitch(const QString &id, const QString &ref, std::function<void()> continuation)
 {
@@ -263,7 +263,7 @@ void HomePageBranchesPage::requestSwitch(const QString &id, const QString &ref, 
             }
         BranchRequest request; request.context = snapshot.value.context; request.ref = ref;
         for (const auto &branch : snapshot.value.branches) if (branch.ref == ref) request.expectedHead = branch.head;
-        m_task = m_service->prepareBranchSwitch(request, this, [this, id, continuation](const BackupResult<PreparedBranchSwitch> &reply)
+        m_task = m_service->describe(m_service->prepareBranchSwitch(request, this, [this, id, continuation](const BackupResult<PreparedBranchSwitch> &reply)
         {
             if (!reply.result.success || reply.value.targetRef.isEmpty()) { complete(reply.result); return; }
             const auto prepared = reply.value;
@@ -285,8 +285,8 @@ void HomePageBranchesPage::requestSwitch(const QString &id, const QString &ref, 
             const auto accepted = dialog.exec() == QDialog::Accepted;
             if (!guard) return;
             if (!accepted) { m_busy = false; m_task = 0; updateActions(); return; }
-            m_task = m_service->switchBranch(prepared, this, [this, continuation](const OperationResult &result) { complete(result); if (result.success && continuation) continuation(); });
-        });
+            m_task = m_service->describe(m_service->switchBranch(prepared, this, [this, continuation](const OperationResult &result) { complete(result); if (result.success && continuation) continuation(); }), "正在切换方案");
+        }), "正在检查切换内容");
     });
 }
 void HomePageBranchesPage::showOperations(const BranchInfo &selected, const QPoint &globalPos)
@@ -330,12 +330,12 @@ void HomePageBranchesPage::rename(const BranchInfo &selected)
     const auto name = UiDialog::getText(dialogOwner(), "重命名方案", "新名称（同步到所有协作者）", selected.name, &ok);
     if (!guard || !ok) return;
     auto renamed = request(selected); renamed.name = name; m_busy = true; updateActions();
-    m_task = m_service->renameBranch(renamed, this, [this](const OperationResult &result) { complete(result); });
+    m_task = m_service->describe(m_service->renameBranch(renamed, this, [this](const OperationResult &result) { complete(result); }), "正在重命名方案");
 }
 void HomePageBranchesPage::remove(const BranchInfo &selected, bool force)
 {
     auto removed = request(selected); removed.force = force; m_busy = true; updateActions();
-    m_task = m_service->deleteBranch(removed, this, [this, selected, force](const OperationResult &result) {
+    m_task = m_service->describe(m_service->deleteBranch(removed, this, [this, selected, force](const OperationResult &result) {
         if (!result.success && !force && result.title == QString::fromUtf8(BranchNotMergedTitle))
         {
             m_busy = false; m_task = 0; updateActions();
@@ -345,7 +345,7 @@ void HomePageBranchesPage::remove(const BranchInfo &selected, bool force)
             return;
         }
         complete(result);
-    });
+    }), "正在删除方案");
 }
 void HomePageBranchesPage::compare(const BranchInfo &selected, const BranchRequest &request, const QVector<BranchInfo> &branches)
 {
@@ -364,14 +364,14 @@ void HomePageBranchesPage::merge(const BranchRequest &request)
     const QPointer<HomePageBranchesPage> guard(this);
     if (!UiDialog::confirm(dialogOwner(), QString("把“%1”的修改合并到正在使用的“%2”？\n接下来会先检查两边的差别，你确认预览后才会改动文件。“%1”本身保持不变。").arg(request.ref.mid(11), request.context.ref.mid(11)), "检查差别") || !guard) return;
     m_busy = true; updateActions();
-    m_task = m_service->prepareBranchMerge(request, this, [this, id = request.context.id, source = request.context.ref](const BackupResult<SyncResolutionSession> &result)
+    m_task = m_service->describe(m_service->prepareBranchMerge(request, this, [this, id = request.context.id, source = request.context.ref](const BackupResult<SyncResolutionSession> &result)
     {
         complete(result.result);
         if (result.result.success && !result.value.id.isEmpty())
         {
             Route route{PageId::Conflict, id}; route.branchRef = source; emit navigate(route);
         }
-    });
+    }), "正在检查合并内容");
 }
 
 void HomePageBranchesPage::resizeEvent(QResizeEvent *event)

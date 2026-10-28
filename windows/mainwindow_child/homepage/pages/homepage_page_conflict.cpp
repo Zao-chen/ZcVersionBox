@@ -364,14 +364,14 @@ void HomePageConflictPage::choose(ConflictChoice choice)
     const auto &file = m_session.files[m_file];
     m_busy = true;
     updateActions();
-    m_service->chooseSyncResolution(m_id, m_session.id, m_session.revision, file.path, m_hunk, choice, this,
+    m_service->describe(m_service->chooseSyncResolution(m_id, m_session.id, m_session.revision, file.path, m_hunk, choice, this,
         [this, ctx](const BackupResult<SyncResolutionSession> &reply)
     {
         if (!current(ctx)) return;
         m_busy = false;
         if (!reply.result.success) { emit notification(reply.result); load(); return; }
         acceptSession(reply.value, false);
-    });
+    }), "正在保存选择");
 }
 void HomePageConflictPage::moveQuestion(bool next)
 {
@@ -408,7 +408,7 @@ void HomePageConflictPage::preparePreview()
     const auto ctx = context();
     m_busy = true;
     updateActions();
-    m_service->prepareSyncApply(m_id, m_session.id, m_session.revision, this, [this, ctx](const BackupResult<PreparedSyncApply> &reply)
+    m_service->describe(m_service->prepareSyncApply(m_id, m_session.id, m_session.revision, this, [this, ctx](const BackupResult<PreparedSyncApply> &reply)
     {
         if (!current(ctx)) return;
         m_busy = false;
@@ -425,7 +425,7 @@ void HomePageConflictPage::preparePreview()
         m_preview = true;
         populateFiles();
         showResult();
-    });
+    }), "正在生成合并结果");
 }
 void HomePageConflictPage::showResult()
 {
@@ -475,7 +475,7 @@ void HomePageConflictPage::apply()
     if (!current(ctx) || m_prepared.commit != prepared.commit || m_session.revision != prepared.revision || m_session.id != prepared.sessionId) return;
     m_busy = true;
     updateActions();
-    m_service->applySync(prepared, this, [this, ctx, prepared](const OperationResult &result)
+    m_service->describe(m_service->applySync(prepared, this, [this, ctx, prepared](const OperationResult &result)
     {
         if (!current(ctx)) return;
         m_busy = false;
@@ -490,7 +490,7 @@ void HomePageConflictPage::apply()
             emit navigate(route);
         }
         else load();
-    });
+    }), "正在应用合并结果");
 }
 void HomePageConflictPage::setLoading(bool loading)
 {

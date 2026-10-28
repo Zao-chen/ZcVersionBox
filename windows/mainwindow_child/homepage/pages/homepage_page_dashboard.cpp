@@ -53,7 +53,7 @@ HomePageDashboardPage::HomePageDashboardPage(BackupService *service, QWidget *pa
     connect(m_continueResolution, &QPushButton::clicked, this, [this]
             { emit navigate({PageId::Collaboration, m_id}); });
     connect(m_recheck, &QPushButton::clicked, this, [this]
-            { m_service->recheck(m_id, this, completion()); });
+            { m_service->describe(m_service->recheck(m_id, this, completion()), "正在重新检查"); });
     connect(service, &BackupService::busyChanged, this, &HomePageDashboardPage::updateActions);
     m_refresh = UiStyle::action(this, "refreshOverviewAction", "刷新概览", "refresh");
     m_refresh->setProperty("iconOnly", true);
@@ -196,9 +196,7 @@ void HomePageDashboardPage::updateActions()
     const bool present = m_service->contains(m_id);
     const auto state = m_service->syncState(m_id);
     const bool pending = present && (state == BackupSyncState::RemotePending || state == BackupSyncState::ResolutionPending);
-    auto stateText = present ? backupStateText(state) : QString();
-    if (busy)
-        stateText = stateText.isEmpty() ? QStringLiteral("正在处理备份任务…") : stateText + " · 正在处理备份任务…";
+    const auto stateText = present ? backupStateText(state) : QString();
     m_syncState->setText(stateText);
     const bool hasState = !stateText.isEmpty();
     const bool hasType = !ui->stateValue->text().isEmpty();

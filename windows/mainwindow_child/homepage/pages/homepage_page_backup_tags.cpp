@@ -1,4 +1,5 @@
 #include "homepage_page_backup.h"
+#include "windows/mainwindow_activity.h"
 #include "windows/mainwindow_dialog.h"
 #include "windows/mainwindow_presentation.h"
 #include <QComboBox>
@@ -64,9 +65,11 @@ void HomePageBackupPage::manageTags(const RevisionContext &context)
     if (remove)
         footer->addWidget(remove);
     footer->addStretch();
+    auto *activity = new ActivityIndicator(dialog);
+    footer->addWidget(activity);
     footer->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
-    const auto submit = [this, context, tags, dialog, name, selector, error, buttons, remove](bool deleting)
+    const auto submit = [this, context, tags, dialog, name, selector, error, buttons, remove, activity](bool deleting)
     {
         if (!isCurrentContext(context)) { dialog->reject(); return; }
         if (!deleting && name->text().trimmed().isEmpty()) { error->setText("请输入里程碑名称。"); error->show(); name->setFocus(); return; }
@@ -78,8 +81,11 @@ void HomePageBackupPage::manageTags(const RevisionContext &context)
         }
         buttons->button(QDialogButtonBox::Save)->setEnabled(false);
         name->setEnabled(false); selector->setEnabled(false); if (remove) remove->setEnabled(false);
-        const auto done = [this, context, dialog, name, selector, error, buttons, remove](const OperationResult &result)
+        const auto label = deleting ? QStringLiteral("正在取消标记") : QStringLiteral("正在保存里程碑");
+        error->hide(); activity->setActivity(true, label);
+        const auto done = [this, context, dialog, name, selector, error, buttons, remove, activity](const OperationResult &result)
         {
+            activity->setActivity(false);
             if (!isCurrentContext(context)) { dialog->reject(); return; }
             if (result.success) { emit notification(result); dialog->accept(); }
             else
@@ -90,9 +96,9 @@ void HomePageBackupPage::manageTags(const RevisionContext &context)
                 name->setFocus(); name->selectAll();
             }
         };
-        if (deleting) m_service->removeTag(request, dialog, done);
-        else if (tags.isEmpty()) m_service->createTag(request, dialog, done);
-        else m_service->renameTag(request, name->text(), dialog, done);
+        m_service->describe(deleting ? m_service->removeTag(request, dialog, done)
+                            : tags.isEmpty() ? m_service->createTag(request, dialog, done)
+                                             : m_service->renameTag(request, name->text(), dialog, done), label);
     };
     connect(buttons, &QDialogButtonBox::accepted, dialog, [submit] { submit(false); });
     if (remove) connect(remove, &QPushButton::clicked, dialog, [submit] { submit(true); });
@@ -122,16 +128,20 @@ void HomePageBackupPage::resolveTagConflicts()
     buttons->button(QDialogButtonBox::Cancel)->setText("取消");
     auto *footer = dialog->footerLayout();
     footer->addStretch();
+    auto *activity = new ActivityIndicator(dialog);
+    footer->addWidget(activity);
     footer->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
-    const auto submit = [this, id, generation, pageGeneration, conflict, dialog, name, error, keep, cloud](bool both)
+    const auto submit = [this, id, generation, pageGeneration, conflict, dialog, name, error, keep, cloud, activity](bool both)
     {
         if (id != m_id || pageGeneration != m_contextGeneration || generation != m_service->repositoryGeneration(id)) { dialog->reject(); return; }
         if (both && name->text().trimmed().isEmpty()) { error->setText("请输入本地标记的新名称。"); error->show(); return; }
         keep->setEnabled(false); cloud->setEnabled(false); name->setEnabled(false);
-        m_service->resolveTagConflict(id, conflict, both ? name->text() : QString(), dialog,
-            [this, id, generation, pageGeneration, dialog, name, error, keep, cloud](const OperationResult &result)
+        error->hide(); activity->setActivity(true, "正在处理里程碑");
+        m_service->describe(m_service->resolveTagConflict(id, conflict, both ? name->text() : QString(), dialog,
+            [this, id, generation, pageGeneration, dialog, name, error, keep, cloud, activity](const OperationResult &result)
         {
+            activity->setActivity(false);
             if (id != m_id || pageGeneration != m_contextGeneration || generation != m_service->repositoryGeneration(id)) { dialog->reject(); return; }
             if (result.success)
             {
@@ -139,7 +149,7 @@ void HomePageBackupPage::resolveTagConflicts()
                 QTimer::singleShot(0, this, [this, id] { if (isVisible() && id == m_id) resolveTagConflicts(); });
             }
             else { error->setText(result.message); error->show(); keep->setEnabled(true); cloud->setEnabled(true); name->setEnabled(true); }
-        });
+        }), "正在处理里程碑");
     };
     connect(keep, &QPushButton::clicked, dialog, [submit] { submit(true); });
     connect(cloud, &QPushButton::clicked, dialog, [submit] { submit(false); });

@@ -1,8 +1,10 @@
 #pragma once
 #include "utils/backup_types.h"
 #include <QAbstractListModel>
+#include <QHash>
 #include <QSortFilterProxyModel>
 #include <QStyledItemDelegate>
+#include <QTimer>
 
 class QListView;
 
@@ -19,16 +21,19 @@ class BackupListModel : public QAbstractListModel
         ParentPathRole,
         SearchRole,
         StateRole,
-        StateDetailRole
+        StateDetailRole,
+        ActivityRole
     };
     explicit BackupListModel(QObject *parent = nullptr) : QAbstractListModel(parent) {}
     int rowCount(const QModelIndex &parent = {}) const override;
     QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const override;
     void setItems(const QVector<TrackedItem> &items);
     QModelIndex indexForId(const QString &id) const;
+    void setActivity(const QString &id, const QString &label);
 
   private:
     QVector<TrackedItem> m_items;
+    QHash<QString, QString> m_activities;
 };
 
 class BackupFilterModel : public QSortFilterProxyModel
@@ -59,5 +64,9 @@ class BackupItemDelegate : public QStyledItemDelegate
     QListView *m_view;
     bool m_sidebar;
     QString m_pressedId;
+    // Rows with running work repaint on this clock; it stops once none was painted.
+    mutable QTimer m_frame;
+    mutable bool m_animated{false};
+    int m_angle{0};
     QRect menuRect(const QRect &row) const;
 };
