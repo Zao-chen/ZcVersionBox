@@ -42,8 +42,8 @@ zc_add_regression(zc_update_tests update_service.cpp zc_services)
 if(ZCVERSIONBOX_TEST_PROFILE STREQUAL "smoke")
     zc_register_regression(zc_tests regression 180
         platformRuntimeSmoke closingWithoutTrayExitsWindow localBackupRestoreAndDiff
-        historyMenuCreatesBranchAfterMouseDispatch:mouse-create-and-switch-detail
-        historyMenuCreatesBranchAfterMouseDispatch:direct-create-and-switch-detail
+        historyMenuCreatesBranchAfterMouseDispatch:mouse-create-and-switch-filtered
+        historyMenuCreatesBranchAfterMouseDispatch:direct-create-and-switch-filtered
         directHistoryEditAndRestore)
     zc_register_regression(zc_backup_tests backup_core 180
         fingerprintReaderAllowsAtomicSourceReplacement
