@@ -193,6 +193,7 @@ void BackupMonitor::pump()
                     }
                     else
                         finishStopping(); }, {true, BackupTaskPriority::Background});
+                m_service->describe(m_backupTask, "正在备份");
                 emit backupRequested(request->target.id);
             }
         if (!m_scanner.isBusy())
