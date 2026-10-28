@@ -1,41 +1,152 @@
+> [!TIP]
+> 📦 ZcVersionBox 正在持续迭代中。欢迎通过 [Issues](https://github.com/Zao-chen/ZcVersionBox/issues) 反馈问题，或用 [Pull Request](https://github.com/Zao-chen/ZcVersionBox/pulls) 一起把文件版本管理做得更简单。
+
 # ZcVersionBox
 
-基于 Qt 6.8.3 和 Qlementine 的本地文件版本管理工具。为电脑中选定的文件或文件夹建立独立同步副本，把副本建为普通 Git 仓库，源位置无需初始化 Git，即可获得自动版本记录、历史预览、恢复与多人同步能力。
+🌟 面向所有人的本地文件版本管理工具：不改造源目录，也能拥有 Git 级别的历史记录、预览、恢复与多人同步。🌟
 
-- 基于 Git 自动记录文件变化，支持文件和文件夹。
-- 使用“方案”管理真实 Git 分支：新建、保存后切换、比较、合并、改名和删除；提供提交关系图。
-- 历史版本统一提供预览、恢复、对比和提交说明反馈；里程碑版本可添加易懂的名称，方便之后查找。
-- 独立“多人协作”页统一同步全部方案和里程碑；连接后默认自动同步，支持从云端导入加入协作。
-- 支持 AI 自动提交说明和独立的版本差异分析。
-- Windows 右键入口、macOS Finder 服务、Linux Nautilus 脚本入口和登录自启动。
-- 对象 Sidebar、前进后退、置顶与中性浅深色主题；支持 X11 和 Wayland。
-- 紧凑历史列表、可复制路径、响应式 Diff 和按需展开的 AI 结果。
+<p align="center">
+  <img width="180" src="res/img/logo_512.png" alt="ZcVersionBox logo" />
+</p>
 
-## 使用
+<p align="center">
+  <a href="https://github.com/Zao-chen/ZcVersionBox/releases"><img src="https://img.shields.io/github/v/release/Zao-chen/ZcVersionBox?color=22c55e&style=for-the-badge" alt="GitHub Release" /></a>
+  <a href="https://github.com/Zao-chen/ZcVersionBox/releases"><img src="https://img.shields.io/github/downloads/Zao-chen/ZcVersionBox/total?color=6366f1&style=for-the-badge" alt="GitHub Downloads" /></a>
+  <a href="https://github.com/Zao-chen/ZcVersionBox/stargazers"><img src="https://img.shields.io/github/stars/Zao-chen/ZcVersionBox?color=f59e0b&style=for-the-badge" alt="GitHub Stars" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Zao-chen/ZcVersionBox?color=ef4444&style=for-the-badge" alt="License" /></a>
+</p>
 
-1. 安装 Git，启动应用后打开“添加备份”菜单，选择文件、文件夹或云端导入。
-2. 应用运行时会自动检测变化并创建版本。
-3. 从 Sidebar 选择对象直接进入历史版本；悬停或键盘聚焦版本行，右侧显示预览、对比、里程碑、新建方案、编辑说明和恢复，各按钮间距一致。双击或 Enter 对比，Alt+P 预览，Alt+M 标记/管理里程碑；恢复仍需确认；编辑说明仅对当前方案最新且未标记里程碑的版本开放。右键或 Shift+F10 可打开版本菜单。里程碑版本可以改名、取消标记，也可以打开“只看里程碑版本”快速查找。里程碑版本的原有提交说明会固定，改名不删除历史；连接共享仓库后会随同步共享。“概览”提供路径和统计，“多人协作”提供连接与同步设置，删除/重建在对象更多菜单中。
-4. 点击“设置”或按 Ctrl+,，通过专用侧栏打开常规、AI 和关于。可搜索设置项；点击“返回应用”恢复之前的备份页面。主题与置顶位于应用菜单。有系统托盘时关闭主窗口会隐藏到托盘，可通过托盘菜单退出；没有托盘时关闭窗口直接退出。
+<p align="center">
+  <a href="https://github.com/Zao-chen/ZcVersionBox/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Zao-chen/ZcVersionBox/ci.yml?branch=main&label=CI&style=for-the-badge" alt="CI" /></a>
+  <img src="https://img.shields.io/badge/Qt-6.8.3-41CD52?logo=qt&logoColor=white&style=for-the-badge" alt="Qt 6.8.3" />
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-0ea5e9?style=for-the-badge" alt="Windows macOS Linux" />
+</p>
 
-每个方案是同一对象的一条独立版本线，可以在新方案里放心尝试，原方案不受影响。一个项目只有一套方案；对象页签按“正在使用 / 其他方案”列出，不区分本机与云端，也不需要“加入方案”。操作都在方案行内：悬停显示“切换到此方案”，点击查看该方案的历史而不切换，右侧 ⋯ 或右键提供查看历史、从此方案新建、比较、合并、重命名和删除。顶部“方案：<名称>”按钮标出正在使用的方案，可直接切换到其他方案或进入“管理全部方案”。每次切换都需确认，有修改时先保存到原方案，再更新源位置；没有变化不会创建空版本。删除含独有版本的方案时会再次确认。
+## 🎯 项目介绍
 
-合并把所选方案合并到当前方案，来源方案会保留；出现冲突时可逐处选择、预览或稍后继续。“多人协作”的“立即同步”依次保存已落盘的本地修改、获取全部更新、整理文件和发送全部方案与里程碑。新方案自动出现在所有设备，改名和删除也同步到所有协作者。切换只影响本机；其他方案在后台快进或无冲突合并。已删除方案不会被离线设备再次上传，仍在使用或包含未同步工作的副本会改为独立的“保留”方案。连接后默认自动同步：保存后等待 3 秒合并连续变化，每 30 秒检查更新。断网继续保存，关闭自动同步仍可手动同步。共享仓库需支持 atomic push 和 `refs/zcversionbox/schemes` 引用；启用全局改名、删除前应升级所有协作者。完整操作见 [多人协作与双端验收](docs/collaboration.md) 和 [方案使用说明](docs/branch-management.md)。
+ZcVersionBox 会为你选定的文件或文件夹建立独立的同步副本，并把副本作为普通 Git 仓库管理。源位置无需初始化 Git，也无需改变原有工作方式；应用负责监控变化、创建版本、展示历史，并在需要时恢复或同步。
 
-应用启动后会延迟 5 秒在后台检查 GitHub Releases，不阻塞窗口显示或备份监控。发现新版本时通过应用内通知和“关于”入口的小红点提醒，进入关于页后红点清除，用户可查看 Markdown 更新说明并点击“下载并更新”；下载完成后会打开对应平台安装包，安装仍需用户确认。关于页右侧的“检查更新”按钮仍可手动触发检查。
+### ✨ 核心特性
 
-只有实际进入冲突处理或备份需要检查时，才暂停当前对象的自动备份；断网不影响本地备份。冲突可稍后继续，重启保留选择。其他方案只有真正的内容冲突才提示切换处理，其他对象继续工作。
+* 📁 **文件与文件夹都能管理：** 为每个对象建立独立版本线，源位置保持干净
+* 🧭 **方案式版本管理：** 新建、切换、比较、合并、重命名和删除方案，并提供提交关系图
+* 🕘 **历史记录一目了然：** 预览、Diff、恢复、编辑提交说明，或给重要版本添加里程碑
+* 🤝 **多人协作同步：** 一处连接共享仓库，统一同步全部方案和里程碑；新方案、改名与删除也会同步
+* 🧠 **AI 辅助理解变化：** 自动生成提交说明，并对独立版本差异进行分析
+* 🖥️ **融入操作系统：** Windows 右键入口、macOS Finder 服务、Linux Nautilus 脚本和登录自启动
+* 🎨 **专注于使用的界面：** Sidebar、前进/后退、置顶、浅色/深色主题、紧凑历史列表与响应式 Diff
+* 🔔 **不打扰的更新提醒：** 启动后后台检查 GitHub Releases，通过应用内通知提醒新版本
 
-普通备份和预览不写源。同步会自动应用当前方案无冲突的更新；应用内编辑器有未保存修改时暂缓。恢复、导入、切换方案和有冲突的合并结果仍需确认。`build` 单独变化仍不触发备份；其他变化触发时可复制 build，是否提交由普通 Git 忽略规则决定。未跟踪、忽略文件不按方案保存副本，潜在覆盖会阻止切换。隐藏文件继续处理，链接和会递归包含备份存储的路径会明确拒绝。存在其他本地、遗留归档或已知云端分支时不能重建；无法联网确认已配置云端的分支范围时也会停止重建。
+### 🧩 它适合什么场景？
 
-数据仍保存在系统“文档”目录下的 `ZcVersionBox`，新条目使用 UUID 目录和独立记录。旧格式不会自动加载、迁移或删除；可通过导入选择旧 Git 仓库及新的本地目标。AI 配置保留。默认浅色，主题可手动切换。
+| 场景 | ZcVersionBox 的做法 |
+| --- | --- |
+| 想给资料、配置或素材保留历史 | 选择文件/文件夹即可，不要求源目录是 Git 仓库 |
+| 想试验新方案，又不想弄乱当前版本 | 从当前方案创建独立方案，随时比较或合并 |
+| 想找回某个过去的状态 | 在历史列表预览、对比，确认后恢复 |
+| 想在多台设备之间共享版本 | 连接支持相关引用的共享 Git 仓库并同步 |
 
-Ubuntu 22.04/24.04 x86_64 可安装 `.deb`：`sudo apt install ./ZcVersionBox-v0.1.0-linux-amd64.deb`。启动器名称为 ZcVersionBox，命令为 `zcversionbox`。启用设置中的右键入口后，在 Nautilus 多选本地文件或文件夹，选择“右键 → 脚本 → 添加到 ZcVersionBox”。安装、升级和卸载保留用户备份、配置及用户级入口；登录自启动和脚本入口可在卸载前从设置中关闭。
+## 🗺 当前进度
 
-Linux 会记录并恢复 Git 的可执行模式（`100644` / `100755`），单独 `chmod +x` 也能触发备份。完整 POSIX 权限、ACL、所有者和空目录不属于 Git 历史。安装、验证结果和 GNOME 桌面验收步骤见 [Linux 兼容说明](docs/linux-compatibility.md)。
+- [x] 文件与文件夹的本地版本记录
+- [x] 方案创建、切换、比较、合并、重命名与删除
+- [x] 历史版本预览、Diff、恢复与里程碑
+- [x] 多人协作页、共享仓库同步与离线保存
+- [x] AI 提交说明与版本差异分析
+- [x] Windows、macOS、Linux 的系统入口
+- [x] GitHub Releases 更新检查与应用内更新入口
+- [ ] 持续完善跨平台安装体验、迁移向导与文档
 
-## 开发
+## 🚀 快速入门
 
-使用 Qt 6.8.3、MSVC 2022（Windows）、macOS Universal（arm64 + x86_64）或 Linux/GCC。Qlementine v1.4.2、QWindowKit、efsw 和 ZcAILib 0.3.0 均使用仓库内固定源码，配置阶段不下载依赖。SDK 保留 `AiProvider` 接口与 ABI 1，并支持可安装的 CMake package。
+### Step 1：安装并启动
 
-构建、测试、打包及 Designer 编辑方式见 [开发指南](CONTRIBUTING.md)。备份状态与失败边界见 [备份架构](docs/backup-architecture.md)，页面边界见 [UI 架构](docs/ui-architecture.md)，软件更新流程见 [更新架构](docs/update-architecture.md)，验证范围见 [回归验证](docs/ui-regression.md)。
+1. 在 [Releases](https://github.com/Zao-chen/ZcVersionBox/releases) 下载对应平台的安装包。
+2. 确保系统已安装 Git，然后启动 ZcVersionBox。
+3. 从“添加备份”开始，选择文件、文件夹，或导入已有的云端方案。
+
+### Step 2：创建第一个版本
+
+1. 等待应用监控到文件变化，或按你的工作节奏保存一次修改。
+2. 从 Sidebar 进入对象的历史页，查看版本、预览内容或打开 Diff。
+3. 对重要版本添加里程碑；需要回到过去时，确认后执行恢复。
+
+### Step 3：用方案安全试验
+
+1. 在当前方案中创建一个新方案。
+2. 在新方案里自由修改文件，原方案仍保持独立。
+3. 通过“方案”菜单比较、合并、重命名或删除方案。
+
+### Step 4：开启多人协作（可选）
+
+1. 打开“多人协作”，连接一个支持 `atomic push` 和 `refs/zcversionbox/schemes` 引用的共享 Git 仓库。
+2. 使用“立即同步”保存已落盘的本地修改、获取更新、整理文件并发送全部方案与里程碑。
+3. 连接后默认自动同步：连续变化等待 3 秒合并，每 30 秒检查一次远端更新；断网时仍可继续本地保存。
+
+完整流程见 [多人协作与双端验收](docs/collaboration.md) 和 [方案使用说明](docs/branch-management.md)。
+
+### Step 5：配置 AI（可选）
+
+在“设置 → AI”中配置服务。AI 可生成提交说明，也可以对版本差异做独立分析；不配置 AI 不影响本地备份、历史和恢复。
+
+## 🛡️ 数据与安全边界
+
+* 普通备份和预览不会写入源位置；恢复、导入、切换方案和有冲突的合并结果会在执行前要求确认。
+* 只有当前对象真正进入冲突处理或需要检查时，才会暂停该对象的自动备份；其他对象继续工作。
+* 未跟踪文件、被忽略文件不会按方案保存副本；隐藏文件会继续处理。链接，以及会递归包含备份存储的路径，会被明确拒绝。
+* 数据默认保存在系统“文档”目录下的 `ZcVersionBox`，新条目使用 UUID 目录和独立记录。旧格式不会自动加载、迁移或删除。
+* Linux 会记录并恢复 Git 的可执行模式（`100644` / `100755`）；完整 POSIX 权限、ACL、所有者和空目录不属于 Git 历史。
+
+## 🐧 Linux 安装示例
+
+Ubuntu 22.04/24.04 x86_64 可直接安装 `.deb`：
+
+```bash
+sudo apt install ./ZcVersionBox-v0.1.0-linux-amd64.deb
+```
+
+启动器名称为 **ZcVersionBox**，命令为 `zcversionbox`。启用设置中的右键入口后，在 Nautilus 中多选文件或文件夹，选择“右键 → 脚本 → 添加到 ZcVersionBox”。安装、升级和卸载会保留用户备份与配置；登录自启动和脚本入口可在卸载前关闭。
+
+更多细节见 [Linux 兼容说明](docs/linux-compatibility.md)。
+
+## 🛠️ 开发
+
+### 技术栈
+
+* **Qt 6.8.3**、C++17、标准 Qt Widgets 与 Qlementine
+* **MSVC 2022**（Windows）、**macOS Universal**（arm64 + x86_64）或 **Linux/GCC**
+* 仓库内固定源码：Qlementine v1.4.2、QWindowKit、efsw、ZcAILib 0.3.0
+* 配置阶段不下载依赖；SDK 保留 `AiProvider` 接口与 ABI 1，并支持可安装的 CMake package
+
+### 构建与验证
+
+```bash
+cmake -S . -B build
+cmake --build build --config Release
+```
+
+构建、测试、打包和 Designer 编辑方式见 [开发指南](CONTRIBUTING.md)。备份状态与失败边界见 [备份架构](docs/backup-architecture.md)，页面边界见 [UI 架构](docs/ui-architecture.md)，软件更新流程见 [更新架构](docs/update-architecture.md)，验证范围见 [回归验证](docs/ui-regression.md)。
+
+## 🤗 如何贡献
+
+ZcVersionBox 是一个开源项目，欢迎用你最顺手的方式参与：
+
+* **提交代码：** 欢迎 [Pull Request](https://github.com/Zao-chen/ZcVersionBox/pulls)，请先阅读 [开发指南](CONTRIBUTING.md)。
+* **报告问题或建议：** 请通过 [Issues](https://github.com/Zao-chen/ZcVersionBox/issues) 提交可复现的问题、场景或想法。
+* **分享项目：** 如果 ZcVersionBox 对你有帮助，给项目一个 ⭐ 就是很好的支持。
+
+## 🔗 相关链接
+
+* [ZcVersionBox Releases](https://github.com/Zao-chen/ZcVersionBox/releases)
+* [开发指南](CONTRIBUTING.md)
+* [多人协作与双端验收](docs/collaboration.md)
+* [方案使用说明](docs/branch-management.md)
+* [备份架构](docs/backup-architecture.md)
+* [Linux 兼容说明](docs/linux-compatibility.md)
+* [Zao-chen/ZcAILib](https://github.com/Zao-chen/ZcAILib)：Qt AI 请求库
+* [Qlementine](https://github.com/oclero/qlementine)：Qt Widgets 主题与控件
+* [Qt](https://www.qt.io/)：跨平台应用开发框架
+
+## 📄 许可证
+
+本项目基于 [GNU General Public License v3.0](LICENSE) 发布。
