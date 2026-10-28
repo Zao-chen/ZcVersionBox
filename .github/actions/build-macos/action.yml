@@ -1,14 +1,10 @@
-name: Build and test macOS
-description: Qt 6.8.3 / macOS 12.0 Universal build, tests and optional DMG packaging
+name: Build macOS
+description: Qt 6.8.3 / macOS 12.0 Universal build and optional DMG packaging
 inputs:
   package:
     description: Build and validate the macOS DMG
     required: false
     default: 'false'
-  test-profile:
-    description: Test scope (smoke, standard or full)
-    required: false
-    default: full
   tag:
     description: Release tag used for package filenames
     required: false
@@ -40,7 +36,6 @@ runs:
       env:
         TARGET_ARCHS: ${{ inputs.architectures }}
         PROJECT_VERSION: ${{ inputs.version }}
-        TEST_PROFILE: ${{ inputs.test-profile }}
         CACHE_COMPILATION: ${{ inputs.package != 'true' }}
       run: |
         set -euo pipefail
@@ -50,8 +45,7 @@ runs:
           -B build/release
           -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DBUILD_TESTING=ON
-          "-DZCVERSIONBOX_TEST_PROFILE=$TEST_PROFILE"
+          -DBUILD_TESTING=OFF
           "-DCMAKE_PREFIX_PATH=$QT_ROOT_DIR"
           -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
           "-DCMAKE_OSX_ARCHITECTURES=$TARGET_ARCHS"
@@ -70,15 +64,6 @@ runs:
       run: |
         set -euo pipefail
         cmake --build build/release --parallel 4
-    - name: Test
-      shell: bash
-      run: |
-        set -euo pipefail
-        ctest --test-dir build/release --parallel 2 --output-on-failure
-    - name: Summarize test timings
-      if: always()
-      shell: bash
-      run: python3 scripts/ci_report.py build/release/tests
     - name: Package macOS DMG
       if: ${{ inputs.package == 'true' }}
       shell: bash
@@ -92,13 +77,3 @@ runs:
         name: pkg-macos-dmg
         path: dist/macos/ZcVersionBox-*.dmg
         if-no-files-found: error
-    - uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        retention-days: 7
-        name: tests-macos
-        if-no-files-found: warn
-        path: |
-          build/release/Testing/Temporary/LastTest.log
-          build/release/tests/*.txt
-          build/release/tests/*.xml

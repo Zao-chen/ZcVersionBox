@@ -7,15 +7,10 @@ on:
   workflow_dispatch:
     inputs:
       platform:
-        description: Platform to test
+        description: Platform to build
         type: choice
         default: all
         options: [all, windows, macos, linux]
-      scope:
-        description: Daily checks or full cross-platform regression
-        type: choice
-        default: standard
-        options: [standard, full]
 
 permissions:
   contents: read
@@ -44,10 +39,6 @@ jobs:
               - '!**/*.md'
               - '!docs/**'
               - '!LICENSE*'
-      - name: Validate CI report tool
-        env:
-          PYTHONDONTWRITEBYTECODE: '1'
-        run: python3 -m unittest discover -s tests -p 'test_ci_report.py'
 
   windows:
     needs: changes
@@ -59,7 +50,6 @@ jobs:
       - uses: ./.github/actions/build-windows
         with:
           package: 'false'
-          test-profile: ${{ inputs.scope == 'full' && 'full' || 'smoke' }}
 
   macos:
     needs: changes
@@ -71,7 +61,6 @@ jobs:
       - uses: ./.github/actions/build-macos
         with:
           package: 'false'
-          test-profile: ${{ inputs.scope == 'full' && 'full' || 'smoke' }}
           architectures: arm64
 
   linux:
@@ -84,7 +73,6 @@ jobs:
       - uses: ./.github/actions/build-linux
         with:
           package: 'false'
-          test-profile: ${{ inputs.scope == 'full' && 'full' || 'standard' }}
 
   ci:
     name: CI

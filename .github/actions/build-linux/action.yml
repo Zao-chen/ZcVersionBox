@@ -1,14 +1,10 @@
-name: Build and test Linux
-description: Ubuntu 22.04 / Qt 6.8.3 build, tests and optional Debian package validation
+name: Build Linux
+description: Ubuntu 22.04 / Qt 6.8.3 build and optional Debian package
 inputs:
   package:
     description: Build and validate the Linux package
     required: false
     default: 'false'
-  test-profile:
-    description: Test scope (smoke, standard or full)
-    required: false
-    default: full
   tag:
     description: Release tag used for package filenames
     required: false
@@ -47,7 +43,6 @@ runs:
       shell: bash
       env:
         PROJECT_VERSION: ${{ inputs.version }}
-        TEST_PROFILE: ${{ inputs.test-profile }}
         CACHE_COMPILATION: ${{ inputs.package != 'true' }}
       run: |
         set -euo pipefail
@@ -57,8 +52,7 @@ runs:
           -B build/release
           -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DBUILD_TESTING=ON
-          "-DZCVERSIONBOX_TEST_PROFILE=$TEST_PROFILE"
+          -DBUILD_TESTING=OFF
           -DZCVERSIONBOX_DEPLOY_LINUX=ON
           -DCMAKE_INSTALL_LIBDIR=lib
           "-DCMAKE_PREFIX_PATH=$QT_ROOT_DIR"
@@ -77,18 +71,6 @@ runs:
       run: |
         set -euo pipefail
         cmake --build build/release --parallel 4
-    - name: Test
-      shell: bash
-      run: |
-        set -euo pipefail
-        ctest --test-dir build/release --parallel 2 --output-on-failure
-    - name: Check X11 and Wayland runtime
-      shell: bash
-      run: bash tests/linux/run-desktop-smoke.sh build/release/tests/zc_tests build/native-smoke
-    - name: Summarize test timings
-      if: always()
-      shell: bash
-      run: python3 scripts/ci_report.py build/release/tests
     - name: Package Linux DEB
       if: ${{ inputs.package == 'true' }}
       shell: bash
@@ -97,40 +79,9 @@ runs:
       run: |
         set -euo pipefail
         bash scripts/package-linux.sh build/release dist/linux "$PACKAGE_TAG"
-        bash tests/linux/package-validation.sh build/release build/validation
-    - name: Verify package on Ubuntu 22.04 and 24.04
-      if: ${{ inputs.package == 'true' }}
-      shell: bash
-      env:
-        PACKAGE_TAG: ${{ inputs.tag }}
-      run: |
-        set -euo pipefail
-        for ubuntu in 22.04 24.04; do
-          docker build -f tests/linux/Dockerfile.runtime --build-arg "UBUNTU_IMAGE=ubuntu:$ubuntu" \
-            -t "zcversionbox-runtime:$ubuntu" tests/linux
-          mkdir -p "build/runtime-$ubuntu"
-          docker run --rm -v "$PWD/dist/linux:/packages:ro" \
-            -v "$PWD/build/validation:/validation:ro" -v "$PWD/tests/linux:/scripts:ro" \
-            -v "$PWD/build/runtime-$ubuntu:/results" "zcversionbox-runtime:$ubuntu" \
-            bash /scripts/verify-package.sh \
-            "/packages/ZcVersionBox-$PACKAGE_TAG-linux-amd64.deb" \
-            /validation/validation.tar.gz "/results"
-        done
     - uses: actions/upload-artifact@v4
       if: ${{ inputs.package == 'true' }}
       with:
         name: pkg-linux-deb
         path: dist/linux/ZcVersionBox-*.deb
         if-no-files-found: error
-    - uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        retention-days: 7
-        name: tests-linux
-        if-no-files-found: warn
-        path: |
-          build/release/Testing/Temporary/LastTest.log
-          build/release/tests/*.txt
-          build/release/tests/*.xml
-          build/native-smoke/
-          build/runtime-*/

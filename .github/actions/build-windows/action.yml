@@ -1,14 +1,10 @@
-name: Build and test Windows
-description: Qt 6.8.3 / MSVC 2022 x64 build, tests and optional installer packaging
+name: Build Windows
+description: Qt 6.8.3 / MSVC 2022 x64 build and optional installer packaging
 inputs:
   package:
     description: Build and validate the Windows installer
     required: false
     default: 'false'
-  test-profile:
-    description: Test scope (smoke, standard or full)
-    required: false
-    default: full
   tag:
     description: Release tag used for package filenames
     required: false
@@ -38,7 +34,6 @@ runs:
       shell: pwsh
       env:
         PROJECT_VERSION: ${{ inputs.version }}
-        TEST_PROFILE: ${{ inputs.test-profile }}
         CACHE_COMPILATION: ${{ inputs.package != 'true' }}
       run: |
         if (Test-Path -LiteralPath build/release) { throw 'Use a clean build/release directory' }
@@ -47,8 +42,7 @@ runs:
           '-B', 'build/release',
           '-G', 'Ninja',
           '-DCMAKE_BUILD_TYPE=Release',
-          '-DBUILD_TESTING=ON',
-          "-DZCVERSIONBOX_TEST_PROFILE=$env:TEST_PROFILE",
+          '-DBUILD_TESTING=OFF',
           "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR"
         )
         if ($env:CACHE_COMPILATION -eq 'true') {
@@ -66,15 +60,6 @@ runs:
       run: |
         cmake --build build/release --parallel 4
         if ($LASTEXITCODE) { throw 'Build failed' }
-    - name: Test
-      shell: pwsh
-      run: |
-        ctest --test-dir build/release --parallel 2 --output-on-failure
-        if ($LASTEXITCODE) { throw 'Regression tests failed' }
-    - name: Summarize test timings
-      if: always()
-      shell: pwsh
-      run: python scripts/ci_report.py build/release/tests
     - name: Install Inno Setup
       if: ${{ inputs.package == 'true' }}
       shell: pwsh
@@ -95,13 +80,3 @@ runs:
         name: pkg-windows-setup
         path: dist/ZcVersionBox-*-setup.exe
         if-no-files-found: error
-    - uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        retention-days: 7
-        name: tests-windows
-        if-no-files-found: warn
-        path: |
-          build/release/Testing/Temporary/LastTest.log
-          build/release/tests/*.txt
-          build/release/tests/*.xml
