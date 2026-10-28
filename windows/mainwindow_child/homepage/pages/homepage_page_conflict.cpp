@@ -567,14 +567,14 @@ void HomePageConflictPage::updateLayout()
     ui->filesPane->setMaximumHeight(narrow ? 100 : QWIDGETSIZE_MAX);
     ui->filesPane->setMinimumWidth(narrow ? 0 : 160);
     ui->filesLayout->setContentsMargins(0, 0, narrow ? 0 : 8, narrow ? 8 : 0);
-    ui->workLayout->setContentsMargins(narrow ? 0 : 8, narrow ? 8 : 0, 0, 0);
+    ui->workLayout->setContentsMargins(narrow ? 0 : 8, narrow ? 4 : 0, 0, 0);
     if (ui->splitter->orientation() != orientation)
     {
         ui->splitter->setOrientation(orientation);
         ui->splitter->setSizes(narrow ? QList<int>{88, 500} : QList<int>{180, 560});
     }
     const int margin = narrow ? 16 : 24;
-    ui->pageLayout->setContentsMargins(margin, 12, margin, narrow ? 12 : 16);
+    ui->pageLayout->setContentsMargins(margin, 12, margin, narrow ? 8 : 16);
     ui->pageLayout->setSpacing(narrow ? 8 : 12);
     QTimer::singleShot(0, this, [this]
     {
