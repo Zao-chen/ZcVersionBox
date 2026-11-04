@@ -1,5 +1,5 @@
 > [!TIP]
-> 📦 ZcVersionBox 正在持续迭代中。欢迎通过 [Issues](https://github.com/Zao-chen/ZcVersionBox/issues) 反馈问题，或用 [Pull Request](https://github.com/Zao-chen/ZcVersionBox/pulls) 一起把文件版本管理做得更简单。
+> ZcVersionBox 正在持续迭代中。欢迎通过 [Issues](https://github.com/Zao-chen/ZcVersionBox/issues) 反馈问题，或用 [Pull Request](https://github.com/Zao-chen/ZcVersionBox/pulls) 一起把文件版本管理做得更简单。
 
 # ZcVersionBox
 
@@ -28,14 +28,14 @@ ZcVersionBox 会为你选定的文件或文件夹建立独立的同步副本，�
 
 ### ✨ 核心特性
 
-* 📁 **文件与文件夹都能管理：** 为每个对象建立独立版本线，源位置保持干净
-* 🧭 **方案式版本管理：** 新建、切换、比较、合并、重命名和删除方案，并提供提交关系图
-* 🕘 **历史记录一目了然：** 预览、Diff、恢复、编辑提交说明，或给重要版本添加里程碑
-* 🤝 **多人协作同步：** 一处连接共享仓库，统一同步全部方案和里程碑；新方案、改名与删除也会同步
-* 🧠 **AI 辅助理解变化：** 自动生成提交说明，并对独立版本差异进行分析
-* 🖥️ **融入操作系统：** Windows 右键入口、macOS Finder 服务、Linux Nautilus 脚本和登录自启动
-* 🎨 **专注于使用的界面：** Sidebar、前进/后退、置顶、浅色/深色主题、紧凑历史列表与响应式 Diff
-* 🔔 **不打扰的更新提醒：** 启动后后台检查 GitHub Releases，通过应用内通知提醒新版本
+* **文件与文件夹都能管理：** 为每个对象建立独立版本线，源位置保持干净
+* **方案式版本管理：** 新建、切换、比较、合并、重命名和删除方案，并提供提交关系图
+* **历史记录一目了然：** 预览、Diff、恢复、编辑提交说明，或给重要版本添加里程碑
+* **多人协作同步：** 一处连接共享仓库，统一同步全部方案和里程碑；新方案、改名与删除也会同步
+* **AI 辅助理解变化：** 自动生成提交说明，并对独立版本差异进行分析
+* **融入操作系统：** Windows 右键入口、macOS Finder 服务、Linux Nautilus 脚本和登录自启动
+* **专注于使用的界面：** Sidebar、前进/后退、置顶、浅色/深色主题、紧凑历史列表与响应式 Diff
+* **不打扰的更新提醒：** 启动后后台检查 GitHub Releases，通过应用内通知提醒新版本
 
 ### 🧩 它适合什么场景？
 
